@@ -1,0 +1,28 @@
+appId: com.stride.mobile
+name: "Analysis result screen — disclaimer text is visible"
+---
+- launchApp
+
+# Sign in as pre-consented test user
+- inputText:
+    id: "email-input"
+    text: "consented-user@stride.ai"
+
+- inputText:
+    id: "password-input"
+    text: "TestPassword123!"
+
+- tapOn:
+    text: "Sign In"
+
+# Navigate to Analysis tab
+- tapOn:
+    id: "tab-analysis"
+
+# Disclaimer must be visible on analysis screen (accessibilityLabel)
+- assertVisible:
+    id: "analysis-disclaimer"
+
+# Verify disclaimer text content
+- assertVisible:
+    text: "For informational purposes only"

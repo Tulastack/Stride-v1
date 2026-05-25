@@ -1,0 +1,111 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: stride
+      POSTGRES_USER: stride
+      POSTGRES_PASSWORD: stride_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../apps/api/src/db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stride"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  localstack:
+    image: localstack/localstack:3.8.0
+    environment:
+      SERVICES: s3,sqs
+      DEFAULT_REGION: us-east-1
+    ports:
+      - "4566:4566"
+    volumes:
+      - localstack_data:/var/lib/localstack
+
+  localstack-init:
+    image: amazon/aws-cli:latest
+    depends_on:
+      localstack:
+        condition: service_started
+    entrypoint: /bin/sh
+    command: >
+      -c "
+        echo 'Waiting for LocalStack S3/SQS endpoint to open...' &&
+        retries=0 &&
+        until aws --endpoint-url=http://localstack:4566 --cli-connect-timeout 2 --cli-read-timeout 2 s3 ls >/dev/null 2>&1 || [ $$retries -eq 30 ]; do
+          echo 'LocalStack is not ready yet, sleeping 2 seconds...'
+          sleep 2
+          retries=$$((retries+1))
+        done &&
+        if [ $$retries -eq 30 ]; then
+          echo 'Error: LocalStack timed out after 60 seconds!'
+          exit 1
+        fi &&
+        echo 'LocalStack is ready! Creating resources...' &&
+        aws --endpoint-url=http://localstack:4566 s3 mb s3://stride-videos --region us-east-1 &&
+        aws --endpoint-url=http://localstack:4566 sqs create-queue --queue-name stride-analysis --region us-east-1 &&
+        aws --endpoint-url=http://localstack:4566 sqs create-queue --queue-name stride-analysis-dlq --region us-east-1 &&
+        echo 'LocalStack resources created successfully'
+      "
+    environment:
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_DEFAULT_REGION: us-east-1
+
+  api:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: 3000
+      DATABASE_URL: postgres://stride:stride_dev@postgres:5432/stride
+      AWS_ENDPOINT: http://localstack:4566
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      S3_BUCKET: stride-videos
+      SQS_QUEUE_URL: http://localstack:4566/000000000000/stride-analysis
+      SUPABASE_URL: ${SUPABASE_URL:-http://localhost:54321}
+      INTERNAL_API_SECRET: dev-internal-secret-change-in-prod
+      NODE_ENV: development
+    depends_on:
+      postgres:
+        condition: service_healthy
+      localstack-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  ml-worker:
+    build:
+      context: ../apps/ml-worker
+      dockerfile: Dockerfile
+    environment:
+      PYTHONPATH: /app
+      DATABASE_URL: postgres://stride:stride_dev@postgres:5432/stride
+      S3_BUCKET: stride-videos
+      SQS_QUEUE_URL: http://localstack:4566/000000000000/stride-analysis
+      AWS_ENDPOINT: http://localstack:4566
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      API_SERVER_URL: http://api:3000
+      INTERNAL_API_SECRET: dev-internal-secret-change-in-prod
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      NODE_ENV: development
+    depends_on:
+      postgres:
+        condition: service_healthy
+      localstack-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  localstack_data:

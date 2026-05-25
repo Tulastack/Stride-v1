@@ -1,0 +1,61 @@
+appId: com.stride.mobile
+name: "Consent Onboarding — cannot proceed without both checkboxes"
+---
+# Fresh launch → register → consent screen
+- launchApp:
+    clearState: true
+
+# Navigate to register (new user)
+- tapOn:
+    text: "Create Account"
+
+- inputText:
+    id: "email-input"
+    text: "e2e-test-user@stride.ai"
+
+- inputText:
+    id: "password-input"
+    text: "TestPassword123!"
+
+- tapOn:
+    text: "Sign Up"
+
+# Consent screen should appear
+- assertVisible:
+    id: "terms-checkbox"
+
+- assertVisible:
+    id: "medical-checkbox"
+
+- assertVisible:
+    id: "consent-continue-btn"
+
+# Continue button should be disabled — tapping should not advance the screen
+- tapOn:
+    id: "consent-continue-btn"
+
+- assertVisible:
+    id: "terms-checkbox"
+    # Still on consent screen
+
+# Check only terms — still blocked
+- tapOn:
+    id: "terms-checkbox"
+
+- tapOn:
+    id: "consent-continue-btn"
+
+- assertVisible:
+    id: "medical-checkbox"
+    # Still on consent screen
+
+# Check medical too — now should be able to continue
+- tapOn:
+    id: "medical-checkbox"
+
+- tapOn:
+    id: "consent-continue-btn"
+
+# Should advance to profile/welcome screen
+- assertVisible:
+    text: "Athlete Profile"
