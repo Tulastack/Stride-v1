@@ -162,7 +162,7 @@ const styles = StyleSheet.create({
   },
   card: {
     backgroundColor: '#16192E',
-    borderRadius: 24,
+    borderRadius: 12,
     padding: 32,
     borderWidth: 1,
     borderColor: '#262940',
@@ -212,7 +212,7 @@ const styles = StyleSheet.create({
   },
   loginButton: {
     backgroundColor: '#FF453A',
-    borderRadius: 14,
+    borderRadius: 12,
     paddingVertical: 16,
     alignItems: 'center',
     marginTop: 12,
@@ -231,7 +231,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#1E254A',
     borderColor: '#262940',
     borderWidth: 1,
-    borderRadius: 14,
+    borderRadius: 12,
     paddingVertical: 14,
     alignItems: 'center',
     marginTop: 16,

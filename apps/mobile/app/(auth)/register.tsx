@@ -135,7 +135,7 @@ const styles = StyleSheet.create({
   },
   card: {
     backgroundColor: '#16192E',
-    borderRadius: 24,
+    borderRadius: 12,
     padding: 32,
     borderWidth: 1,
     borderColor: '#262940',
@@ -185,7 +185,7 @@ const styles = StyleSheet.create({
   },
   registerButton: {
     backgroundColor: '#FF453A',
-    borderRadius: 14,
+    borderRadius: 12,
     paddingVertical: 16,
     alignItems: 'center',
     marginTop: 12,

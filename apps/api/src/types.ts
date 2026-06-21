@@ -32,22 +32,6 @@ export interface Analysis {
   completed_at: Date | null;
 }
 
-export interface ConversationMessage {
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-  timestamp: string;
-}
-
-export interface Conversation {
-  id: string;
-  user_id: string;
-  analysis_id: string | null;
-  messages: ConversationMessage[];
-  summary: string | null;
-  created_at: Date;
-  updated_at: Date;
-}
-
 export interface CalendarEvent {
   id: string;
   user_id: string;
@@ -57,6 +41,27 @@ export interface CalendarEvent {
   details: Record<string, unknown> | null;
   status: 'scheduled' | 'completed' | 'skipped' | 'modified';
   completion_note: string | null;
+  created_at: Date;
+}
+
+export interface CoachSession {
+  id: string;
+  user_id: string;
+  analysis_id: string | null;
+  session_type: 'analysis_workflow' | 'free_coach';
+  status: 'open' | 'closed';
+  last_activity_at: Date;
+  created_at: Date;
+}
+
+export interface DrillSuggestion {
+  id: string;
+  analysis_id: string;
+  user_id: string;
+  drill_key: string;
+  drill_name: string;
+  suggested_date: string;
+  status: 'pending' | 'approved' | 'skipped';
   created_at: Date;
 }
 
@@ -82,15 +87,51 @@ export interface FinalizeRequest {
   parts: { partNumber: number; etag: string }[];
 }
 
+export type SSEProgressStage = 
+  | 'queued'
+  | 'downloading'
+  | 'pose_extraction'
+  | 'biomechanics_calculation'
+  | 'llm_structuring'
+  | 'finalizing'
+  | 'complete'
+  | 'failed';
+
 export interface SSEEvent {
   analysisId: string;
   data: {
-    status: Analysis['status'];
+    status?: Analysis['status'];
+    stage?: SSEProgressStage;
+    pct?: number;
+    message?: string;
     overall_score?: number | null;
     result_json?: Record<string, unknown> | null;
     error_message?: string | null;
     completed_at?: string | null;
   };
+}
+
+export interface ReferenceDrill {
+  key: string;
+  name: string;
+  description: string | null;
+  video_url: string | null;
+  cues: string[];
+  contraindications: string[];
+  target_metrics: string[];
+  created_at: Date;
+}
+
+export interface MetricsTimelineRow {
+  id: string;
+  user_id: string;
+  analysis_id: string;
+  metric_key: string;
+  value: number;
+  unit: string | null;
+  optimal_min: number | null;
+  optimal_max: number | null;
+  measured_at: Date;
 }
 
 export interface HealthCheckResult {

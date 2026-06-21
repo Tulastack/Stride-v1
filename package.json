@@ -13,7 +13,10 @@
     "dev:mobile": "turbo run dev --filter=@stride/mobile",
     "lint": "turbo run lint",
     "type-check": "turbo run type-check",
-    "clean": "turbo run clean"
+    "clean": "turbo run clean",
+    "test:env:up": "docker compose -f infra/docker-compose.test.yml up -d && sleep 5",
+    "test:env:down": "docker compose -f infra/docker-compose.test.yml down -v",
+    "e2e:full": "npm run e2e:full --workspace=packages/test-orchestrator"
   },
   "devDependencies": {
     "babel-plugin-syntax-hermes-parser": "^0.36.1",

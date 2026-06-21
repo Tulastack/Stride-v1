@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  lint-typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run lint --if-present
+      - run: npm run typecheck --if-present
+
+  unit-tests-api:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22', cache: 'npm' }
+      - run: npm ci
+      - run: npm test
+        working-directory: apps/api
+        env:
+          DATABASE_URL: postgres://stride:stride_dev@localhost:5433/stride_test
+          SUPABASE_URL: http://localhost:54321
+          SUPABASE_JWT_SECRET: test-jwt-secret-at-least-32-characters-long
+          AWS_REGION: us-east-1
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          AWS_ENDPOINT: http://localhost:4567
+          S3_BUCKET: stride-videos-test
+          SQS_QUEUE_URL: http://localhost:4567/000000000000/stride-analysis-test
+          INTERNAL_API_SECRET: test-internal-secret
+
+  unit-tests-mobile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22', cache: 'npm' }
+      - run: npm ci
+      - run: npm test
+        working-directory: apps/mobile
+
+  biomech-validation:
+    # PROMPT B.2 — regenerate the validation report and fail if a metric whose
+    # validated error exceeds its threshold is NOT marked 'experimental'. The
+    # report is the basis for in-app confidence bands; we do not invent confidence.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22', cache: 'npm' }
+      - run: npm ci
+      - run: npm run build --workspace=@stride/types
+      - run: npm run validate:biomech
+        working-directory: apps/api
+      - name: Fail if validation report is stale (must be committed)
+        run: git diff --exit-code docs/validation/REPORT.md
+
+  integration-tests:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: stride_test
+          POSTGRES_USER: stride
+          POSTGRES_PASSWORD: stride_dev
+        ports: ['5433:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22', cache: 'npm' }
+      - run: npm ci
+      - run: npm test -- --testPathPattern=integration
+        working-directory: apps/api
+        env:
+          DATABASE_URL: postgres://stride:stride_dev@localhost:5433/stride_test
+          SUPABASE_URL: http://localhost:54321
+          SUPABASE_JWT_SECRET: test-jwt-secret-at-least-32-characters-long
+          AWS_REGION: us-east-1
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          INTERNAL_API_SECRET: test-internal-secret

@@ -218,7 +218,7 @@ const styles = StyleSheet.create({
   },
   completeButton: {
     backgroundColor: '#FF453A',
-    borderRadius: 14,
+    borderRadius: 12,
     paddingVertical: 18,
     alignItems: 'center',
     marginTop: 20,

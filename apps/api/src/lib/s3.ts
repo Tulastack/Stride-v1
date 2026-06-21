@@ -4,6 +4,7 @@ import {
   CompleteMultipartUploadCommand,
   UploadPartCommand,
   HeadBucketCommand,
+  PutObjectCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
@@ -84,8 +85,20 @@ export async function completeMultipartUpload(
 }
 
 /**
- * Health check: verify the S3 bucket is accessible
+ * Store a JSON sidecar (e.g. capture manifest) alongside a video key.
  */
+export async function putJsonSidecar(videoKey: string, suffix: string, body: unknown): Promise<string> {
+  const sidecarKey = videoKey.replace(/\.[^.]+$/, '') + suffix;
+  await s3Client.send(
+    new PutObjectCommand({
+      Bucket: BUCKET,
+      Key: sidecarKey,
+      Body: JSON.stringify(body),
+      ContentType: 'application/json',
+    })
+  );
+  return sidecarKey;
+}
 export async function checkS3Health(): Promise<boolean> {
   try {
     await s3Client.send(new HeadBucketCommand({ Bucket: BUCKET }));

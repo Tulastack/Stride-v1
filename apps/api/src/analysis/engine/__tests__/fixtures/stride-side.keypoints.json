@@ -1,0 +1,665 @@
+{
+  "fps": 30,
+  "frames": [
+    {
+      "tMs": 0,
+      "joints": {
+        "head": {
+          "x": 0.5,
+          "y": 0.27,
+          "confidence": 0.9
+        },
+        "l_shoulder": {
+          "x": 0.42,
+          "y": 0.37000000000000005,
+          "confidence": 0.88
+        },
+        "r_shoulder": {
+          "x": 0.58,
+          "y": 0.37000000000000005,
+          "confidence": 0.88
+        },
+        "l_hip": {
+          "x": 0.43,
+          "y": 0.55,
+          "confidence": 0.9
+        },
+        "r_hip": {
+          "x": 0.57,
+          "y": 0.55,
+          "confidence": 0.9
+        },
+        "l_knee": {
+          "x": 0.43,
+          "y": 0.67,
+          "confidence": 0.85
+        },
+        "r_knee": {
+          "x": 0.57,
+          "y": 0.65,
+          "confidence": 0.85
+        },
+        "l_ankle": {
+          "x": 0.43,
+          "y": 0.8300000000000001,
+          "confidence": 0.82
+        },
+        "r_ankle": {
+          "x": 0.57,
+          "y": 0.81,
+          "confidence": 0.82
+        },
+        "neck": {
+          "x": 0.5,
+          "y": 0.37000000000000005,
+          "confidence": 0.88
+        }
+      }
+    },
+    {
+      "tMs": 33,
+      "joints": {
+        "head": {
+          "x": 0.5,
+          "y": 0.27,
+          "confidence": 0.9
+        },
+        "l_shoulder": {
+          "x": 0.42,
+          "y": 0.37000000000000005,
+          "confidence": 0.88
+        },
+        "r_shoulder": {
+          "x": 0.58,
+          "y": 0.37000000000000005,
+          "confidence": 0.88
+        },
+        "l_hip": {
+          "x": 0.43,
+          "y": 0.55,
+          "confidence": 0.9
+        },
+        "r_hip": {
+          "x": 0.57,
+          "y": 0.55,
+          "confidence": 0.9
+        },
+        "l_knee": {
+          "x": 0.43,
+          "y": 0.67,
+          "confidence": 0.85
+        },
+        "r_knee": {
+          "x": 0.57,
+          "y": 0.65,
+          "confidence": 0.85
+        },
+        "l_ankle": {
+          "x": 0.43,
+          "y": 0.8300000000000001,
+          "confidence": 0.82
+        },
+        "r_ankle": {
+          "x": 0.57,
+          "y": 0.81,
+          "confidence": 0.82
+        },
+        "neck": {
+          "x": 0.5,
+          "y": 0.37000000000000005,
+          "confidence": 0.88
+        }
+      }
+    },
+    {
+      "tMs": 66,
+      "joints": {
+        "head": {
+          "x": 0.5,
+          "y": 0.27,
+          "confidence": 0.9
+        },
+        "l_shoulder": {
+          "x": 0.42,
+          "y": 0.37000000000000005,
+          "confidence": 0.88
+        },
+        "r_shoulder": {
+          "x": 0.58,
+          "y": 0.37000000000000005,
+          "confidence": 0.88
+        },
+        "l_hip": {
+          "x": 0.43,
+          "y": 0.55,
+          "confidence": 0.9
+        },
+        "r_hip": {
+          "x": 0.57,
+          "y": 0.55,
+          "confidence": 0.9
+        },
+        "l_knee": {
+          "x": 0.43,
+          "y": 0.67,
+          "confidence": 0.85
+        },
+        "r_knee": {
+          "x": 0.57,
+          "y": 0.65,
+          "confidence": 0.85
+        },
+        "l_ankle": {
+          "x": 0.43,
+          "y": 0.8300000000000001,
+          "confidence": 0.82
+        },
+        "r_ankle": {
+          "x": 0.57,
+          "y": 0.81,
+          "confidence": 0.82
+        },
+        "neck": {
+          "x": 0.5,
+          "y": 0.37000000000000005,
+          "confidence": 0.88
+        }
+      }
+    },
+    {
+      "tMs": 100,
+      "joints": {
+        "head": {
+          "x": 0.5,
+          "y": 0.27,
+          "confidence": 0.9
+        },
+        "l_shoulder": {
+          "x": 0.42,
+          "y": 0.37000000000000005,
+          "confidence": 0.88
+        },
+        "r_shoulder": {
+          "x": 0.58,
+          "y": 0.37000000000000005,
+          "confidence": 0.88
+        },
+        "l_hip": {
+          "x": 0.43,
+          "y": 0.55,
+          "confidence": 0.9
+        },
+        "r_hip": {
+          "x": 0.57,
+          "y": 0.55,
+          "confidence": 0.9
+        },
+        "l_knee": {
+          "x": 0.43,
+          "y": 0.67,
+          "confidence": 0.85
+        },
+        "r_knee": {
+          "x": 0.57,
+          "y": 0.65,
+          "confidence": 0.85
+        },
+        "l_ankle": {
+          "x": 0.43,
+          "y": 0.8300000000000001,
+          "confidence": 0.82
+        },
+        "r_ankle": {
+          "x": 0.57,
+          "y": 0.81,
+          "confidence": 0.82
+        },
+        "neck": {
+          "x": 0.5,
+          "y": 0.37000000000000005,
+          "confidence": 0.88
+        }
+      }
+    },
+    {
+      "tMs": 133,
+      "joints": {
+        "head": {
+          "x": 0.5,
+          "y": 0.27,
+          "confidence": 0.9
+        },
+        "l_shoulder": {
+          "x": 0.42,
+          "y": 0.37000000000000005,
+          "confidence": 0.88
+        },
+        "r_shoulder": {
+          "x": 0.58,
+          "y": 0.37000000000000005,
+          "confidence": 0.88
+        },
+        "l_hip": {
+          "x": 0.43,
+          "y": 0.55,
+          "confidence": 0.9
+        },
+        "r_hip": {
+          "x": 0.57,
+          "y": 0.55,
+          "confidence": 0.9
+        },
+        "l_knee": {
+          "x": 0.43,
+          "y": 0.67,
+          "confidence": 0.85
+        },
+        "r_knee": {
+          "x": 0.57,
+          "y": 0.65,
+          "confidence": 0.85
+        },
+        "l_ankle": {
+          "x": 0.43,
+          "y": 0.8300000000000001,
+          "confidence": 0.82
+        },
+        "r_ankle": {
+          "x": 0.57,
+          "y": 0.81,
+          "confidence": 0.82
+        },
+        "neck": {
+          "x": 0.5,
+          "y": 0.37000000000000005,
+          "confidence": 0.88
+        }
+      }
+    },
+    {
+      "tMs": 166,
+      "joints": {
+        "head": {
+          "x": 0.5,
+          "y": 0.27,
+          "confidence": 0.9
+        },
+        "l_shoulder": {
+          "x": 0.42,
+          "y": 0.37000000000000005,
+          "confidence": 0.88
+        },
+        "r_shoulder": {
+          "x": 0.58,
+          "y": 0.37000000000000005,
+          "confidence": 0.88
+        },
+        "l_hip": {
+          "x": 0.43,
+          "y": 0.55,
+          "confidence": 0.9
+        },
+        "r_hip": {
+          "x": 0.57,
+          "y": 0.55,
+          "confidence": 0.9
+        },
+        "l_knee": {
+          "x": 0.43,
+          "y": 0.67,
+          "confidence": 0.85
+        },
+        "r_knee": {
+          "x": 0.57,
+          "y": 0.65,
+          "confidence": 0.85
+        },
+        "l_ankle": {
+          "x": 0.43,
+          "y": 0.8300000000000001,
+          "confidence": 0.82
+        },
+        "r_ankle": {
+          "x": 0.57,
+          "y": 0.81,
+          "confidence": 0.82
+        },
+        "neck": {
+          "x": 0.5,
+          "y": 0.37000000000000005,
+          "confidence": 0.88
+        }
+      }
+    },
+    {
+      "tMs": 200,
+      "joints": {
+        "head": {
+          "x": 0.5,
+          "y": 0.27,
+          "confidence": 0.9
+        },
+        "l_shoulder": {
+          "x": 0.42,
+          "y": 0.37000000000000005,
+          "confidence": 0.88
+        },
+        "r_shoulder": {
+          "x": 0.58,
+          "y": 0.37000000000000005,
+          "confidence": 0.88
+        },
+        "l_hip": {
+          "x": 0.43,
+          "y": 0.55,
+          "confidence": 0.9
+        },
+        "r_hip": {
+          "x": 0.57,
+          "y": 0.55,
+          "confidence": 0.9
+        },
+        "l_knee": {
+          "x": 0.43,
+          "y": 0.67,
+          "confidence": 0.85
+        },
+        "r_knee": {
+          "x": 0.57,
+          "y": 0.65,
+          "confidence": 0.85
+        },
+        "l_ankle": {
+          "x": 0.43,
+          "y": 0.8300000000000001,
+          "confidence": 0.82
+        },
+        "r_ankle": {
+          "x": 0.57,
+          "y": 0.81,
+          "confidence": 0.82
+        },
+        "neck": {
+          "x": 0.5,
+          "y": 0.37000000000000005,
+          "confidence": 0.88
+        }
+      }
+    },
+    {
+      "tMs": 233,
+      "joints": {
+        "head": {
+          "x": 0.5,
+          "y": 0.27,
+          "confidence": 0.9
+        },
+        "l_shoulder": {
+          "x": 0.42,
+          "y": 0.37000000000000005,
+          "confidence": 0.88
+        },
+        "r_shoulder": {
+          "x": 0.58,
+          "y": 0.37000000000000005,
+          "confidence": 0.88
+        },
+        "l_hip": {
+          "x": 0.43,
+          "y": 0.55,
+          "confidence": 0.9
+        },
+        "r_hip": {
+          "x": 0.57,
+          "y": 0.55,
+          "confidence": 0.9
+        },
+        "l_knee": {
+          "x": 0.43,
+          "y": 0.67,
+          "confidence": 0.85
+        },
+        "r_knee": {
+          "x": 0.57,
+          "y": 0.65,
+          "confidence": 0.85
+        },
+        "l_ankle": {
+          "x": 0.43,
+          "y": 0.8300000000000001,
+          "confidence": 0.82
+        },
+        "r_ankle": {
+          "x": 0.57,
+          "y": 0.81,
+          "confidence": 0.82
+        },
+        "neck": {
+          "x": 0.5,
+          "y": 0.37000000000000005,
+          "confidence": 0.88
+        }
+      }
+    },
+    {
+      "tMs": 266,
+      "joints": {
+        "head": {
+          "x": 0.5,
+          "y": 0.27,
+          "confidence": 0.9
+        },
+        "l_shoulder": {
+          "x": 0.42,
+          "y": 0.37000000000000005,
+          "confidence": 0.88
+        },
+        "r_shoulder": {
+          "x": 0.58,
+          "y": 0.37000000000000005,
+          "confidence": 0.88
+        },
+        "l_hip": {
+          "x": 0.43,
+          "y": 0.55,
+          "confidence": 0.9
+        },
+        "r_hip": {
+          "x": 0.57,
+          "y": 0.55,
+          "confidence": 0.9
+        },
+        "l_knee": {
+          "x": 0.43,
+          "y": 0.67,
+          "confidence": 0.85
+        },
+        "r_knee": {
+          "x": 0.57,
+          "y": 0.65,
+          "confidence": 0.85
+        },
+        "l_ankle": {
+          "x": 0.43,
+          "y": 0.8300000000000001,
+          "confidence": 0.82
+        },
+        "r_ankle": {
+          "x": 0.57,
+          "y": 0.81,
+          "confidence": 0.82
+        },
+        "neck": {
+          "x": 0.5,
+          "y": 0.37000000000000005,
+          "confidence": 0.88
+        }
+      }
+    },
+    {
+      "tMs": 300,
+      "joints": {
+        "head": {
+          "x": 0.5,
+          "y": 0.27,
+          "confidence": 0.9
+        },
+        "l_shoulder": {
+          "x": 0.42,
+          "y": 0.37000000000000005,
+          "confidence": 0.88
+        },
+        "r_shoulder": {
+          "x": 0.58,
+          "y": 0.37000000000000005,
+          "confidence": 0.88
+        },
+        "l_hip": {
+          "x": 0.43,
+          "y": 0.55,
+          "confidence": 0.9
+        },
+        "r_hip": {
+          "x": 0.57,
+          "y": 0.55,
+          "confidence": 0.9
+        },
+        "l_knee": {
+          "x": 0.43,
+          "y": 0.67,
+          "confidence": 0.85
+        },
+        "r_knee": {
+          "x": 0.57,
+          "y": 0.65,
+          "confidence": 0.85
+        },
+        "l_ankle": {
+          "x": 0.43,
+          "y": 0.8300000000000001,
+          "confidence": 0.82
+        },
+        "r_ankle": {
+          "x": 0.57,
+          "y": 0.81,
+          "confidence": 0.82
+        },
+        "neck": {
+          "x": 0.5,
+          "y": 0.37000000000000005,
+          "confidence": 0.88
+        }
+      }
+    },
+    {
+      "tMs": 333,
+      "joints": {
+        "head": {
+          "x": 0.5,
+          "y": 0.27,
+          "confidence": 0.9
+        },
+        "l_shoulder": {
+          "x": 0.42,
+          "y": 0.37000000000000005,
+          "confidence": 0.88
+        },
+        "r_shoulder": {
+          "x": 0.58,
+          "y": 0.37000000000000005,
+          "confidence": 0.88
+        },
+        "l_hip": {
+          "x": 0.43,
+          "y": 0.55,
+          "confidence": 0.9
+        },
+        "r_hip": {
+          "x": 0.57,
+          "y": 0.55,
+          "confidence": 0.9
+        },
+        "l_knee": {
+          "x": 0.43,
+          "y": 0.67,
+          "confidence": 0.85
+        },
+        "r_knee": {
+          "x": 0.57,
+          "y": 0.65,
+          "confidence": 0.85
+        },
+        "l_ankle": {
+          "x": 0.43,
+          "y": 0.8300000000000001,
+          "confidence": 0.82
+        },
+        "r_ankle": {
+          "x": 0.57,
+          "y": 0.81,
+          "confidence": 0.82
+        },
+        "neck": {
+          "x": 0.5,
+          "y": 0.37000000000000005,
+          "confidence": 0.88
+        }
+      }
+    },
+    {
+      "tMs": 366,
+      "joints": {
+        "head": {
+          "x": 0.5,
+          "y": 0.27,
+          "confidence": 0.9
+        },
+        "l_shoulder": {
+          "x": 0.42,
+          "y": 0.37000000000000005,
+          "confidence": 0.88
+        },
+        "r_shoulder": {
+          "x": 0.58,
+          "y": 0.37000000000000005,
+          "confidence": 0.88
+        },
+        "l_hip": {
+          "x": 0.43,
+          "y": 0.55,
+          "confidence": 0.9
+        },
+        "r_hip": {
+          "x": 0.57,
+          "y": 0.55,
+          "confidence": 0.9
+        },
+        "l_knee": {
+          "x": 0.43,
+          "y": 0.67,
+          "confidence": 0.85
+        },
+        "r_knee": {
+          "x": 0.57,
+          "y": 0.65,
+          "confidence": 0.85
+        },
+        "l_ankle": {
+          "x": 0.43,
+          "y": 0.8300000000000001,
+          "confidence": 0.82
+        },
+        "r_ankle": {
+          "x": 0.57,
+          "y": 0.81,
+          "confidence": 0.82
+        },
+        "neck": {
+          "x": 0.5,
+          "y": 0.37000000000000005,
+          "confidence": 0.88
+        }
+      }
+    }
+  ]
+}

@@ -1,11 +1,8 @@
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import * as Sentry from '@sentry/node';
-import dotenv from 'dotenv';
-
-// Load environment variables
-dotenv.config();
 
 // Initialize Sentry first (if DSN is configured)
 const sentryDsn = process.env.SENTRY_DSN;
@@ -18,16 +15,21 @@ if (sentryDsn) {
 }
 
 import videosRouter from './routes/videos.js';
-import agentRouter from './routes/agent.js';
 import calendarRouter from './routes/calendar.js';
 import usersRouter from './routes/users.js';
 import internalRouter from './routes/internal.js';
 import consentRouter from './routes/consent.js';
+import coachSessionsRouter from './routes/coachSessions.js';
+import suggestionsRouter from './routes/suggestions.js';
+import referenceDrillsRouter from './routes/referenceDrills.js';
+import metricsRouter from './routes/metrics.js';
+import analysesProgressRouter from './routes/analyses.js';
 
 import { pool } from './db/queries.js';
 import { checkS3Health } from './lib/s3.js';
 import { checkSQSHealth } from './lib/sqs.js';
 import { startSweepJob, stopSweepJob } from './lib/sweep.js';
+import { startSessionSweepJob, stopSessionSweepJob } from './lib/sessionSweep.js';
 import { errorHandler } from './middleware/errors.js';
 import type { HealthCheckResult } from './types.js';
 
@@ -46,11 +48,18 @@ app.use(express.json());
 
 // Routes
 app.use('/videos', videosRouter);
-app.use('/agent', agentRouter);
+// NOTE: the open-ended /agent chat route was removed (PRD v2.2 F.5 vision
+// retention: no free-text coaching stream, no conversations table).
 app.use('/calendar', calendarRouter);
 app.use('/users', usersRouter);
 app.use('/consent', consentRouter);
 app.use('/internal', internalRouter);
+app.use('/coach-sessions', coachSessionsRouter);
+app.use('/suggestions', suggestionsRouter);
+app.use('/analyses', suggestionsRouter); // handles /analyses/:analysisId/suggestions
+app.use('/analyses', analysesProgressRouter); // handles /analyses/:analysisId/progress (SSE)
+app.use('/reference-drills', referenceDrillsRouter);
+app.use('/users', metricsRouter);  // mounts at /users/me/metrics
 
 /**
  * Health check endpoint verifying all critical external integrations
@@ -102,6 +111,8 @@ const server = app.listen(port, () => {
   
   // Start the stuck analysis cron sweeper
   startSweepJob();
+  // Start the inactive session sealer (every hour)
+  startSessionSweepJob();
 });
 
 // Graceful shutdown
@@ -109,6 +120,7 @@ function shutdown(signal: string) {
   console.log(`[Stride API] Received ${signal}. Shutting down gracefully...`);
   
   stopSweepJob();
+  stopSessionSweepJob();
 
   server.close(async () => {
     console.log('[Stride API] HTTP server closed.');

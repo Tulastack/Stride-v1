@@ -10,6 +10,41 @@ import requests
 
 logger = logging.getLogger(__name__)
 
+API_SERVER_URL = os.environ.get("API_SERVER_URL", "http://localhost:3000")
+INTERNAL_API_SECRET = os.environ.get("INTERNAL_API_SECRET", "")
+
+
+def notify_progress(analysis_id: str, stage: str, pct: int, message: str = "") -> None:
+    """POST /internal/analysis-progress with stage update."""
+    try:
+        resp = requests.post(
+            f"{API_SERVER_URL}/internal/analysis-progress",
+            json={"analysisId": analysis_id, "stage": stage, "pct": pct, "message": message},
+            headers={"X-Internal-Token": INTERNAL_API_SECRET},
+            timeout=5,
+        )
+        resp.raise_for_status()
+    except Exception as e:
+        logger.warning(f"Progress notification failed: {e}")
+
+
+def notify_biomech_completed(analysis_id: str, pipeline3d: dict[str, Any]) -> bool:
+    """POST /internal/analysis-biomech — WHAM+OpenCap frames → PRD v2.2 result."""
+    endpoint = f"{API_SERVER_URL}/internal/analysis-biomech"
+    payload = {"analysisId": analysis_id, "pipeline3d": pipeline3d}
+    headers = {"Content-Type": "application/json", "X-Internal-Token": INTERNAL_API_SECRET}
+    try:
+        logger.info("Sending WHAM+OpenCap biomech callback for %s", analysis_id)
+        response = requests.post(endpoint, json=payload, headers=headers, timeout=120)
+        if response.status_code == 200:
+            logger.info("Biomech callback succeeded for %s", analysis_id)
+            return True
+        logger.error("Biomech callback failed %d: %s", response.status_code, response.text)
+        return False
+    except Exception as err:
+        logger.error("Biomech callback connection failed for %s: %s", analysis_id, err)
+        return False
+
 
 def notify_analysis_completed(
     analysis_id: str,
@@ -26,9 +61,7 @@ def notify_analysis_completed(
     Returns:
         True if the callback succeeded, False otherwise.
     """
-    api_url = os.environ.get("API_SERVER_URL", "http://localhost:3000")
-    callback_endpoint = f"{api_url}/internal/analysis-completed"
-    secret_token = os.environ.get("INTERNAL_API_SECRET", "")
+    callback_endpoint = f"{API_SERVER_URL}/internal/analysis-completed"
 
     payload = {
         "analysisId": analysis_id,
@@ -39,7 +72,7 @@ def notify_analysis_completed(
 
     headers = {
         "Content-Type": "application/json",
-        "X-Internal-Token": secret_token,
+        "X-Internal-Token": INTERNAL_API_SECRET,
     }
 
     try:
@@ -78,9 +111,7 @@ def notify_analysis_failed(
     Returns:
         True if the callback succeeded, False otherwise.
     """
-    api_url = os.environ.get("API_SERVER_URL", "http://localhost:3000")
-    callback_endpoint = f"{api_url}/internal/analysis-completed"
-    secret_token = os.environ.get("INTERNAL_API_SECRET", "")
+    callback_endpoint = f"{API_SERVER_URL}/internal/analysis-completed"
 
     payload = {
         "analysisId": analysis_id,
@@ -90,7 +121,7 @@ def notify_analysis_failed(
 
     headers = {
         "Content-Type": "application/json",
-        "X-Internal-Token": secret_token,
+        "X-Internal-Token": INTERNAL_API_SECRET,
     }
 
     try:

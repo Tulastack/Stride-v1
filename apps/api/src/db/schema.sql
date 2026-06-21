@@ -37,16 +37,9 @@ CREATE INDEX idx_analyses_user_id ON analyses(user_id);
 CREATE INDEX idx_analyses_status ON analyses(status);
 CREATE INDEX idx_analyses_pending ON analyses(created_at) WHERE status = 'pending';
 
-CREATE TABLE conversations (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    analysis_id UUID REFERENCES analyses(id) ON DELETE SET NULL,
-    messages JSONB NOT NULL DEFAULT '[]',
-    summary TEXT,
-    created_at TIMESTAMPTZ DEFAULT now(),
-    updated_at TIMESTAMPTZ DEFAULT now()
-);
-CREATE INDEX idx_conversations_user_id ON conversations(user_id);
+-- NOTE: the `conversations` table was intentionally REMOVED (PRD v2.2 F.5
+-- vision retention). There is no free-text chat: coaching is structured-only
+-- (data-driven briefings + typed slots). Do not re-add a conversations table.
 
 CREATE TABLE calendar_events (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -63,6 +56,41 @@ CREATE TABLE calendar_events (
 );
 CREATE INDEX idx_calendar_user_date ON calendar_events(user_id, scheduled_date);
 
+-- ─── Coach Sessions ──────────────────────────────────────────────
+CREATE TABLE coach_sessions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    analysis_id UUID REFERENCES analyses(id) ON DELETE SET NULL,
+    session_type VARCHAR(20) NOT NULL CHECK (session_type IN ('analysis_workflow','free_coach')),
+    status VARCHAR(10) NOT NULL DEFAULT 'open' CHECK (status IN ('open','closed')),
+    last_activity_at TIMESTAMPTZ DEFAULT now(),
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX idx_coach_sessions_user ON coach_sessions(user_id);
+CREATE INDEX idx_coach_sessions_analysis ON coach_sessions(analysis_id) WHERE analysis_id IS NOT NULL;
+
+-- ─── Drill Suggestions ───────────────────────────────────────────
+CREATE TABLE drill_suggestions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    analysis_id UUID NOT NULL REFERENCES analyses(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    drill_key VARCHAR(100) NOT NULL,
+    drill_name VARCHAR(200) NOT NULL,
+    suggested_date DATE NOT NULL,
+    status VARCHAR(10) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','skipped')),
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE UNIQUE INDEX idx_drill_suggestions_unique ON drill_suggestions(analysis_id, drill_key);
+CREATE INDEX idx_drill_suggestions_user ON drill_suggestions(user_id);
+
+CREATE TABLE suggestion_audit (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    suggestion_id UUID NOT NULL REFERENCES drill_suggestions(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    action VARCHAR(10) NOT NULL CHECK (action IN ('approved','skipped')),
+    acted_at TIMESTAMPTZ DEFAULT now()
+);
+
 -- Migration: Add consent fields (run against existing DBs)
 -- ALTER TABLE users ADD COLUMN IF NOT EXISTS date_of_birth DATE;
 -- ALTER TABLE users ADD COLUMN IF NOT EXISTS consent_given_at TIMESTAMPTZ;
@@ -70,3 +98,30 @@ CREATE INDEX idx_calendar_user_date ON calendar_events(user_id, scheduled_date);
 -- ALTER TABLE users ADD COLUMN IF NOT EXISTS parental_consent BOOLEAN NOT NULL DEFAULT FALSE;
 -- ALTER TABLE users ADD COLUMN IF NOT EXISTS drill_intensity_cap VARCHAR(20) CHECK (drill_intensity_cap IN ('moderate','full'));
 -- ALTER TABLE users ADD COLUMN IF NOT EXISTS is_injured BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- ─── Reference Drills ─────────────────────────────────────────────
+CREATE TABLE reference_drills (
+    key VARCHAR(100) PRIMARY KEY,
+    name VARCHAR(200) NOT NULL,
+    description TEXT,
+    video_url TEXT,
+    cues JSONB NOT NULL DEFAULT '[]',
+    contraindications JSONB NOT NULL DEFAULT '[]',
+    target_metrics JSONB NOT NULL DEFAULT '[]',
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- ─── Metrics Timeline ─────────────────────────────────────────────
+CREATE TABLE metrics_timeline (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    analysis_id UUID NOT NULL REFERENCES analyses(id) ON DELETE CASCADE,
+    metric_key VARCHAR(100) NOT NULL,
+    value NUMERIC(8,2) NOT NULL,
+    unit VARCHAR(50),
+    optimal_min NUMERIC(8,2),
+    optimal_max NUMERIC(8,2),
+    measured_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_metrics_user_key ON metrics_timeline(user_id, metric_key, measured_at DESC);
+CREATE INDEX idx_metrics_analysis ON metrics_timeline(analysis_id);

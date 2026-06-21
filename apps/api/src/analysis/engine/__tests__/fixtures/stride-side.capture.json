@@ -1,0 +1,20 @@
+{
+  "fps": 120,
+  "preferredFps": 120,
+  "widthPx": 1080,
+  "heightPx": 1920,
+  "durationMs": 4000,
+  "motionBlur": "low",
+  "framing": "full",
+  "handheld": true,
+  "gyro": [],
+  "intrinsics": {
+    "focalLengthPx": 1663,
+    "principalPointPx": [
+      540,
+      960
+    ],
+    "sensorWidthPx": 1080,
+    "sensorHeightPx": 1920
+  }
+}

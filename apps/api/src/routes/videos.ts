@@ -13,6 +13,7 @@ import {
   initiateMultipartUpload,
   generatePresignedPartUrls,
   completeMultipartUpload,
+  putJsonSidecar,
 } from '../lib/s3.js';
 import { enqueueAnalysis } from '../lib/sqs.js';
 import { sseManager } from '../lib/sse.js';
@@ -35,6 +36,7 @@ const finalizeSchema = z.object({
       etag: z.string(),
     })
   ),
+  captureManifest: z.record(z.unknown()).optional(),
 });
 
 // Custom helper for query token authentication in SSE
@@ -119,7 +121,7 @@ router.post('/upload-url', authenticate, requireConsent, async (req: any, res: R
  */
 router.post('/finalize', authenticate, requireConsent, async (req: any, res: Response, next: NextFunction) => {
   try {
-    const { analysisId, uploadId, parts } = finalizeSchema.parse(req.body);
+    const { analysisId, uploadId, parts, captureManifest } = finalizeSchema.parse(req.body);
     const userId = req.userId;
 
     // Verify analysis exists and belongs to the user
@@ -131,6 +133,11 @@ router.post('/finalize', authenticate, requireConsent, async (req: any, res: Res
 
     // Complete S3 multipart upload
     await completeMultipartUpload(analysis.s3_key, uploadId, parts);
+
+    // Stage 0 capture sidecar (gyro + intrinsics) for the biomechanics engine
+    if (captureManifest) {
+      await putJsonSidecar(analysis.s3_key, '.capture.json', captureManifest);
+    }
 
     // Enqueue to SQS for processing
     await enqueueAnalysis(analysisId, analysis.s3_key);

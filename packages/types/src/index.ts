@@ -1,4 +1,4 @@
 export * from './analysis.js';
-export * from './conversation.js';
+// conversation types removed (PRD v2.2 F.5 — no chat / conversations).
 export * from './calendar.js';
 export * from './user.js';

@@ -1,0 +1,35 @@
+name: Nightly Verification
+
+on:
+  schedule:
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+
+jobs:
+  health-audit:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22', cache: 'npm' }
+      - run: npm ci
+      - name: Run health audit
+        run: npx tsx apps/api/scripts/health-audit.ts
+        env:
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+      - name: Update STATUS.md
+        run: |
+          echo "# Stride Status" > STATUS.md
+          echo "" >> STATUS.md
+          echo "Last nightly run: $(date -u '+%Y-%m-%d %H:%M UTC')" >> STATUS.md
+          echo "" >> STATUS.md
+          echo "See CI artifacts for full report." >> STATUS.md
+      - name: Notify on failure
+        if: failure()
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          payload: '{"text":"🚨 Stride nightly verification FAILED. Check CI: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"}'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

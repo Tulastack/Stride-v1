@@ -6,10 +6,23 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+DrillKey = Literal[
+    "a_skips",
+    "wall_drills",
+    "standing_arm_swings",
+    "sled_pulls",
+    "b_skips",
+    "ankle_stiffness",
+    "hip_circles",
+    "power_skips",
+    "wicket_runs",
+    "torso_lean_march",
+]
 
 class Drill(BaseModel):
     """A corrective drill prescribed for a specific biomechanical issue."""
 
+    drill_key: DrillKey
     name: str = Field(..., min_length=1, max_length=100)
     volume: str = Field(..., min_length=1, max_length=50)
     cue: str = Field(..., min_length=1, max_length=200)

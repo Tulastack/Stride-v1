@@ -1,491 +1,252 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Animated, Pressable } from 'react-native';
-import { useRouter } from 'expo-router';
-import { useStrideStore } from '../../src/store/useStrideStore';
+import React, { useCallback, useRef, useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ActivityIndicator,
+  Alert,
+  SafeAreaView,
+  Switch,
+} from 'react-native';
+import { router } from 'expo-router';
+import { CameraView, useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
+import * as ImagePicker from 'expo-image-picker';
+import { Camera, Video } from 'lucide-react-native';
 import { strideApi } from '../../src/services/api';
-import { Play, TrendingUp, AlertTriangle, ArrowRight, Video } from 'lucide-react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
+import {
+  GyroRecorder,
+  buildCaptureManifest,
+  uploadCaptureVideo,
+  CAPTURE_PREFS,
+} from '../../src/services/capture';
+import { semantic, spacing, radius, borderWidth, typography } from '../../src/ui/theme';
 
-const AnimatedPressable = ({ onPress, style, children }: any) => {
-  const scaleValue = useRef(new Animated.Value(1)).current;
+export default function UploadScreen() {
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const [micPermission, requestMicPermission] = useMicrophonePermissions();
+  const [recording, setRecording] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [progressStep, setProgressStep] = useState<string | null>(null);
+  const [showCamera, setShowCamera] = useState(false);
+  const [sloMoPreferred, setSloMoPreferred] = useState(true);
+  const cameraRef = useRef<CameraView>(null);
+  const gyroRef = useRef(new GyroRecorder());
 
-  const handlePressIn = () => {
-    Animated.spring(scaleValue, {
-      toValue: 0.95,
-      useNativeDriver: true,
-      speed: 20,
-      bounciness: 10,
-    }).start();
-  };
+  const ensurePermissions = useCallback(async () => {
+    if (!cameraPermission?.granted) {
+      const cam = await requestCameraPermission();
+      if (!cam.granted) throw new Error('Camera permission is required to record.');
+    }
+    if (!micPermission?.granted) {
+      const mic = await requestMicPermission();
+      if (!mic.granted) throw new Error('Microphone permission is required to record video.');
+    }
+  }, [cameraPermission, micPermission, requestCameraPermission, requestMicPermission]);
 
-  const handlePressOut = () => {
-    Animated.spring(scaleValue, {
-      toValue: 1,
-      useNativeDriver: true,
-      speed: 20,
-      bounciness: 10,
-    }).start();
-  };
+  const processVideo = async (uri: string, gyroSamples: ReturnType<GyroRecorder['stop']>, durationMs: number) => {
+    setUploading(true);
+    setProgressStep('UPLOADING · GYRO ATTACHED');
 
-  return (
-    <Pressable onPressIn={handlePressIn} onPressOut={handlePressOut} onPress={onPress}>
-      <Animated.View style={[style, { transform: [{ scale: scaleValue }] }]}>
-        {children}
-      </Animated.View>
-    </Pressable>
-  );
-};
-
-export default function DashboardScreen() {
-  const router = useRouter();
-  const user = useStrideStore((state) => state.user);
-  const [analyses, setAnalyses] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  // Entrance animations
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(20)).current;
-
-  useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 800,
-        useNativeDriver: true,
-      }),
-      Animated.spring(slideAnim, {
-        toValue: 0,
-        speed: 12,
-        bounciness: 8,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, []);
-
-  const fetchDashboardData = async () => {
-    setLoading(true);
     try {
-      const data = await strideApi.listAnalyses();
-      setAnalyses(data);
-    } catch (err) {
-      setAnalyses([
-        {
-          id: 'dummy-analysis-1',
-          created_at: new Date(Date.now() - 86400000 * 2).toISOString(),
-          status: 'completed',
-          overall_score: 88,
-          result_json: {
-            score_label: 'Outstanding acceleration phase. Slight knee drive limitation detected.',
-            primary_issues: [
-              {
-                rank: 1,
-                type: 'low_knee_drive',
-                severity: 'medium',
-                measured_value: '82.5°',
-                optimal_range: '90–95°',
-                plain_english: 'Your recovery thigh is dropping early, reducing vertical projection.',
-              }
-            ]
-          }
-        },
-        {
-          id: 'dummy-analysis-2',
-          created_at: new Date(Date.now() - 86400000 * 5).toISOString(),
-          status: 'completed',
-          overall_score: 84,
-          result_json: {
-            score_label: 'Strong drive phase. Serious overstriding on ground contact.',
-            primary_issues: [
-              {
-                rank: 1,
-                type: 'overstriding',
-                severity: 'high',
-                measured_value: '0.08 normalized units',
-                optimal_range: 'within 0.06 units',
-                plain_english: 'Your foot is landing too far ahead of your hips, causing breaking forces.',
-              }
-            ]
-          }
-        }
-      ]);
-    } finally {
-      setLoading(false);
+      const manifest = buildCaptureManifest({
+        videoUri: uri,
+        gyro: gyroSamples,
+        durationMs,
+        fps: sloMoPreferred ? CAPTURE_PREFS.preferredFps : 60,
+        preferredFps: CAPTURE_PREFS.preferredFps,
+        sloMoRequested: sloMoPreferred,
+      });
+
+      setProgressStep('RECONSTRUCTING 3D · QUEUED');
+      const { analysisId } = await uploadCaptureVideo(uri, manifest, strideApi);
+
+      setUploading(false);
+      setProgressStep(null);
+      router.push({ pathname: '/(tabs)/analysis', params: { analysisId } });
+    } catch (err: unknown) {
+      setUploading(false);
+      setProgressStep(null);
+      const message = err instanceof Error ? err.message : 'Error occurred.';
+      Alert.alert('Analysis Failed', message);
     }
   };
 
-  useEffect(() => {
-    fetchDashboardData();
-  }, []);
+  const handleSelectVideo = async () => {
+    try {
+      const pick = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['videos'],
+        quality: 1,
+      });
+      if (pick.canceled || !pick.assets[0]) return;
+      const asset = pick.assets[0];
+      await processVideo(asset.uri, [], asset.duration ?? 4000);
+    } catch (err: unknown) {
+      Alert.alert('Import failed', err instanceof Error ? err.message : 'Could not import video.');
+    }
+  };
 
-  const latestAnalysis = analyses[0];
+  const handleStartRecord = async () => {
+    try {
+      await ensurePermissions();
+      setShowCamera(true);
+    } catch (err: unknown) {
+      Alert.alert('Permissions', err instanceof Error ? err.message : 'Camera unavailable.');
+    }
+  };
+
+  const handleRecord = async () => {
+    if (!cameraRef.current || recording) return;
+    setRecording(true);
+    await gyroRef.current.start();
+    try {
+      const video = await cameraRef.current.recordAsync({ maxDuration: 12 });
+      const gyro = gyroRef.current.stop();
+      setRecording(false);
+      setShowCamera(false);
+      if (video?.uri) await processVideo(video.uri, gyro, 12000);
+    } catch (err: unknown) {
+      gyroRef.current.stop();
+      setRecording(false);
+      setShowCamera(false);
+      Alert.alert('Recording failed', err instanceof Error ? err.message : 'Could not record.');
+    }
+  };
+
+  const handleStopRecord = () => {
+    cameraRef.current?.stopRecording();
+  };
+
+  if (showCamera) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <CameraView ref={cameraRef} style={styles.camera} mode="video" facing="back" videoQuality="1080p">
+          <View style={styles.cameraOverlay}>
+            <Text style={styles.cameraHint}>
+              Handheld is fine — any angle. {sloMoPreferred ? CAPTURE_PREFS.sloMoLabel : '60fps mode'}.
+            </Text>
+            <TouchableOpacity
+              style={[styles.recordBtn, recording && styles.recordBtnActive]}
+              onPress={recording ? handleStopRecord : handleRecord}
+              accessibilityLabel="capture-record"
+            >
+              <View style={[styles.recordInner, recording && styles.recordInnerActive]} />
+            </TouchableOpacity>
+          </View>
+        </CameraView>
+      </SafeAreaView>
+    );
+  }
 
   return (
-    <View style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
-        <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
-          {/* Header Section */}
-          <View style={styles.header}>
-            <View>
-              <Text style={styles.welcomeText}>Welcome back,</Text>
-              <Text style={styles.athleteName}>{user?.display_name || 'Athlete'}</Text>
-            </View>
-            <LinearGradient colors={['#FF453A', '#FF375F']} style={styles.badge} start={{x: 0, y: 0}} end={{x: 1, y: 1}}>
-              <Text style={styles.badgeText}>{user?.event_specialty || '100m'}</Text>
-            </LinearGradient>
+    <SafeAreaView style={styles.container}>
+      <View style={styles.content}>
+        <View style={styles.header}>
+          <Text style={styles.title}>Capture</Text>
+          <Text style={styles.subtitle}>Film your stride — any angle, handheld OK</Text>
+        </View>
+
+        <View style={styles.prefRow}>
+          <Text style={styles.prefLabel}>{CAPTURE_PREFS.sloMoLabel}</Text>
+          <Switch
+            value={sloMoPreferred}
+            onValueChange={setSloMoPreferred}
+            accessibilityLabel="slo-mo-preference"
+          />
+        </View>
+        <Text style={styles.prefHint}>Gyro + camera intrinsics are recorded automatically during capture.</Text>
+
+        {uploading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={semantic.action.primary} />
+            <Text style={styles.loadingText}>{progressStep}</Text>
           </View>
+        ) : (
+          <View style={styles.actionContainer}>
+            <TouchableOpacity style={styles.primaryButton} onPress={handleStartRecord} disabled={recording}>
+              <Camera color="#FFFFFF" size={28} />
+              <Text style={styles.buttonText}>Record sprint</Text>
+            </TouchableOpacity>
 
-          {/* Stats Grid */}
-          <View style={styles.statsGrid}>
-            {[
-              { label: 'PB Time', value: user?.personal_best_seconds ? `${user.personal_best_seconds}s` : 'N/A' },
-              { label: 'Level', value: user?.experience_level ? user.experience_level.toUpperCase() : 'N/A' },
-              { label: 'Analyses', value: analyses.length }
-            ].map((stat, i) => (
-              <View key={i} style={styles.statCard}>
-                <Text style={styles.statLabel}>{stat.label}</Text>
-                <Text style={styles.statValue}>{stat.value}</Text>
-              </View>
-            ))}
+            <TouchableOpacity style={styles.secondaryButton} onPress={handleSelectVideo}>
+              <Video color={semantic.text.primary} size={22} />
+              <Text style={styles.secondaryButtonText}>Import video</Text>
+            </TouchableOpacity>
           </View>
-
-          {/* Main Score Progress Card */}
-          {latestAnalysis ? (
-            <AnimatedPressable 
-              onPress={() => router.push({ pathname: '/(tabs)/analysis', params: { analysisId: latestAnalysis.id } })}
-            >
-              <LinearGradient colors={['#16192E', '#1A1D36']} style={styles.mainProgressCard}>
-                <View style={styles.progressRow}>
-                  <View>
-                    <Text style={styles.progressLabel}>LATEST TECHNIQUE SCORE</Text>
-                    <Text style={styles.progressScore}>{latestAnalysis.overall_score}/100</Text>
-                  </View>
-                  <View style={styles.scoreCircle}>
-                    <TrendingUp color="#FF453A" size={32} />
-                  </View>
-                </View>
-                <Text style={styles.feedbackLabel} numberOfLines={2}>
-                  "{latestAnalysis.result_json?.score_label}"
-                </Text>
-                <View style={styles.cardFooter}>
-                  <Text style={styles.footerLinkText}>View Biomechanics Breakdown</Text>
-                  <ArrowRight color="#FF453A" size={16} />
-                </View>
-              </LinearGradient>
-            </AnimatedPressable>
-          ) : (
-            <View style={styles.emptyCard}>
-              <Video color="#8E94A8" size={48} />
-              <Text style={styles.emptyCardTitle}>No Analyses Yet</Text>
-              <Text style={styles.emptyCardSubtitle}>Upload a sprint video to get your first biomechanical analysis report.</Text>
-              <TouchableOpacity style={styles.actionBtn} onPress={() => router.push('/(tabs)/record')}>
-                <Text style={styles.actionBtnText}>Analyze First Video</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-
-          {/* Recent Analysis list */}
-          {analyses.length > 0 && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Sprint History</Text>
-              {loading ? (
-                <ActivityIndicator size="small" color="#FF453A" style={{ marginTop: 16 }} />
-              ) : (
-                analyses.map((analysis, index) => {
-                  const date = new Date(analysis.created_at).toLocaleDateString('en-US', {
-                    month: 'short',
-                    day: 'numeric',
-                    year: 'numeric',
-                  });
-                  return (
-                    <AnimatedPressable
-                      key={analysis.id}
-                      onPress={() => router.push({ pathname: '/(tabs)/analysis', params: { analysisId: analysis.id } })}
-                    >
-                      <View style={styles.historyCard}>
-                        <View style={styles.historyLeft}>
-                          <View style={[styles.historyIndicator, { backgroundColor: analysis.status === 'completed' ? '#34C759' : '#FF453A', shadowColor: analysis.status === 'completed' ? '#34C759' : '#FF453A', shadowOpacity: 0.5, shadowRadius: 6, shadowOffset: { width: 0, height: 0 } }]} />
-                          <View>
-                            <Text style={styles.historyDate}>{date}</Text>
-                            <Text style={styles.historyStatus}>{analysis.status.toUpperCase()}</Text>
-                          </View>
-                        </View>
-                        <View style={styles.historyRight}>
-                          {analysis.overall_score && (
-                            <Text style={styles.historyScore}>{analysis.overall_score} pts</Text>
-                          )}
-                          <ArrowRight color="#8E94A8" size={18} />
-                        </View>
-                      </View>
-                    </AnimatedPressable>
-                  );
-                })
-              )}
-            </View>
-          )}
-        </Animated.View>
-      </ScrollView>
-
-      {/* Floating Action Button */}
-      {analyses.length > 0 && (
-        <AnimatedPressable 
-          style={styles.fabContainer} 
-          onPress={() => router.push('/(tabs)/record')}
-        >
-          <BlurView intensity={40} tint="light" style={styles.fabBlur}>
-            <LinearGradient colors={['#FF453A', '#FF375F']} style={styles.fab}>
-              <Play color="#FFFFFF" size={24} fill="#FFFFFF" />
-            </LinearGradient>
-          </BlurView>
-        </AnimatedPressable>
-      )}
-    </View>
+        )}
+      </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#050508', // Darker background for contrast
-  },
-  scrollContainer: {
-    padding: 24,
-    paddingBottom: 100,
-  },
-  header: {
+  container: { flex: 1, backgroundColor: semantic.surface.base },
+  content: { flex: 1, justifyContent: 'center', padding: spacing.xl, gap: spacing.lg },
+  header: { marginBottom: spacing.xl },
+  title: { ...(typography.display as object), color: semantic.text.primary },
+  subtitle: { ...(typography.body as object), color: semantic.text.muted, marginTop: spacing.sm },
+  prefRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 40,
-    marginBottom: 24,
+    justifyContent: 'space-between',
+    paddingVertical: spacing.sm,
+    borderBottomWidth: borderWidth.hairline,
+    borderBottomColor: semantic.border,
   },
-  welcomeText: {
-    color: '#8E94A8',
-    fontSize: 14,
-    fontWeight: '500',
-    letterSpacing: 0.5,
-  },
-  athleteName: {
-    color: '#FFFFFF',
-    fontSize: 32,
-    fontWeight: '800',
-    letterSpacing: -0.5,
-  },
-  badge: {
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    shadowColor: '#FF453A',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-  },
-  badgeText: {
-    color: '#FFFFFF',
-    fontWeight: 'bold',
-    fontSize: 14,
-  },
-  statsGrid: {
+  prefLabel: { ...(typography.bodyStrong as object), color: semantic.text.primary, flex: 1, paddingRight: spacing.md },
+  prefHint: { ...(typography.caption as object), color: semantic.text.muted },
+  actionContainer: { gap: spacing.lg },
+  primaryButton: {
+    backgroundColor: semantic.action.primary,
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 12,
-    marginBottom: 28,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: 'rgba(22, 25, 46, 0.7)',
-    borderColor: '#262940',
-    borderWidth: 1,
-    borderRadius: 20,
-    padding: 16,
-    alignItems: 'center',
-  },
-  statLabel: {
-    color: '#8E94A8',
-    fontSize: 11,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    marginBottom: 6,
-    letterSpacing: 1,
-  },
-  statValue: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: '900',
-  },
-  mainProgressCard: {
-    borderColor: '#262940',
-    borderWidth: 1,
-    borderRadius: 28,
-    padding: 24,
-    marginBottom: 32,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.4,
-    shadowRadius: 20,
-    elevation: 8,
-  },
-  progressRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  progressLabel: {
-    color: '#FF453A',
-    fontSize: 12,
-    fontWeight: '800',
-    letterSpacing: 2,
-    marginBottom: 4,
-  },
-  progressScore: {
-    color: '#FFFFFF',
-    fontSize: 48,
-    fontWeight: '900',
-    letterSpacing: -1,
-  },
-  scoreCircle: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
-    backgroundColor: 'rgba(255, 69, 58, 0.15)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderColor: 'rgba(255, 69, 58, 0.3)',
-    borderWidth: 1.5,
-  },
-  feedbackLabel: {
-    color: '#E4E6EB',
-    fontSize: 15,
-    lineHeight: 24,
-    fontStyle: 'italic',
-    marginBottom: 24,
-  },
-  cardFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.1)',
-    paddingTop: 16,
-  },
-  footerLinkText: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-    fontSize: 14,
-    letterSpacing: 0.5,
-  },
-  emptyCard: {
-    backgroundColor: 'rgba(22, 25, 46, 0.7)',
-    borderColor: '#262940',
-    borderWidth: 1,
-    borderRadius: 28,
-    padding: 40,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 32,
+    padding: spacing.xl,
+    borderRadius: radius.sm,
+    gap: spacing.md,
   },
-  emptyCardTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
+  buttonText: { ...(typography.bodyStrong as object), color: '#FFFFFF', letterSpacing: 0.5 },
+  secondaryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.lg,
+    borderWidth: borderWidth.hairline,
+    borderColor: semantic.border,
+    borderRadius: radius.sm,
+    gap: spacing.sm,
+  },
+  secondaryButtonText: { ...(typography.bodyStrong as object), color: semantic.text.primary },
+  loadingContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.xxxl,
+    borderWidth: borderWidth.hairline,
+    borderColor: semantic.border,
+    borderRadius: radius.sm,
+  },
+  loadingText: { ...(typography.caption as object), color: semantic.text.muted, letterSpacing: 1, marginTop: spacing.lg },
+  camera: { flex: 1 },
+  cameraOverlay: { flex: 1, justifyContent: 'flex-end', alignItems: 'center', paddingBottom: spacing.xxxl, gap: spacing.lg },
+  cameraHint: {
+    ...(typography.caption as object),
     color: '#FFFFFF',
-    marginTop: 20,
-    marginBottom: 8,
-  },
-  emptyCardSubtitle: {
-    fontSize: 15,
-    color: '#8E94A8',
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    padding: spacing.sm,
+    borderRadius: radius.sm,
     textAlign: 'center',
-    lineHeight: 22,
-    marginBottom: 28,
+    marginHorizontal: spacing.lg,
   },
-  actionBtn: {
-    backgroundColor: '#FF453A',
-    borderRadius: 16,
-    paddingHorizontal: 28,
-    paddingVertical: 16,
-    shadowColor: '#FF453A',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-  },
-  actionBtnText: {
-    color: '#FFFFFF',
-    fontWeight: 'bold',
-    fontSize: 16,
-  },
-  section: {
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-    marginBottom: 20,
-    letterSpacing: -0.5,
-  },
-  historyCard: {
-    backgroundColor: 'rgba(22, 25, 46, 0.7)',
-    borderColor: '#262940',
-    borderWidth: 1,
-    borderRadius: 20,
-    padding: 20,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  recordBtn: {
+    width: 64,
+    height: 64,
+    borderRadius: radius.sm,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
     alignItems: 'center',
-    marginBottom: 16,
-  },
-  historyLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-  },
-  historyIndicator: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-  },
-  historyDate: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  historyStatus: {
-    color: '#8E94A8',
-    fontSize: 12,
-    fontWeight: 'bold',
-    marginTop: 4,
-    letterSpacing: 0.5,
-  },
-  historyRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-  },
-  historyScore: {
-    color: '#FFFFFF',
-    fontWeight: '800',
-    fontSize: 16,
-  },
-  fabContainer: {
-    position: 'absolute',
-    bottom: 24,
-    right: 24,
-    borderRadius: 34,
-    overflow: 'hidden',
-  },
-  fabBlur: {
-    borderRadius: 34,
-  },
-  fab: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
     justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#FF453A',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.4,
-    shadowRadius: 16,
   },
+  recordBtnActive: { borderColor: semantic.status.flaw },
+  recordInner: { width: 44, height: 44, borderRadius: radius.sm, backgroundColor: semantic.status.flaw },
+  recordInnerActive: { width: 20, height: 20, borderRadius: radius.sm },
 });

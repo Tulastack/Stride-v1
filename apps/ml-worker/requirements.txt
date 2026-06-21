@@ -7,6 +7,10 @@ boto3>=1.35.0
 psycopg2-binary>=2.9.9
 pydantic>=2.10.0
 numpy>=1.26.0
+scipy>=1.11.0
 requests>=2.32.0
 sentry-sdk>=2.20.0
 python-dotenv>=1.0.0
+# WHAM GPU path (optional — set STRIDE_WHAM_REPO to cloned WHAM checkout):
+# torch>=2.1.0
+# smplx>=0.1.28

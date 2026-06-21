@@ -59,31 +59,21 @@ export const strideApi = {
     });
   },
 
-  finalizeUpload: async (analysisId: string, uploadId: string, parts: { partNumber: number; etag: string }[]) => {
+  finalizeUpload: async (
+    analysisId: string,
+    uploadId: string,
+    parts: { partNumber: number; etag: string }[],
+    captureManifest?: Record<string, unknown>
+  ) => {
     return request<any>('/videos/finalize', {
       method: 'POST',
-      body: JSON.stringify({ analysisId, uploadId, parts }),
+      body: JSON.stringify({ analysisId, uploadId, parts, captureManifest }),
     });
   },
 
-  // --- Agent / Chat ---
-  createConversation: async (analysisId?: string) => {
-    return request<any>('/agent/conversations', {
-      method: 'POST',
-      body: JSON.stringify({ analysisId }),
-    });
-  },
-
-  getConversation: async (conversationId: string) => {
-    return request<any>(`/agent/conversations/${conversationId}`);
-  },
-
-  sendMessage: async (conversationId: string, content: string) => {
-    return request<any>(`/agent/conversations/${conversationId}/messages`, {
-      method: 'POST',
-      body: JSON.stringify({ content }),
-    });
-  },
+  // --- Agent / Chat REMOVED (PRD v2.2 F.5) ---
+  // No createConversation/sendMessage. Coaching is structured-only: see the
+  // Coach Briefing screen and the metrics/history endpoints below.
 
   // --- Calendar ---
   listEvents: async (from: string, to: string) => {
@@ -121,5 +111,48 @@ export const strideApi = {
       method: 'PATCH',
       body: JSON.stringify({ is_injured }),
     });
+  },
+
+  // --- Coach Sessions ---
+  createCoachSession: async (sessionType: 'analysis_workflow' | 'free_coach', analysisId?: string) => {
+    return request<any>('/coach/sessions', {
+      method: 'POST',
+      body: JSON.stringify({ sessionType, analysisId }),
+    });
+  },
+
+  sealCoachSession: async (sessionId: string) => {
+    return request<any>(`/coach/sessions/${sessionId}/seal`, {
+      method: 'POST',
+    });
+  },
+
+  sendChipAction: async (sessionId: string, actionChip: string) => {
+    return request<any>(`/coach/sessions/${sessionId}/chip`, {
+      method: 'POST',
+      body: JSON.stringify({ actionChip }),
+    });
+  },
+
+  // --- Metrics ---
+  getMetrics: async (days: number = 30) => {
+    return request<Record<string, any[]>>(`/users/me/metrics?days=${days}`);
+  },
+
+  getMetricsTrend: async (metricKey: string, weeks: number = 4) => {
+    return request<any[]>(`/users/me/metrics/${metricKey}/trend?weeks=${weeks}`);
+  },
+
+  // --- Drill Suggestions ---
+  getSuggestions: async (analysisId: string) => {
+    return request<any[]>(`/analyses/${analysisId}/suggestions`);
+  },
+
+  approveSuggestion: async (id: string) => {
+    return request<any>(`/suggestions/${id}/approve`, { method: 'POST' });
+  },
+
+  skipSuggestion: async (id: string) => {
+    return request<any>(`/suggestions/${id}/skip`, { method: 'POST' });
   },
 };

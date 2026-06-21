@@ -1,5 +1,5 @@
 import pg from 'pg';
-import type { User, Analysis, Conversation, ConversationMessage, CalendarEvent } from '../types.js';
+import type { User, Analysis, CalendarEvent, CoachSession, DrillSuggestion, ReferenceDrill, MetricsTimelineRow } from '../types.js';
 
 const { Pool } = pg;
 
@@ -178,68 +178,9 @@ export async function getAnalysesByUser(userId: string): Promise<Analysis[]> {
 }
 
 // ─── Conversations ────────────────────────────────────────────────
-
-export async function createConversation(
-  userId: string,
-  analysisId: string | null,
-): Promise<Conversation> {
-  const { rows } = await pool.query<Conversation>(
-    `INSERT INTO conversations (user_id, analysis_id, messages)
-     VALUES ($1, $2, '[]'::jsonb)
-     RETURNING *`,
-    [userId, analysisId],
-  );
-  return rows[0]!;
-}
-
-export async function getConversation(
-  conversationId: string,
-  userId: string,
-): Promise<Conversation | null> {
-  const { rows } = await pool.query<Conversation>(
-    'SELECT * FROM conversations WHERE id = $1 AND user_id = $2',
-    [conversationId, userId],
-  );
-  return rows[0] ?? null;
-}
-
-export async function getConversationsByUser(userId: string): Promise<Conversation[]> {
-  const { rows } = await pool.query<Conversation>(
-    'SELECT id, user_id, analysis_id, summary, created_at, updated_at FROM conversations WHERE user_id = $1 ORDER BY updated_at DESC',
-    [userId],
-  );
-  return rows;
-}
-
-export async function addMessage(
-  conversationId: string,
-  message: ConversationMessage,
-): Promise<void> {
-  await pool.query(
-    `UPDATE conversations
-     SET messages = messages || $1::jsonb,
-         updated_at = now()
-     WHERE id = $2`,
-    [JSON.stringify([message]), conversationId],
-  );
-}
-
-export async function updateSummary(conversationId: string, summary: string): Promise<void> {
-  await pool.query(
-    `UPDATE conversations SET summary = $1, updated_at = now() WHERE id = $2`,
-    [summary, conversationId],
-  );
-}
-
-export async function getConversationMessages(
-  conversationId: string,
-): Promise<ConversationMessage[]> {
-  const { rows } = await pool.query<{ messages: ConversationMessage[] }>(
-    'SELECT messages FROM conversations WHERE id = $1',
-    [conversationId],
-  );
-  return rows[0]?.messages ?? [];
-}
+// REMOVED (PRD v2.2 F.5 vision retention): the conversations table and all
+// free-text chat persistence are gone. Coaching is structured-only (briefings,
+// typed slots), never an open message stream.
 
 // ─── Calendar Events ──────────────────────────────────────────────
 
@@ -334,6 +275,446 @@ export async function updateCalendarEvent(
     values,
   );
   return rows[0] ?? null;
+}
+
+// ─── Coach Sessions ───────────────────────────────────────────────
+
+export async function createCoachSession(
+  userId: string,
+  sessionType: 'analysis_workflow' | 'free_coach',
+  analysisId?: string | null,
+): Promise<CoachSession> {
+  const { rows } = await pool.query<CoachSession>(
+    `INSERT INTO coach_sessions (user_id, session_type, analysis_id)
+     VALUES ($1, $2, $3)
+     RETURNING *`,
+    [userId, sessionType, analysisId ?? null],
+  );
+  return rows[0]!;
+}
+
+export async function getCoachSession(sessionId: string, userId: string): Promise<CoachSession | null> {
+  const { rows } = await pool.query<CoachSession>(
+    'SELECT * FROM coach_sessions WHERE id = $1 AND user_id = $2',
+    [sessionId, userId],
+  );
+  return rows[0] ?? null;
+}
+
+export async function getCoachSessionsByUser(userId: string): Promise<CoachSession[]> {
+  const { rows } = await pool.query<CoachSession>(
+    'SELECT * FROM coach_sessions WHERE user_id = $1 ORDER BY last_activity_at DESC',
+    [userId],
+  );
+  return rows;
+}
+
+export async function touchCoachSession(sessionId: string): Promise<void> {
+  await pool.query(
+    'UPDATE coach_sessions SET last_activity_at = now() WHERE id = $1',
+    [sessionId],
+  );
+}
+
+export async function sealCoachSession(sessionId: string): Promise<void> {
+  await pool.query(
+    `UPDATE coach_sessions SET status = 'closed' WHERE id = $1`,
+    [sessionId],
+  );
+}
+
+export async function sealInactiveSessions(): Promise<number> {
+  const { rowCount } = await pool.query(
+    `UPDATE coach_sessions
+     SET status = 'closed'
+     WHERE status = 'open'
+       AND last_activity_at < now() - INTERVAL '24 hours'`,
+  );
+  return rowCount ?? 0;
+}
+
+// ─── Drill Suggestions ────────────────────────────────────────────
+
+export async function createDrillSuggestions(
+  suggestions: {
+    analysis_id: string;
+    user_id: string;
+    drill_key: string;
+    drill_name: string;
+    suggested_date: string;
+  }[],
+): Promise<DrillSuggestion[]> {
+  if (suggestions.length === 0) return [];
+
+  const valueClauses: string[] = [];
+  const values: unknown[] = [];
+  let paramIndex = 1;
+
+  for (const s of suggestions) {
+    valueClauses.push(
+      `($${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++})`,
+    );
+    values.push(s.analysis_id, s.user_id, s.drill_key, s.drill_name, s.suggested_date);
+  }
+
+  const { rows } = await pool.query<DrillSuggestion>(
+    `INSERT INTO drill_suggestions (analysis_id, user_id, drill_key, drill_name, suggested_date)
+     VALUES ${valueClauses.join(', ')}
+     ON CONFLICT (analysis_id, drill_key) DO NOTHING
+     RETURNING *`,
+    values,
+  );
+  return rows;
+}
+
+export async function getDrillSuggestion(id: string, userId: string): Promise<DrillSuggestion | null> {
+  const { rows } = await pool.query<DrillSuggestion>(
+    'SELECT * FROM drill_suggestions WHERE id = $1 AND user_id = $2',
+    [id, userId],
+  );
+  return rows[0] ?? null;
+}
+
+export async function getSuggestionsByAnalysis(analysisId: string, userId: string): Promise<DrillSuggestion[]> {
+  const { rows } = await pool.query<DrillSuggestion>(
+    'SELECT * FROM drill_suggestions WHERE analysis_id = $1 AND user_id = $2 ORDER BY created_at ASC',
+    [analysisId, userId],
+  );
+  return rows;
+}
+
+export async function approveSuggestion(
+  id: string,
+  userId: string,
+): Promise<{ suggestion: DrillSuggestion; calendarEvent: CalendarEvent } | null> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const { rows: suggRows } = await client.query<DrillSuggestion>(
+      'SELECT * FROM drill_suggestions WHERE id = $1 AND user_id = $2',
+      [id, userId],
+    );
+    const suggestion = suggRows[0];
+    if (!suggestion) {
+      await client.query('ROLLBACK');
+      return null;
+    }
+
+    // Idempotent: if already approved, return existing calendar_event
+    if (suggestion.status === 'approved') {
+      const { rows: evtRows } = await client.query<CalendarEvent>(
+        `SELECT ce.* FROM calendar_events ce
+         JOIN suggestion_audit sa ON sa.suggestion_id = $1
+         WHERE ce.user_id = $2 AND ce.scheduled_date = $3
+           AND ce.title = $4
+         LIMIT 1`,
+        [id, userId, suggestion.suggested_date, suggestion.drill_name],
+      );
+      await client.query('COMMIT');
+      const calendarEvent = evtRows[0];
+      if (calendarEvent) {
+        return { suggestion, calendarEvent };
+      }
+    }
+
+    // Update suggestion status
+    const { rows: updatedSuggRows } = await client.query<DrillSuggestion>(
+      `UPDATE drill_suggestions SET status = 'approved' WHERE id = $1 RETURNING *`,
+      [id],
+    );
+    const updatedSuggestion = updatedSuggRows[0]!;
+
+    // Write audit record
+    await client.query(
+      `INSERT INTO suggestion_audit (suggestion_id, user_id, action) VALUES ($1, $2, 'approved')`,
+      [id, userId],
+    );
+
+    // Create calendar event
+    const { rows: evtRows } = await client.query<CalendarEvent>(
+      `INSERT INTO calendar_events (user_id, title, event_type, scheduled_date, details)
+       VALUES ($1, $2, 'drill', $3, $4)
+       RETURNING *`,
+      [userId, updatedSuggestion.drill_name, updatedSuggestion.suggested_date, JSON.stringify({ drill_key: updatedSuggestion.drill_key })],
+    );
+    const calendarEvent = evtRows[0]!;
+
+    await client.query('COMMIT');
+    return { suggestion: updatedSuggestion, calendarEvent };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function skipSuggestion(id: string, userId: string): Promise<DrillSuggestion | null> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const { rows: suggRows } = await client.query<DrillSuggestion>(
+      'SELECT * FROM drill_suggestions WHERE id = $1 AND user_id = $2',
+      [id, userId],
+    );
+    const suggestion = suggRows[0];
+    if (!suggestion) {
+      await client.query('ROLLBACK');
+      return null;
+    }
+
+    const { rows: updatedRows } = await client.query<DrillSuggestion>(
+      `UPDATE drill_suggestions SET status = 'skipped' WHERE id = $1 RETURNING *`,
+      [id],
+    );
+
+    await client.query(
+      `INSERT INTO suggestion_audit (suggestion_id, user_id, action) VALUES ($1, $2, 'skipped')`,
+      [id, userId],
+    );
+
+    await client.query('COMMIT');
+    return updatedRows[0]!;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function sweepExpiredSuggestions(): Promise<number> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const { rows: expiredRows } = await client.query<DrillSuggestion>(
+      `SELECT id, user_id FROM drill_suggestions
+       WHERE status = 'pending'
+         AND created_at < now() - INTERVAL '7 days'`,
+    );
+
+    if (expiredRows.length === 0) {
+      await client.query('COMMIT');
+      return 0;
+    }
+
+    const ids = expiredRows.map((r) => r.id);
+
+    await client.query(
+      `UPDATE drill_suggestions SET status = 'skipped' WHERE id = ANY($1::uuid[])`,
+      [ids],
+    );
+
+    const auditValues: unknown[] = [];
+    const auditClauses: string[] = [];
+    let paramIndex = 1;
+    for (const row of expiredRows) {
+      auditClauses.push(`($${paramIndex++}, $${paramIndex++}, 'skipped')`);
+      auditValues.push(row.id, row.user_id);
+    }
+
+    await client.query(
+      `INSERT INTO suggestion_audit (suggestion_id, user_id, action) VALUES ${auditClauses.join(', ')}`,
+      auditValues,
+    );
+
+    await client.query('COMMIT');
+    return expiredRows.length;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+// ─── Reference Drills ─────────────────────────────────────────────
+
+export async function getReferenceDrill(key: string): Promise<ReferenceDrill | null> {
+  const { rows } = await pool.query<ReferenceDrill>(
+    'SELECT * FROM reference_drills WHERE key = $1',
+    [key],
+  );
+  return rows[0] ?? null;
+}
+
+export async function getAllReferencedrills(): Promise<ReferenceDrill[]> {
+  const { rows } = await pool.query<ReferenceDrill>(
+    'SELECT * FROM reference_drills ORDER BY name ASC',
+  );
+  return rows;
+}
+
+export async function validateDrillKeys(
+  keys: string[],
+): Promise<{ valid: string[]; invalid: string[] }> {
+  if (keys.length === 0) return { valid: [], invalid: [] };
+  const { rows } = await pool.query<{ key: string }>(
+    'SELECT key FROM reference_drills WHERE key = ANY($1::text[])',
+    [keys],
+  );
+  const validSet = new Set(rows.map((r) => r.key));
+  const valid = keys.filter((k) => validSet.has(k));
+  const invalid = keys.filter((k) => !validSet.has(k));
+  return { valid, invalid };
+}
+
+// ─── Metrics Timeline ─────────────────────────────────────────────
+
+const TRACKED_METRIC_KEYS = new Set([
+  'knee_drive_angle',
+  'torso_lean',
+  'arm_angle',
+  'hip_extension',
+  'ground_contact_time',
+]);
+
+function parseMeasuredValue(raw: unknown): number | null {
+  if (typeof raw !== 'string' && typeof raw !== 'number') return null;
+  const parsed = parseFloat(String(raw));
+  if (isNaN(parsed)) return null;
+  return parsed;
+}
+
+function parseUnit(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const match = raw.match(/[a-zA-Z°%]+/);
+  return match ? match[0] : null;
+}
+
+function parseOptimalRange(raw: unknown): { min: number | null, max: number | null } {
+  if (typeof raw !== 'string') return { min: null, max: null };
+  const matches = raw.match(/([0-9.]+)[^0-9.]+([0-9.]+)/);
+  if (matches && matches.length >= 3) {
+    return { min: parseFloat(matches[1]!), max: parseFloat(matches[2]!) };
+  }
+  return { min: null, max: null };
+}
+
+export async function createMetricsFromAnalysis(
+  userId: string,
+  analysisId: string,
+  resultJson: Record<string, unknown>,
+): Promise<MetricsTimelineRow[]> {
+  const rowsToInsert: { metricKey: string; value: number; unit: string | null; optimal_min: number | null; optimal_max: number | null }[] = [];
+
+  // PRD v2.2 metrics[] from WHAM+OpenCap pipeline
+  const v2Metrics = resultJson.metrics;
+  const v2KeyMap: Record<string, string> = {
+    trunk_lean: 'torso_lean',
+    knee_drive: 'knee_drive_angle',
+    hip_extension: 'hip_extension',
+    contact_time_ms: 'ground_contact_time',
+    cadence_spm: 'cadence_spm',
+  };
+  if (Array.isArray(v2Metrics)) {
+    for (const m of v2Metrics) {
+      if (typeof m !== 'object' || m === null) continue;
+      const key = (m as Record<string, unknown>).key as string;
+      const mapped = v2KeyMap[key] ?? key;
+      if (!TRACKED_METRIC_KEYS.has(mapped)) continue;
+      const measured = (m as Record<string, unknown>).measured as Record<string, unknown> | undefined;
+      const value = typeof measured?.value === 'number' ? measured.value : null;
+      if (value === null) continue;
+      const unit = typeof (m as Record<string, unknown>).unit === 'string' ? ((m as Record<string, unknown>).unit as string) : null;
+      const nr = (m as Record<string, unknown>).normalRange as [number, number] | undefined;
+      rowsToInsert.push({
+        metricKey: mapped,
+        value,
+        unit,
+        optimal_min: nr?.[0] ?? null,
+        optimal_max: nr?.[1] ?? null,
+      });
+    }
+  }
+
+  const primaryIssues = resultJson.primary_issues;
+  const typeToMetricKey: Record<string, string> = {
+    'low_knee_drive': 'knee_drive_angle',
+    'excessive_forward_lean': 'torso_lean',
+    'insufficient_arm_drive': 'arm_angle',
+    'low_hip_extension': 'hip_extension',
+    'overstriding': 'ground_contact_time',
+  };
+
+  if (Array.isArray(primaryIssues)) {
+    for (const issue of primaryIssues) {
+    if (typeof issue !== 'object' || issue === null) continue;
+    const issueType = (issue as Record<string, unknown>).type as string;
+    const rawMetricKey = (issue as Record<string, unknown>).metric_key as string;
+    const metricKey = rawMetricKey || typeToMetricKey[issueType];
+    const measuredValue = (issue as Record<string, unknown>).measured_value;
+    const optimalRange = (issue as Record<string, unknown>).optimal_range;
+
+    if (typeof metricKey !== 'string' || !TRACKED_METRIC_KEYS.has(metricKey)) continue;
+
+    const value = parseMeasuredValue(measuredValue);
+    if (value === null) continue;
+
+    const unit = parseUnit(measuredValue);
+    const { min: optimal_min, max: optimal_max } = parseOptimalRange(optimalRange);
+
+    rowsToInsert.push({ metricKey, value, unit, optimal_min, optimal_max });
+    }
+  }
+
+  if (rowsToInsert.length === 0) return [];
+
+  const valueClauses: string[] = [];
+  const values: unknown[] = [];
+  let paramIndex = 1;
+
+  for (const row of rowsToInsert) {
+    valueClauses.push(
+      `($${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++})`,
+    );
+    values.push(userId, analysisId, row.metricKey, row.value, row.unit, row.optimal_min, row.optimal_max);
+  }
+
+  const { rows } = await pool.query<MetricsTimelineRow>(
+    `INSERT INTO metrics_timeline (user_id, analysis_id, metric_key, value, unit, optimal_min, optimal_max)
+     VALUES ${valueClauses.join(', ')}
+     RETURNING *`,
+    values,
+  );
+  return rows;
+}
+
+export async function getMetricsTimeline(
+  userId: string,
+  days: number,
+): Promise<MetricsTimelineRow[]> {
+  const { rows } = await pool.query<MetricsTimelineRow>(
+    `SELECT * FROM metrics_timeline
+     WHERE user_id = $1
+       AND measured_at >= now() - ($2 || ' days')::INTERVAL
+     ORDER BY metric_key ASC, measured_at DESC`,
+    [userId, days],
+  );
+  return rows;
+}
+
+export async function getMetricsTrend(
+  userId: string,
+  metricKey: string,
+  weeks: number,
+): Promise<{ week: string; avg_value: number }[]> {
+  const { rows } = await pool.query<{ week: string; avg_value: number }>(
+    `SELECT
+       to_char(date_trunc('week', measured_at), 'YYYY-MM-DD') AS week,
+       AVG(value)::float AS avg_value
+     FROM metrics_timeline
+     WHERE user_id = $1
+       AND metric_key = $2
+       AND measured_at >= now() - ($3 || ' weeks')::INTERVAL
+     GROUP BY date_trunc('week', measured_at)
+     ORDER BY date_trunc('week', measured_at) ASC`,
+    [userId, metricKey, weeks],
+  );
+  return rows;
 }
 
 // ─── Sweep stuck analyses ─────────────────────────────────────────

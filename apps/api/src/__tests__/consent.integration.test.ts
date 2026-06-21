@@ -117,8 +117,6 @@ async function cleanupUser(userId: string) {
 async function buildConsentGatedApp(testUser: Record<string, any>) {
   const { requireConsent } = await import('../middleware/consent.js');
   const { createAnalysis } = await import('../db/queries.js');
-  const { enqueueAnalysis } = await import('../lib/sqs.js') as any;
-  const { initiateMultipartUpload, generatePresignedPartUrls } = await import('../lib/s3.js') as any;
 
   const app = express();
   app.use(express.json());
@@ -139,7 +137,7 @@ async function buildConsentGatedApp(testUser: Record<string, any>) {
       try {
         const s3Key = `uploads/${req.userId}/test.mp4`;
         const analysis = await createAnalysis(req.userId, s3Key);
-        await enqueueAnalysis(analysis.id, s3Key);
+        await mockEnqueueAnalysis(analysis.id, s3Key);
         res.status(202).json(analysis);
       } catch (err) {
         next(err);
@@ -197,7 +195,9 @@ async function buildConsentGatedApp(testUser: Record<string, any>) {
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
-describe('POST /analyses — consent gating', () => {
+const describeIfDb = process.env.DATABASE_URL ? describe : describe.skip;
+
+describeIfDb('POST /analyses — consent gating', () => {
   it('returns 403 CONSENT_REQUIRED when consent_given_at IS NULL, no row created, no SQS', async () => {
     const user = await createTestUser({ consent_version: 0 }); // no consent_given_at
     const app = await buildConsentGatedApp(user);
@@ -238,7 +238,7 @@ describe('POST /analyses — consent gating', () => {
   });
 });
 
-describe('POST /consent — minor user gating', () => {
+describeIfDb('POST /consent — minor user gating', () => {
   it('blocks minor (age 17) without parental_consent', async () => {
     const user = await createTestUser({ consent_version: 0 });
     const app = await buildConsentGatedApp(user);

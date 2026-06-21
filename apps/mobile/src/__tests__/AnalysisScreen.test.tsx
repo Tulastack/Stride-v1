@@ -1,105 +1,84 @@
+/**
+ * PROMPT F.3 / F.4 — confidence-aware Analysis Result screen.
+ */
 import React from 'react';
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
 
-const mockSetIsInjured = jest.fn();
+jest.mock('expo-router', () => ({
+  useLocalSearchParams: () => ({ analysisId: 'headon-1' }),
+  router: { push: jest.fn() },
+}));
 
 jest.mock('../store/useStrideStore', () => ({
-  useStrideStore: (selector: any) => {
-    const state = {
-      token: 'mock-token',
-      apiBaseUrl: 'http://localhost:3000',
-      setIsInjured: mockSetIsInjured,
-    };
-    return selector(state);
-  },
+  useStrideStore: (selector: any) => selector({ token: 't', apiBaseUrl: 'http://localhost' }),
 }));
 
-const mockAnalysis = {
-  id: 'analysis-1',
-  status: 'completed',
-  overall_score: 88,
-  result_json: {
-    overall_score: 88,
-    score_label: 'Outstanding acceleration phase.',
-    movenet_version: 'singlepose-thunder-v4',
-    primary_issues: [
-      {
-        rank: 1,
-        type: 'low_knee_drive',
-        severity: 'medium',
-        measured_value: '82.5°',
-        optimal_range: '90–95°',
-        plain_english: 'Your lead thigh is dropping early.',
-        timeline: '2-3 weeks',
-        drills: [
-          { name: 'A-Skips', volume: '3 sets of 20 meters', cue: 'Punch foot down directly under hip' },
-        ],
-      },
-    ],
-  },
-};
-
-jest.mock('../services/api', () => ({
-  strideApi: {
-    getAnalysis: jest.fn().mockResolvedValue(mockAnalysis),
-    listAnalyses: jest.fn().mockResolvedValue([{ id: 'analysis-1' }]),
-  },
-}));
+const mockGetAnalysis = jest.fn();
+jest.mock('../services/api', () => ({ strideApi: { getAnalysis: (...args: unknown[]) => mockGetAnalysis(...args) } }));
 
 import AnalysisScreen from '../../app/(tabs)/analysis';
+import { lowQualityHeadOnResult, highQualitySideResult } from '../fixtures/analysisResult';
 
-describe('AnalysisScreen', () => {
+describe('AnalysisScreen (F.3 confidence-aware)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    const { strideApi } = require('../services/api');
-    strideApi.getAnalysis.mockResolvedValue(mockAnalysis);
-    strideApi.listAnalyses.mockResolvedValue([{ id: 'analysis-1' }]);
-  });
-
-  it('renders without throwing', () => {
-    const { toJSON } = render(<AnalysisScreen />);
-    expect(toJSON()).toBeTruthy();
-  });
-
-  it('renders the Biomechanics Report title after data loads', async () => {
-    const { getByText } = render(<AnalysisScreen />);
-    await waitFor(() => {
-      expect(getByText('Biomechanics Report')).toBeTruthy();
+    mockGetAnalysis.mockResolvedValue({
+      id: 'headon-1',
+      status: 'completed',
+      result_json: lowQualityHeadOnResult,
     });
   });
 
-  it('renders the disclaimer with correct accessibility label', async () => {
+  it('renders the report from result_json on the API row', async () => {
+    const { getByText, getByLabelText } = render(<AnalysisScreen />);
+    await waitFor(() => expect(getByText('Biomechanics Report')).toBeTruthy());
+    expect(getByLabelText('analysis-summary')).toBeTruthy();
+    expect(getByLabelText('evidence-anchor')).toBeTruthy();
+  });
+
+  it('shows a capture nudge for the low-quality head-on result', async () => {
     const { getByLabelText } = render(<AnalysisScreen />);
-    await waitFor(() => {
-      const disclaimer = getByLabelText('analysis-disclaimer');
-      expect(disclaimer).toBeTruthy();
-    });
+    await waitFor(() => expect(getByLabelText('capture-nudge')).toBeTruthy());
   });
 
-  it('renders the injury toggle button', async () => {
+  it('demotes the low-confidence hip metric (labeled, not hidden)', async () => {
     const { getByLabelText } = render(<AnalysisScreen />);
-    await waitFor(() => {
-      const toggle = getByLabelText('injury-toggle');
-      expect(toggle).toBeTruthy();
-    });
+    await waitFor(() => expect(getByLabelText('metric-hip_extension-lowconf')).toBeTruthy());
   });
 
-  it('shows recovery-mode-notice when injury toggle is pressed', async () => {
+  it('"Show the numbers" drawer toggles the measured + normal bands', async () => {
+    const { getByTestId, queryByTestId } = render(<AnalysisScreen />);
+    await waitFor(() => expect(getByTestId('show-numbers-flaw-hip-ext')).toBeTruthy());
+    fireEvent.press(getByTestId('show-numbers-flaw-hip-ext'));
+    await waitFor(() => expect(getByTestId('numbers-flaw-hip-ext')).toBeTruthy());
+  });
+
+  it('high-quality result hides the nudge', async () => {
+    mockGetAnalysis.mockResolvedValue({
+      id: 'side-1',
+      status: 'completed',
+      result_json: highQualitySideResult,
+    });
     const { getByLabelText, queryByLabelText } = render(<AnalysisScreen />);
+    await waitFor(() => expect(getByLabelText('capture-good')).toBeTruthy());
+    expect(queryByLabelText('capture-nudge')).toBeNull();
+  });
 
-    // Wait for the analysis to load and injury toggle to appear
-    await waitFor(() => {
-      expect(getByLabelText('injury-toggle')).toBeTruthy();
-    });
+  it('shows failure state when result_json is invalid', async () => {
+    mockGetAnalysis.mockResolvedValue({ id: 'x', status: 'completed', result_json: null });
+    const { getByLabelText } = render(<AnalysisScreen />);
+    await waitFor(() => expect(getByLabelText('analysis-failed')).toBeTruthy());
+  });
 
-    // Initially no recovery notice
-    expect(queryByLabelText('recovery-mode-notice')).toBeNull();
+  it('shows failure state on network error', async () => {
+    mockGetAnalysis.mockRejectedValue(new Error('network'));
+    const { getByLabelText } = render(<AnalysisScreen />);
+    await waitFor(() => expect(getByLabelText('analysis-failed')).toBeTruthy());
+  });
 
-    // Press injury toggle
-    fireEvent.press(getByLabelText('injury-toggle'));
-
-    await waitFor(() => {
-      expect(getByLabelText('recovery-mode-notice')).toBeTruthy();
-    });
+  it('has NO chat affordance (vision retention)', async () => {
+    const { queryByText } = render(<AnalysisScreen />);
+    await waitFor(() => expect(queryByText('Biomechanics Report')).toBeTruthy());
+    expect(queryByText(/message|chat/i)).toBeNull();
   });
 });

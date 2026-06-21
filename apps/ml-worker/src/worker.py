@@ -1,8 +1,11 @@
 """Core ML SQS polling worker for Stride.
 
-Downloads sprint videos from S3, executes MoveNet keypoint estimation,
-calculates biomechanical metrics, calls Gemini for coaching insights,
-and updates status via database and internal HTTP callbacks.
+Pipeline (PRD v2.2-B):
+  Stage 0  — capture sidecar (gyro + intrinsics)
+  Stage 1  — MoveNet 2D keypoints
+  Stage 2  — WHAM monocular 3D lift (SMPL in gravity frame)
+  Stage 3  — OpenCap-Monocular skeleton refinement
+  Stage 4–7 — API assembles canonical metrics + flaws from 3D frames
 """
 
 from __future__ import annotations
@@ -18,10 +21,8 @@ import boto3
 import sentry_sdk
 from dotenv import load_dotenv
 
-# Load env variables
 load_dotenv()
 
-# Setup logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -29,7 +30,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger("stride-ml-worker")
 
-# Initialize Sentry if DSN is set
 sentry_dsn = os.environ.get("SENTRY_DSN")
 if sentry_dsn:
     sentry_sdk.init(
@@ -39,12 +39,19 @@ if sentry_dsn:
     )
     logger.info("Sentry initialized successfully.")
 
-# Import local modules
 from src.db import get_db_connection
 from src.movenet import process_video, CONFIDENCE_THRESHOLD, MOVENET_VERSION
 from src.biomechanics import analyze
 from src.llm import generate_sprint_report
-from src.notify import notify_analysis_completed, notify_analysis_failed
+from src.notify import (
+    notify_analysis_completed,
+    notify_analysis_failed,
+    notify_biomech_completed,
+    notify_progress,
+)
+from src.capture_loader import download_capture_sidecar
+from src.pipeline3d import run_pipeline_3d
+from src.frames3d_io import write_frames_sidecar
 
 # Initialize AWS clients
 aws_endpoint = os.environ.get("AWS_ENDPOINT")
@@ -57,16 +64,17 @@ sqs_client_args = {"region_name": aws_region}
 
 if aws_endpoint:
     s3_client_args["endpoint_url"] = aws_endpoint
-    # Required for LocalStack S3 simulation
     s3_client_args["config"] = boto3.session.Config(signature_version="s3v4", s3={"addressing_style": "path"})
     sqs_client_args["endpoint_url"] = aws_endpoint
 
 s3_client = boto3.client("s3", **s3_client_args)
 sqs_client = boto3.client("sqs", **sqs_client_args)
 
+# WHAM+OpenCap is the default production path (set STRIDE_LEGACY_PIPELINE=1 for old LLM flow)
+USE_WHAM_OPENCAP = os.environ.get("STRIDE_LEGACY_PIPELINE", "0") != "1"
+
 
 def update_analysis_status_in_db(analysis_id: str, status: str, error_message: str | None = None) -> None:
-    """Helper to update database analysis status directly for state management."""
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cursor:
@@ -89,8 +97,80 @@ def update_analysis_status_in_db(analysis_id: str, status: str, error_message: s
         )
 
 
+def _upload_frames_sidecar(s3_key: str, pipeline_result: dict) -> None:
+    sidecar_key = s3_key.rsplit(".", 1)[0] + ".frames3d.json"
+    body = json.dumps(pipeline_result)
+    s3_client.put_object(
+        Bucket=s3_bucket,
+        Key=sidecar_key,
+        Body=body,
+        ContentType="application/json",
+    )
+    logger.info("Uploaded frames3d sidecar to s3://%s/%s", s3_bucket, sidecar_key)
+
+
+def _process_wham_opencap(analysis_id: str, s3_key: str, local_video: str) -> None:
+    capture = download_capture_sidecar(s3_client, s3_bucket, s3_key, local_video)
+
+    notify_progress(analysis_id, "pose_extraction", 25, "MoveNet Stage 1")
+    raw_frames = process_video(local_video, target_fps=30)
+    included = [f for f in raw_frames if not f["excluded"]]
+    total = len(raw_frames)
+    excluded_pct = (len(raw_frames) - len(included)) / total if total else 1.0
+    if excluded_pct > 0.40:
+        raise ValueError("low_confidence_video")
+
+    notify_progress(analysis_id, "wham_reconstruction", 45, "WHAM Stage 2 — monocular 3D lift")
+    pipeline_result = run_pipeline_3d(local_video, included, capture)
+    pipeline_result["motionBlur"] = capture.get("motionBlur", "med")
+    pipeline_result["framing"] = capture.get("framing", "full")
+
+    notify_progress(analysis_id, "skeleton_fit", 65, f"OpenCap Stage 3 — {pipeline_result.get('stage3Backend')}")
+    sidecar_local = local_video + ".frames3d.json"
+    write_frames_sidecar(sidecar_local, pipeline_result)
+    _upload_frames_sidecar(s3_key, pipeline_result)
+
+    notify_progress(analysis_id, "biomechanics_calculation", 85, "Canonical metrics Stages 4–7")
+    ok = notify_biomech_completed(analysis_id, pipeline_result)
+    if not ok:
+        raise ValueError("Biomech API callback failed")
+
+    notify_progress(analysis_id, "finalizing", 98, "Complete")
+
+
+def _process_legacy_llm(analysis_id: str, local_video: str) -> None:
+    notify_progress(analysis_id, "pose_extraction", 30)
+    raw_frames = process_video(local_video, target_fps=10)
+    included = [f for f in raw_frames if not f["excluded"]]
+    if len(raw_frames) and (len(raw_frames) - len(included)) / len(raw_frames) > 0.40:
+        raise ValueError("low_confidence_video")
+
+    notify_progress(analysis_id, "biomechanics_calculation", 60)
+    analysis_data = analyze(included, target_fps=10)
+
+    notify_progress(analysis_id, "llm_structuring", 80)
+    report = generate_sprint_report(
+        analysis_summary=analysis_data["summary"],
+        detected_issues=analysis_data["issues"],
+    )
+    full_result = report.model_dump()
+    full_result["metrics"] = analysis_data["metrics"]
+    full_result["phases"] = analysis_data["phases"]
+    full_result["ground_contacts"] = analysis_data["ground_contacts"]
+    full_result["summary"] = analysis_data["summary"]
+
+    notify_progress(analysis_id, "finalizing", 95)
+    success = notify_analysis_completed(analysis_id, report.overall_score, full_result)
+    if not success:
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE analyses SET status = %s, overall_score = %s, result_json = %s, movenet_version = %s, completed_at = now() WHERE id = %s",
+                    ("completed", report.overall_score, json.dumps(full_result), MOVENET_VERSION, analysis_id),
+                )
+
+
 def process_sqs_message(message: dict) -> None:
-    """Download video, extract pose, run biomechanics, query LLM, and update states."""
     message_body = json.loads(message["Body"])
     analysis_id = message_body.get("analysisId")
     s3_key = message_body.get("s3Key")
@@ -100,124 +180,49 @@ def process_sqs_message(message: dict) -> None:
         return
 
     logger.info("Starting processing for analysis ID: %s (Key: %s)", analysis_id, s3_key)
-
-    # 1. Update DB to 'processing'
     update_analysis_status_in_db(analysis_id, "processing")
 
     local_temp_file = None
-
     try:
-        # Create a workspace-safe temp dir if running locally, or use default temp file
-        # We will use tempfile which works flawlessly in both local and docker environments
         suffix = os.path.splitext(s3_key)[1] or ".mp4"
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_video:
             local_temp_file = temp_video.name
 
-        # 2. Download from S3
-        logger.info("Downloading video from S3: %s/%s -> %s", s3_bucket, s3_key, local_temp_file)
+        notify_progress(analysis_id, "downloading", 10)
         s3_client.download_file(s3_bucket, s3_key, local_temp_file)
 
-        # 3. Pose estimation
-        logger.info("Running MoveNet Thunder inference...")
-        raw_frames = process_video(local_temp_file, target_fps=10)
-
-        # 4. Critical check: confidence threshold
-        total_frames = len(raw_frames)
-        excluded_frames = [f for f in raw_frames if f["excluded"]]
-        excluded_count = len(excluded_frames)
-        excluded_percentage = (excluded_count / total_frames) if total_frames > 0 else 1.0
-
-        logger.info(
-            "Confidence check: %d/%d frames excluded (%.1f%%)",
-            excluded_count,
-            total_frames,
-            excluded_percentage * 100,
-        )
-
-        if excluded_percentage > 0.40:
-            error_msg = "low_confidence_video"
-            logger.warning(
-                "Aborting analysis %s: %.1f%% of frames were excluded (threshold is 40%%).",
-                analysis_id,
-                excluded_percentage * 100,
-            )
-            update_analysis_status_in_db(analysis_id, "failed", error_message=error_msg)
-            notify_analysis_failed(analysis_id, error_msg)
-            return
-
-        # 5. Run Biomechanics Engine
-        logger.info("Executing biomechanics engine...")
-        # Only pass non-excluded frames to the biomechanical analyzer
-        included_frames = [f for f in raw_frames if not f["excluded"]]
-        analysis_data = analyze(included_frames, target_fps=10)
-
-        # 6. LLM synthesis (Gemini 1.5 Pro)
-        logger.info("Synthesizing coaching report via LLM...")
-        report = generate_sprint_report(
-            analysis_summary=analysis_data["summary"],
-            detected_issues=analysis_data["issues"],
-        )
-
-        # Add metric time series back to the final result JSON for interactive charts in mobile app
-        full_result = report.model_dump()
-        full_result["metrics"] = analysis_data["metrics"]
-        full_result["phases"] = analysis_data["phases"]
-        full_result["ground_contacts"] = analysis_data["ground_contacts"]
-        full_result["summary"] = analysis_data["summary"]
-
-        # 7. Finalize and trigger callback
-        logger.info("Analysis complete! Triggering API callback...")
-        success = notify_analysis_completed(
-            analysis_id=analysis_id,
-            overall_score=report.overall_score,
-            result_json=full_result,
-        )
-
-        if not success:
-            # If the callback failed (e.g. API server is down), we fallback to updating the DB directly
-            # so the analysis isn't completely lost.
-            logger.warning("Notification callback failed. Falling back to direct database writes.")
-            try:
-                with get_db_connection() as conn:
-                    with conn.cursor() as cursor:
-                        cursor.execute(
-                            "UPDATE analyses SET status = %s, overall_score = %s, result_json = %s, movenet_version = %s, completed_at = now() WHERE id = %s",
-                            ("completed", report.overall_score, json.dumps(full_result), MOVENET_VERSION, analysis_id),
-                        )
-                logger.info("Direct database update fallback succeeded.")
-            except Exception as db_err:
-                logger.error("Direct database update fallback failed: %s", db_err)
-                raise ValueError("Both HTTP callback and DB fallback failed.")
+        if USE_WHAM_OPENCAP:
+            logger.info("Running WHAM + OpenCap pipeline (Stages 2–3)")
+            _process_wham_opencap(analysis_id, s3_key, local_temp_file)
+        else:
+            logger.info("Running legacy 2D + LLM pipeline")
+            _process_legacy_llm(analysis_id, local_temp_file)
 
     except Exception as err:
         logger.error("Error processing analysis %s: %s", analysis_id, err)
         traceback.print_exc()
         sentry_sdk.capture_exception(err)
-        
-        # Mark as failed in DB and call callback
-        error_str = str(err)
-        update_analysis_status_in_db(analysis_id, "failed", error_message=error_str)
-        notify_analysis_failed(analysis_id, error_str)
-    
+        update_analysis_status_in_db(analysis_id, "failed", error_message=str(err))
+        notify_analysis_failed(analysis_id, str(err))
+
     finally:
-        # Clean up temp video file
         if local_temp_file and os.path.exists(local_temp_file):
             try:
                 os.remove(local_temp_file)
-                logger.info("Removed temporary video file: %s", local_temp_file)
             except Exception as e:
                 logger.error("Failed to delete temp file %s: %s", local_temp_file, e)
 
 
 def start_worker() -> None:
-    """SQS Polling Loop."""
     if not queue_url:
         logger.error("SQS_QUEUE_URL environment variable is not configured. Exiting.")
         sys.exit(1)
 
-    logger.info("Starting Stride ML Worker polling loop on: %s", queue_url)
-    
-    # Simple heartbeat indicator
+    logger.info(
+        "Starting Stride ML Worker (WHAM+OpenCap=%s) on: %s",
+        USE_WHAM_OPENCAP,
+        queue_url,
+    )
     last_heartbeat = time.time()
 
     while True:
@@ -226,7 +231,6 @@ def start_worker() -> None:
                 logger.info("[Heartbeat] Polling SQS for jobs...")
                 last_heartbeat = time.time()
 
-            # Poll for messages with 20s long-polling
             response = sqs_client.receive_message(
                 QueueUrl=queue_url,
                 MaxNumberOfMessages=1,
@@ -234,24 +238,17 @@ def start_worker() -> None:
                 AttributeNames=["All"],
             )
 
-            messages = response.get("Messages", [])
-            for message in messages:
+            for message in response.get("Messages", []):
                 receipt_handle = message["ReceiptHandle"]
                 try:
                     process_sqs_message(message)
                 finally:
-                    # Always delete the message from the queue after processing
-                    # so we don't trigger the redrive DLQ policy or loop endlessly.
-                    sqs_client.delete_message(
-                        QueueUrl=queue_url,
-                        ReceiptHandle=receipt_handle,
-                    )
-                    logger.info("Successfully deleted message from SQS.")
+                    sqs_client.delete_message(QueueUrl=queue_url, ReceiptHandle=receipt_handle)
 
         except Exception as poll_err:
             logger.error("Error in polling loop: %s", poll_err)
             sentry_sdk.capture_exception(poll_err)
-            time.sleep(5)  # Backoff to prevent spamming logs in case of network issue
+            time.sleep(5)
 
 
 if __name__ == "__main__":
