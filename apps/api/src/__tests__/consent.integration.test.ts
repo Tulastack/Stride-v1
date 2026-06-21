@@ -12,8 +12,6 @@ import express from 'express';
 import type { Response, NextFunction } from 'express';
 import { Pool } from 'pg';
 
-const TEST_DB_URL = process.env.DATABASE_URL!;
-
 // ─── Mock external services ───────────────────────────────────────────────────
 
 const mockEnqueueAnalysis = jest.fn((_id: string, _key: string) => Promise.resolve());
@@ -47,33 +45,36 @@ jest.mock('@sentry/node', () => ({
   captureException: jest.fn(),
 }));
 
-// ─── DB setup ─────────────────────────────────────────────────────────────────
+// ─── DB setup (inside describe so skipped suites never open a connection) ─────
 
 let pool: Pool;
 
-beforeAll(async () => {
-  pool = new Pool({ connectionString: TEST_DB_URL });
-  // Idempotent: add consent columns if schema is old
-  await pool.query(`
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS date_of_birth DATE;
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS consent_given_at TIMESTAMPTZ;
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS consent_version INTEGER NOT NULL DEFAULT 0;
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS parental_consent BOOLEAN NOT NULL DEFAULT FALSE;
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS drill_intensity_cap VARCHAR(20);
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS is_injured BOOLEAN NOT NULL DEFAULT FALSE;
-  `);
-});
+const describeIfDb = process.env.DATABASE_URL ? describe : describe.skip;
 
-afterAll(async () => {
-  await pool.end();
-});
+describeIfDb('Consent & liability integration (Postgres)', () => {
+  beforeAll(async () => {
+    pool = new Pool({ connectionString: process.env.DATABASE_URL! });
+    // Idempotent: add consent columns if schema is old
+    await pool.query(`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS date_of_birth DATE;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS consent_given_at TIMESTAMPTZ;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS consent_version INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS parental_consent BOOLEAN NOT NULL DEFAULT FALSE;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS drill_intensity_cap VARCHAR(20);
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS is_injured BOOLEAN NOT NULL DEFAULT FALSE;
+    `);
+  });
 
-beforeEach(() => {
-  mockEnqueueAnalysis.mockClear();
-  mockInitiateMultipart.mockClear();
-  mockPresignParts.mockClear();
-  mockCompleteMultipart.mockClear();
-});
+  afterAll(async () => {
+    await pool.end();
+  });
+
+  beforeEach(() => {
+    mockEnqueueAnalysis.mockClear();
+    mockInitiateMultipart.mockClear();
+    mockPresignParts.mockClear();
+    mockCompleteMultipart.mockClear();
+  });
 
 // ─── DB helpers ───────────────────────────────────────────────────────────────
 
@@ -195,9 +196,7 @@ async function buildConsentGatedApp(testUser: Record<string, any>) {
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
-const describeIfDb = process.env.DATABASE_URL ? describe : describe.skip;
-
-describeIfDb('POST /analyses — consent gating', () => {
+  describe('POST /analyses — consent gating', () => {
   it('returns 403 CONSENT_REQUIRED when consent_given_at IS NULL, no row created, no SQS', async () => {
     const user = await createTestUser({ consent_version: 0 }); // no consent_given_at
     const app = await buildConsentGatedApp(user);
@@ -236,9 +235,9 @@ describeIfDb('POST /analyses — consent gating', () => {
 
     await cleanupUser(user.id);
   });
-});
+  });
 
-describeIfDb('POST /consent — minor user gating', () => {
+  describe('POST /consent — minor user gating', () => {
   it('blocks minor (age 17) without parental_consent', async () => {
     const user = await createTestUser({ consent_version: 0 });
     const app = await buildConsentGatedApp(user);
@@ -276,5 +275,6 @@ describeIfDb('POST /consent — minor user gating', () => {
     expect(res.body.consent_given_at).toBeTruthy();
 
     await cleanupUser(user.id);
+  });
   });
 });

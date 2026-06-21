@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
 import { ReducedBiomechanicsEngine, assembleAnalysisFromFrames } from '../analysis/engine/engine.js';
 import { validateAnalysisResult } from '../analysis/validate.js';
+import type { Flaw } from '@stride/types';
 import type { Frame3D } from '../analysis/engine/types.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -45,6 +46,6 @@ describe('Biomechanics pipeline E2E (golden fixtures)', () => {
       reconstructionMethod: clip.reconstructionMethod,
     });
     expect(() => validateAnalysisResult(result)).not.toThrow();
-    expect(result.flaws.every((f) => f.evidence.measured.confidence >= 0)).toBe(true);
+    expect(result.flaws.every((f: Flaw) => f.evidence.measured.confidence >= 0)).toBe(true);
   });
 });

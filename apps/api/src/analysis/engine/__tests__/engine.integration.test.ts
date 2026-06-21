@@ -3,6 +3,7 @@
  */
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { Metric } from '@stride/types';
 import { ReducedBiomechanicsEngine } from '../engine.js';
 import { sideAccelClip, headOnMaxVClip } from '../precomputed.js';
 import { validateAnalysisResult } from '../../validate.js';
@@ -20,7 +21,7 @@ describe('ReducedBiomechanicsEngine.run (precomputed clips — unit tests only)'
     expect(() => validateAnalysisResult(result)).not.toThrow();
     expect(result.phase).toBe('acceleration');
     expect(result.reconstructionMethod).toBe('3d-mono');
-    expect(result.metrics.every((m) => m.comparableAcrossViews === true)).toBe(true);
+    expect(result.metrics.every((m: Metric) => m.comparableAcrossViews === true)).toBe(true);
     expect(result.captureQuality.primaryNudge).toBeUndefined();
   });
 
@@ -36,7 +37,7 @@ describe('ReducedBiomechanicsEngine.analyze (golden fixture sidecars)', () => {
   it('loads .frames3d.json and produces a valid result', () => {
     const result = engine.analyze(FIXTURE_VIDEO);
     expect(() => validateAnalysisResult(result)).not.toThrow();
-    expect(result.metrics.some((m) => m.trustStatus)).toBe(true);
+    expect(result.metrics.some((m: Metric) => m.trustStatus)).toBe(true);
   });
 });
 

@@ -16,6 +16,9 @@ jobs:
           node-version: '22'
           cache: 'npm'
       - run: npm ci
+      - run: npm run build --workspace=@stride/types
+      - run: npm run build --workspace=@stride/design-tokens
+      - run: npm run build --workspace=@stride/content
       - run: npm run lint --if-present
       - run: npm run typecheck --if-present
 
@@ -26,19 +29,9 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: '22', cache: 'npm' }
       - run: npm ci
-      - run: npm test
+      - run: npm run build --workspace=@stride/types
+      - run: npm test -- --testPathIgnorePatterns=integration
         working-directory: apps/api
-        env:
-          DATABASE_URL: postgres://stride:stride_dev@localhost:5433/stride_test
-          SUPABASE_URL: http://localhost:54321
-          SUPABASE_JWT_SECRET: test-jwt-secret-at-least-32-characters-long
-          AWS_REGION: us-east-1
-          AWS_ACCESS_KEY_ID: test
-          AWS_SECRET_ACCESS_KEY: test
-          AWS_ENDPOINT: http://localhost:4567
-          S3_BUCKET: stride-videos-test
-          SQS_QUEUE_URL: http://localhost:4567/000000000000/stride-analysis-test
-          INTERNAL_API_SECRET: test-internal-secret
 
   unit-tests-mobile:
     runs-on: ubuntu-latest
@@ -47,6 +40,9 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: '22', cache: 'npm' }
       - run: npm ci
+      - run: npm run build --workspace=@stride/types
+      - run: npm run build --workspace=@stride/design-tokens
+      - run: npm run build --workspace=@stride/content
       - run: npm test
         working-directory: apps/mobile
 
@@ -86,6 +82,12 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: '22', cache: 'npm' }
       - run: npm ci
+      - run: npm run build --workspace=@stride/types
+      - name: Apply database schema
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client
+          PGPASSWORD=stride_dev psql -h localhost -p 5433 -U stride -d stride_test -f apps/api/src/db/schema.sql
       - run: npm test -- --testPathPattern=integration
         working-directory: apps/api
         env:
@@ -95,4 +97,7 @@ jobs:
           AWS_REGION: us-east-1
           AWS_ACCESS_KEY_ID: test
           AWS_SECRET_ACCESS_KEY: test
+          AWS_ENDPOINT: http://localhost:4567
+          S3_BUCKET: stride-videos-test
+          SQS_QUEUE_URL: http://localhost:4567/000000000000/stride-analysis-test
           INTERNAL_API_SECRET: test-internal-secret

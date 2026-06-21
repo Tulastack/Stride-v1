@@ -9,7 +9,7 @@
  */
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { AnalysisResult } from '@stride/types';
+import type { AnalysisResult, Flaw, Metric } from '@stride/types';
 import { LocalAnalysisProvider } from '../local.js';
 import { AwsAnalysisProvider } from '../aws.js';
 import { validateAnalysisResult } from '../validate.js';
@@ -55,7 +55,7 @@ describe('LocalAnalysisProvider — submit/getResult end to end', () => {
     expect(result.captureQuality.primaryNudge).toMatch(/hip/i);
 
     // the hip metric is genuinely low-confidence (band widened, confidence dropped)
-    const hip = result.metrics.find((m) => m.key.includes('hip'))!;
+    const hip = result.metrics.find((m: Metric) => m.key.includes('hip'))!;
     expect(hip.measured.confidence).toBeLessThan(0.5);
     expect(hip.measured.high - hip.measured.low).toBeGreaterThan(20);
   });
@@ -67,7 +67,7 @@ describe('Vision retention — every recommendation is evidence-bound', () => {
     ['/clips/headon-maxvelocity.mov'],
   ])('result for %s: each rec references a flaw with 3D evidence + confidence', async (uri) => {
     const result = await run(uri);
-    const flawById = new Map(result.flaws.map((f) => [f.id, f]));
+    const flawById = new Map<string, Flaw>(result.flaws.map((f: Flaw) => [f.id, f]));
 
     expect(result.recommendations.length).toBeGreaterThan(0);
     for (const rec of result.recommendations) {
