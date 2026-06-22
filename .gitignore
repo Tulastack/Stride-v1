@@ -18,6 +18,7 @@ out/
 .env.development.local
 .env.test.local
 .env.production.local
+api/.env
 
 # IDE
 .idea/
@@ -46,10 +47,14 @@ env/
 *.h5
 *.pb
 
-# Terraform
+# Terraform (both legacy Tulastack root module and infra/ module)
 .terraform/
+terraform/.terraform/
 *.tfstate
 *.tfstate.*
+terraform/*.tfstate
+terraform/*.tfstate.backup
+terraform/.terraform.lock.hcl
 *.tfvars
 !*.tfvars.example
 
@@ -57,6 +62,7 @@ env/
 docker-compose.override.yml
 
 # React Native / Expo
+.expo/
 ios/
 android/
 *.jks
