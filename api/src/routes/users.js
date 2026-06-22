@@ -1,6 +1,6 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
-const pool = require('../db');
+const { getPool } = require('../db');
 
 const router = express.Router();
 
@@ -31,6 +31,7 @@ router.post('/', validateUser, async (req, res) => {
   const { firstName, lastName, email } = req.body;
 
   try {
+    const pool = await getPool();
     const result = await pool.query(
       `INSERT INTO users_2 (first_name, last_name, email)
        VALUES ($1, $2, $3)
