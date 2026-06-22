@@ -1,8 +1,25 @@
 import { useStrideStore } from '../store/useStrideStore';
+import type { CaptureManifest } from './capture';
 
 interface FetchOptions extends RequestInit {
   token?: string | null;
 }
+
+// Structured coach action chips — must match the server enum (no free-text chat, F.5).
+export type CoachActionChip =
+  | 'why_is_this_an_issue'
+  | 'mark_understood'
+  | 'show_drill'
+  | 'ask_coach'
+  | 'view_timeline';
+
+const CHIP_LABELS: Record<CoachActionChip, string> = {
+  why_is_this_an_issue: 'Why is this an issue?',
+  mark_understood: 'Got it',
+  show_drill: 'Show me the drill',
+  ask_coach: 'Ask the coach',
+  view_timeline: 'View my timeline',
+};
 
 async function request<T>(path: string, options: FetchOptions = {}): Promise<T> {
   const state = useStrideStore.getState();
@@ -63,7 +80,7 @@ export const strideApi = {
     analysisId: string,
     uploadId: string,
     parts: { partNumber: number; etag: string }[],
-    captureManifest?: Record<string, unknown>
+    captureManifest?: CaptureManifest
   ) => {
     return request<any>('/videos/finalize', {
       method: 'POST',
@@ -114,23 +131,36 @@ export const strideApi = {
   },
 
   // --- Coach Sessions ---
+  // Server contract: mounted at /coach-sessions; bodies are snake_case; structured
+  // action chips flow through POST /:id/message (no free-text chat — F.5).
   createCoachSession: async (sessionType: 'analysis_workflow' | 'free_coach', analysisId?: string) => {
-    return request<any>('/coach/sessions', {
+    return request<any>('/coach-sessions', {
       method: 'POST',
-      body: JSON.stringify({ sessionType, analysisId }),
+      body: JSON.stringify({ session_type: sessionType, analysis_id: analysisId }),
     });
   },
 
+  listCoachSessions: async () => {
+    return request<any[]>('/coach-sessions');
+  },
+
+  getCoachSession: async (sessionId: string) => {
+    return request<any>(`/coach-sessions/${sessionId}`);
+  },
+
+  // The structured action chips the server understands.
+  sendChipAction: async (sessionId: string, actionChip: CoachActionChip, content?: string) => {
+    return request<any>(`/coach-sessions/${sessionId}/message`, {
+      method: 'POST',
+      body: JSON.stringify({ content: content ?? CHIP_LABELS[actionChip], action_chip: actionChip }),
+    });
+  },
+
+  // Sealing a workflow session is the 'mark_understood' chip.
   sealCoachSession: async (sessionId: string) => {
-    return request<any>(`/coach/sessions/${sessionId}/seal`, {
+    return request<any>(`/coach-sessions/${sessionId}/message`, {
       method: 'POST',
-    });
-  },
-
-  sendChipAction: async (sessionId: string, actionChip: string) => {
-    return request<any>(`/coach/sessions/${sessionId}/chip`, {
-      method: 'POST',
-      body: JSON.stringify({ actionChip }),
+      body: JSON.stringify({ content: CHIP_LABELS.mark_understood, action_chip: 'mark_understood' }),
     });
   },
 

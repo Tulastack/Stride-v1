@@ -217,7 +217,7 @@ router.post('/analysis-biomech', verifyInternalSecret, async (req: any, res: Res
     const result = assembleAnalysisFromFrames({
       clipId,
       fps: pipeline3d.fps,
-      frames: pipeline3d.frames as import('../analysis/engine/types.js').Frame3D[],
+      frames: pipeline3d.frames as unknown as import('../analysis/engine/types.js').Frame3D[],
       cameraAzimuthDeg: pipeline3d.cameraAzimuthDeg,
       motionBlur: pipeline3d.motionBlur ?? 'med',
       framing: pipeline3d.framing ?? 'full',
@@ -246,7 +246,7 @@ router.post('/analysis-biomech', verifyInternalSecret, async (req: any, res: Res
       data: {
         status: 'completed',
         overall_score: overallScore,
-        result_json: result,
+        result_json: result as unknown as Record<string, unknown>,
         completed_at: updatedAnalysis.completed_at?.toISOString() ?? null,
       },
     });

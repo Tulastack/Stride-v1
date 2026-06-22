@@ -1,10 +1,11 @@
 import pg from 'pg';
 import type { User, Analysis, CalendarEvent, CoachSession, DrillSuggestion, ReferenceDrill, MetricsTimelineRow } from '../types.js';
+import { dbConnectionConfig } from './dsql.js';
 
 const { Pool } = pg;
 
 export const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  ...dbConnectionConfig(), // DATABASE_URL by default; Aurora DSQL (token+TLS) when DSQL_ENDPOINT is set
   max: 20,
   idleTimeoutMillis: 30_000,
   connectionTimeoutMillis: 5_000,

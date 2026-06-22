@@ -17,9 +17,11 @@ const approveSkipSchema = z.object({
 });
 
 /**
- * GET /analyses/:analysisId/suggestions — list suggestions for an analysis
+ * GET /analyses/:analysisId/suggestions — list suggestions for an analysis.
+ * NOTE: this router is mounted at '/analyses', so the path here is relative
+ * ('/:analysisId/suggestions') to avoid a double '/analyses/analyses' prefix.
  */
-router.get('/analyses/:analysisId/suggestions', authenticate, async (req: any, res: Response, next: NextFunction) => {
+router.get('/:analysisId/suggestions', authenticate, async (req: any, res: Response, next: NextFunction) => {
   try {
     const { analysisId } = req.params;
     const userId = req.userId as string;
