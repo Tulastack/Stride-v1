@@ -65,17 +65,20 @@ resource "aws_iam_role_policy" "api_sqs_access" {
   })
 }
 
-resource "aws_iam_role_policy" "api_rds_access" {
-  name = "stride-api-rds-access"
+resource "aws_iam_role_policy" "api_dsql_access" {
+  name = "stride-api-dsql-access"
   role = aws_iam_role.api_task_role.id
 
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
-        Effect   = "Allow"
-        Action   = ["rds-db:connect"]
-        Resource = "arn:aws:rds-db:${var.aws_region}:${data.aws_caller_identity.current.account_id}:dbuser:${aws_db_instance.main.resource_id}/*"
+        Effect = "Allow"
+        Action = [
+          "dsql:DbConnect",
+          "dsql:DbConnectAdmin"
+        ]
+        Resource = "arn:aws:dsql:${var.aws_region}:${data.aws_caller_identity.current.account_id}:cluster/*"
       }
     ]
   })
@@ -146,17 +149,20 @@ resource "aws_iam_role_policy" "ml_worker_s3_access" {
   })
 }
 
-resource "aws_iam_role_policy" "ml_worker_rds_access" {
-  name = "stride-ml-worker-rds-access"
+resource "aws_iam_role_policy" "ml_worker_dsql_access" {
+  name = "stride-ml-worker-dsql-access"
   role = aws_iam_role.ml_worker_role.id
 
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
-        Effect   = "Allow"
-        Action   = ["rds-db:connect"]
-        Resource = "arn:aws:rds-db:${var.aws_region}:${data.aws_caller_identity.current.account_id}:dbuser:${aws_db_instance.main.resource_id}/*"
+        Effect = "Allow"
+        Action = [
+          "dsql:DbConnect",
+          "dsql:DbConnectAdmin"
+        ]
+        Resource = "arn:aws:dsql:${var.aws_region}:${data.aws_caller_identity.current.account_id}:cluster/*"
       }
     ]
   })

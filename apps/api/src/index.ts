@@ -39,7 +39,7 @@ const port = process.env.PORT || 3000;
 // Security and utility middlewares
 app.use(helmet());
 app.use(cors({
-  origin: '*', // Adjust in production to restrict to mobile app deep links/origins if necessary
+  origin: process.env.CORS_ORIGIN || '*', // Set CORS_ORIGIN in production if needed
   methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Internal-Token'],
   exposedHeaders: ['ETag'],

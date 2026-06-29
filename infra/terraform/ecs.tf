@@ -14,7 +14,7 @@ resource "aws_ecs_cluster" "main" {
 }
 
 resource "aws_ecr_repository" "api" {
-  name                 = "stride-api-${var.environment}"
+  name                 = "stride"
   image_tag_mutability = "MUTABLE"
 
   image_scanning_configuration {
@@ -22,14 +22,8 @@ resource "aws_ecr_repository" "api" {
   }
 }
 
-resource "aws_ecr_repository" "ml_worker" {
-  name                 = "stride-ml-worker-${var.environment}"
-  image_tag_mutability = "MUTABLE"
-
-  image_scanning_configuration {
-    scan_on_push = true
-  }
-}
+# ML worker shares the same ECR repo with a different tag
+# Image: stride:ml-worker-latest
 
 # ─── Security Group: ECS Tasks ─────────────────────────────────────
 
@@ -87,7 +81,7 @@ resource "aws_ecs_task_definition" "api" {
   container_definitions = jsonencode([
     {
       name      = "api"
-      image     = "${aws_ecr_repository.api.repository_url}:latest"
+      image     = "${aws_ecr_repository.api.repository_url}:api-latest"
       essential = true
       portMappings = [
         {
@@ -105,10 +99,13 @@ resource "aws_ecs_task_definition" "api" {
       }
       environment = [
         { name = "NODE_ENV", value = "production" },
-        { name = "DATABASE_URL", value = "postgres://${aws_db_instance.postgres.username}:${random_password.db_password.result}@${aws_db_instance.postgres.endpoint}/${aws_db_instance.postgres.db_name}" },
         { name = "S3_BUCKET", value = aws_s3_bucket.videos.id },
         { name = "SQS_QUEUE_URL", value = aws_sqs_queue.analysis.url },
-        { name = "AWS_REGION", value = var.aws_region }
+        { name = "AWS_REGION", value = var.aws_region },
+        { name = "SUPABASE_URL", value = var.supabase_url },
+        { name = "INTERNAL_API_SECRET", value = var.internal_secret },
+        { name = "DSQL_ENDPOINT", value = aws_dsql_cluster.main.endpoint },
+        { name = "SENTRY_DSN", value = var.sentry_dsn_api },
       ]
     }
   ])
@@ -119,15 +116,15 @@ resource "aws_ecs_task_definition" "ml_worker" {
   family                   = "stride-ml-worker-${var.environment}"
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"] # FARGATE for ease of deployment, or EC2 for GPU
-  cpu                      = "1024"       # 1 vCPU
-  memory                   = "2048"       # 2 GB RAM
+  cpu                      = "1024"      # 1 vCPU
+  memory                   = "2048"      # 2 GB RAM
   execution_role_arn       = aws_iam_role.ecs_execution_role.arn
   task_role_arn            = aws_iam_role.ml_worker_role.arn
 
   container_definitions = jsonencode([
     {
       name      = "ml-worker"
-      image     = "${aws_ecr_repository.ml_worker.repository_url}:latest"
+      image     = "${aws_ecr_repository.api.repository_url}:ml-worker-latest"
       essential = true
       logConfiguration = {
         logDriver = "awslogs"
@@ -139,11 +136,13 @@ resource "aws_ecs_task_definition" "ml_worker" {
       }
       environment = [
         { name = "NODE_ENV", value = "production" },
-        { name = "DATABASE_URL", value = "postgres://${aws_db_instance.postgres.username}:${random_password.db_password.result}@${aws_db_instance.postgres.endpoint}/${aws_db_instance.postgres.db_name}" },
         { name = "S3_BUCKET", value = aws_s3_bucket.videos.id },
         { name = "SQS_QUEUE_URL", value = aws_sqs_queue.analysis.url },
         { name = "API_SERVER_URL", value = "http://${aws_lb.api.dns_name}" },
-        { name = "AWS_REGION", value = var.aws_region }
+        { name = "AWS_REGION", value = var.aws_region },
+        { name = "INTERNAL_API_SECRET", value = var.internal_secret },
+        { name = "SENTRY_DSN", value = var.sentry_dsn_worker },
+        { name = "DSQL_ENDPOINT", value = aws_dsql_cluster.main.endpoint },
       ]
     }
   ])
@@ -160,9 +159,9 @@ resource "aws_ecs_service" "api" {
   launch_type     = "FARGATE"
 
   network_configuration {
-    subnets          = var.private_subnet_ids
+    subnets          = var.public_subnet_ids
     security_groups  = [aws_security_group.ecs_tasks.id]
-    assign_public_ip = false
+    assign_public_ip = true
   }
 
   load_balancer {
@@ -183,8 +182,8 @@ resource "aws_ecs_service" "ml_worker" {
   launch_type     = "FARGATE"
 
   network_configuration {
-    subnets          = var.private_subnet_ids
+    subnets          = var.public_subnet_ids
     security_groups  = [aws_security_group.ecs_tasks.id]
-    assign_public_ip = false
+    assign_public_ip = true
   }
 }

@@ -9,7 +9,7 @@ terraform {
   }
 
   backend "s3" {
-    bucket = "stride-terraform-state"
+    bucket = "stride-terraform-state-442004016139"
     key    = "stride/terraform.tfstate"
     region = "us-east-1"
   }

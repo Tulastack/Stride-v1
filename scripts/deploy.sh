@@ -1,18 +1,18 @@
 #!/bin/bash
 # Deploy script — builds images, pushes to ECR, and updates ECS services.
-# Usage: ./scripts/deploy.sh [api|frontend|all]
-#   api       — deploy only the API service
-#   frontend  — deploy only the frontend service
-#   all       — deploy both (default)
+# Usage: ./scripts/deploy.sh [api|ml-worker|all]
+#   api        — deploy only the API service
+#   ml-worker  — deploy only the ML worker service
+#   all        — deploy both (default)
 
 set -e
 
 REGION="us-east-1"
 ACCOUNT_ID="442004016139"
-ECR_REPO="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/stride"
+ECR_BASE="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com"
 CLUSTER="default"
 API_SERVICE="stride-api"
-FRONTEND_SERVICE="stride-frontend"
+ML_WORKER_SERVICE="stride-ml-worker"
 TARGET="${1:-all}"
 
 # --- Helpers ---
@@ -30,15 +30,15 @@ check_prereqs() {
 ecr_login() {
   log "Logging in to ECR..."
   aws ecr get-login-password --region "$REGION" | \
-    docker login --username AWS --password-stdin "${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com"
+    docker login --username AWS --password-stdin "${ECR_BASE}"
 }
 
 deploy_api() {
   log "Building API image (linux/amd64)..."
-  docker build --platform linux/amd64 -t "${ECR_REPO}:api-latest" ./api
+  docker build --platform linux/amd64 -t "${ECR_BASE}/stride:api-latest" ./apps/api
 
   log "Pushing API image to ECR..."
-  docker push "${ECR_REPO}:api-latest"
+  docker push "${ECR_BASE}/stride:api-latest"
 
   log "Updating ECS API service..."
   aws ecs update-service \
@@ -51,22 +51,22 @@ deploy_api() {
   success "API deployed"
 }
 
-deploy_frontend() {
-  log "Building frontend image (linux/amd64)..."
-  docker build --platform linux/amd64 -t "${ECR_REPO}:frontend-latest" ./frontend
+deploy_ml_worker() {
+  log "Building ML worker image (linux/amd64)..."
+  docker build --platform linux/amd64 -t "${ECR_BASE}/stride:ml-worker-latest" ./apps/ml-worker
 
-  log "Pushing frontend image to ECR..."
-  docker push "${ECR_REPO}:frontend-latest"
+  log "Pushing ML worker image to ECR..."
+  docker push "${ECR_BASE}/stride:ml-worker-latest"
 
-  log "Updating ECS frontend service..."
+  log "Updating ECS ML worker service..."
   aws ecs update-service \
     --cluster "$CLUSTER" \
-    --service "$FRONTEND_SERVICE" \
+    --service "$ML_WORKER_SERVICE" \
     --force-new-deployment \
     --region "$REGION" \
     --no-cli-pager
 
-  success "Frontend deployed"
+  success "ML worker deployed"
 }
 
 # --- Main ---
@@ -75,10 +75,10 @@ check_prereqs
 ecr_login
 
 case "$TARGET" in
-  api)      deploy_api ;;
-  frontend) deploy_frontend ;;
-  all)      deploy_api; deploy_frontend ;;
-  *)        fail "Unknown target: $TARGET (use api, frontend, or all)" ;;
+  api)       deploy_api ;;
+  ml-worker) deploy_ml_worker ;;
+  all)       deploy_api; deploy_ml_worker ;;
+  *)         fail "Unknown target: $TARGET (use api, ml-worker, or all)" ;;
 esac
 
 echo ""

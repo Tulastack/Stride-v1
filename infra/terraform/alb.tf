@@ -98,3 +98,26 @@ resource "aws_lb_listener" "http" {
     target_group_arn = aws_lb_target_group.api.arn
   }
 }
+
+# ─── CloudWatch Alarm: Unhealthy Targets ───────────────────────────
+
+resource "aws_cloudwatch_metric_alarm" "api_unhealthy" {
+  alarm_name          = "stride-api-unhealthy-targets-${var.environment}"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 2
+  metric_name         = "UnHealthyHostCount"
+  namespace           = "AWS/ApplicationELB"
+  period              = 60
+  statistic           = "Maximum"
+  threshold           = 0
+  alarm_description   = "API has unhealthy targets behind the ALB"
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    TargetGroup  = aws_lb_target_group.api.arn_suffix
+    LoadBalancer = aws_lb.api.arn_suffix
+  }
+
+  # TODO: Add SNS topic ARN for notifications
+  # alarm_actions = [aws_sns_topic.oncall.arn]
+}
