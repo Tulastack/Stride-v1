@@ -1,7 +1,7 @@
 import React from 'react';
 import { Tabs } from 'expo-router';
 import { StyleSheet } from 'react-native';
-import { Camera, BarChart2, LineChart, ClipboardList, User } from 'lucide-react-native';
+import { Camera, BarChart2, LineChart, ClipboardList, Calendar } from 'lucide-react-native';
 import { semantic, borderWidth } from '../../src/ui/theme';
 
 export default function TabsLayout() {
@@ -48,8 +48,16 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="profile"
         options={{
+          href: null,
           title: 'Profile',
-          tabBarIcon: ({ color, size }) => <User color={color} size={size} />,
+          tabBarIcon: ({ color, size }) => <Calendar color={color} size={size} />,
+        }}
+      />
+      <Tabs.Screen
+        name="calendar"
+        options={{
+          title: 'Plan',
+          tabBarIcon: ({ color, size }) => <Calendar color={color} size={size} />,
         }}
       />
     </Tabs>

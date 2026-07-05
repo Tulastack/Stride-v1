@@ -155,14 +155,48 @@ export default function AnalysisScreen() {
         ))}
 
         <Text style={styles.section}>ALL METRICS</Text>
-        <View style={styles.metricsCard}>
-          {result.metrics.map((m, i) => (
-            <View key={m.key}>
-              <MetricRow metric={m} usable={result.captureQuality.perMetricUsable[m.key]} testID={`metricrow-${m.key}`} />
-              {i < result.metrics.length - 1 ? <View style={styles.divider} /> : null}
+        {(['Lower Body', 'Upper Body', 'Timing'] as const).map((group) => {
+          const groupKeys: Record<string, string[]> = {
+            'Lower Body': ['knee_drive', 'hip_extension', 'overstride', 'ground_contact_time', 'ankle_dorsiflexion'],
+            'Upper Body': ['trunk_lean', 'arm_drive', 'shoulder_rotation', 'torso_lean'],
+            'Timing': ['stride_frequency', 'flight_time', 'cadence', 'stance_time'],
+          };
+          const keys = groupKeys[group] || [];
+          const groupMetrics = result.metrics.filter((m) => keys.includes(m.key));
+          if (groupMetrics.length === 0) return null;
+          return (
+            <View key={group} style={styles.metricsGroup}>
+              <Text style={styles.metricsGroupTitle}>{group.toUpperCase()}</Text>
+              <View style={styles.metricsCard}>
+                {groupMetrics.map((m, i) => (
+                  <View key={m.key}>
+                    <MetricRow metric={m} usable={result.captureQuality.perMetricUsable[m.key]} testID={`metricrow-${m.key}`} />
+                    {i < groupMetrics.length - 1 ? <View style={styles.divider} /> : null}
+                  </View>
+                ))}
+              </View>
             </View>
-          ))}
-        </View>
+          );
+        })}
+        {/* Ungrouped metrics */}
+        {(() => {
+          const allGrouped = ['knee_drive', 'hip_extension', 'overstride', 'ground_contact_time', 'ankle_dorsiflexion', 'trunk_lean', 'arm_drive', 'shoulder_rotation', 'torso_lean', 'stride_frequency', 'flight_time', 'cadence', 'stance_time'];
+          const ungrouped = result.metrics.filter((m) => !allGrouped.includes(m.key));
+          if (ungrouped.length === 0) return null;
+          return (
+            <View style={styles.metricsGroup}>
+              <Text style={styles.metricsGroupTitle}>OTHER</Text>
+              <View style={styles.metricsCard}>
+                {ungrouped.map((m, i) => (
+                  <View key={m.key}>
+                    <MetricRow metric={m} usable={result.captureQuality.perMetricUsable[m.key]} testID={`metricrow-${m.key}`} />
+                    {i < ungrouped.length - 1 ? <View style={styles.divider} /> : null}
+                  </View>
+                ))}
+              </View>
+            </View>
+          );
+        })()}
 
         <Text style={styles.disclaimer} accessibilityLabel="analysis-disclaimer">
           Stride provides biomechanics guidance, not medical advice. Numbers are reported with
@@ -199,6 +233,16 @@ const styles = StyleSheet.create({
     borderColor: semantic.border,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
+  },
+  metricsGroup: {
+    gap: spacing.xs,
+  },
+  metricsGroupTitle: {
+    ...(typography.caption as object),
+    color: semantic.text.muted,
+    letterSpacing: 1.5,
+    fontSize: 11,
+    fontWeight: '800',
   },
   divider: { height: borderWidth.hairline, backgroundColor: semantic.border },
   disclaimer: { ...(typography.caption as object), color: semantic.text.muted, marginTop: spacing.md },

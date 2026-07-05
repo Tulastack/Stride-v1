@@ -137,13 +137,14 @@ Sprint Athlete Biomechanics Data:
 - Rules-based Detected Issues: {json.dumps(detected_issues)}
 
 Instructions:
-1. Synthesize this data into a highly premium, concise coaching report. Your ENTIRE response MUST be strictly valid JSON matching the schema. Do NOT include conversational preamble, markdown blocks (like ```json), or long-winded chat text.
-2. Determine a unified `overall_score` (0-100) reflecting their technique quality. If they have high severity issues, score should be lower. If no issues, score should be 85+.
-3. Draft a beautiful, motivating, but CONCISE and personalized `score_label` summary (1-2 sentences max).
-4. For each detected issue (up to 3, sorted by severity):
-   - Translate it into a highly actionable, plain-English coaching cue (`plain_english`). Explain concisely *why* they do it and the *biomechanical cost* (max 2 sentences). Emphasize actionable feedback for issues like overstriding or low knee drive.
-   - Prescribe 1 to 3 highly tailored corrective drills from the coaching knowledge base. Each drill must have a valid `drill_key` (matching the keys in the knowledge base), specific `volume`, and dynamic `cue`. Keep explanations focused and direct.
-   - Provide a realistic improvement `timeline` (e.g., '2-3 weeks', '4 weeks').
+1. Your ENTIRE response MUST be strictly valid JSON matching the schema. No preamble, no markdown.
+2. Focus on the SINGLE most impactful issue — the one that, if fixed, would improve performance the most. If there is a clear secondary issue, include it (max 2 total). Do NOT list 3+ issues — athletes fix one thing at a time.
+3. Determine a unified `overall_score` (0-100) reflecting their technique quality.
+4. Draft a concise, motivating `score_label` (1 sentence max). Be direct, not generic.
+5. For each issue (1-2 max):
+   - Write a `plain_english` coaching cue: what's wrong, why it costs them speed, and the ONE thing to focus on fixing (2 sentences max).
+   - Prescribe exactly 2 corrective drills with specific volume (sets × distance), frequency (days/week), and a single coaching cue per drill. Use valid `drill_key` values from the knowledge base.
+   - Provide a realistic improvement `timeline` (e.g., '2 weeks', '3 weeks').
 
 Reference Sprint Coaching Knowledge Base:
 {COACHING_KNOWLEDGE}
