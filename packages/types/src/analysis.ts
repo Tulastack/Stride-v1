@@ -100,6 +100,8 @@ export interface AnalysisResult {
   captureQuality: CaptureQuality;
   reconstructionMethod: ReconstructionMethod;
   createdAt: string; // ISO 8601
+  /** Composite running-economy index (0–100) across the usable metrics. */
+  economyScore?: number;
 }
 
 // ─── Capture inputs & athlete context (the seam's request side) ───────

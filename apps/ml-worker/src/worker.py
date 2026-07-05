@@ -123,7 +123,22 @@ def _upload_frames_sidecar(s3_key: str, pipeline_result: dict) -> None:
     logger.info("Uploaded frames3d sidecar to s3://%s/%s", s3_bucket, sidecar_key)
 
 
-def _run_2d(analysis_id: str, video_path: str, capture: dict) -> None:
+def _write_overlay(video_path: str, s3_key: str | None, payload: dict) -> None:
+    """Persist the per-frame keypoint overlay next to the video so the app can
+    fetch it and draw the skeleton in sync with playback."""
+    body = json.dumps(payload)
+    if LOCAL_STORAGE:
+        path = os.path.splitext(video_path)[0] + ".overlay.json"
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(body)
+        logger.info("Wrote overlay sidecar %s (%d frames)", path, len(payload.get("frames", [])))
+    elif s3_key:
+        key = os.path.splitext(s3_key)[0] + ".overlay.json"
+        s3_client.put_object(Bucket=s3_bucket, Key=key, Body=body, ContentType="application/json")
+        logger.info("Uploaded overlay sidecar s3://%s/%s", s3_bucket, key)
+
+
+def _run_2d(analysis_id: str, video_path: str, capture: dict, s3_key: str | None = None) -> None:
     """RTMPose 2D keypoints -> 2D sagittal biomechanics -> AnalysisResult.
 
     Streaming: frames are consumed one at a time and reduced to scalar series, so
@@ -138,11 +153,25 @@ def _run_2d(analysis_id: str, video_path: str, capture: dict) -> None:
     pose_fps = int(os.environ.get("POSE_FPS", "15"))
     eff_fps = float(min(pose_fps, fps))
 
+    # Target lock: if the user circled a runner, track THAT person across frames.
+    tgt = capture.get("target")
+    target_xy = None
+    if isinstance(tgt, dict) and tgt.get("xNorm") is not None and tgt.get("yNorm") is not None:
+        target_xy = (float(tgt["xNorm"]), float(tgt["yNorm"]))
+        logger.info("Target lock: tracking person at (%.2f, %.2f)", *target_xy)
+
     notify_progress(analysis_id, "biomechanics_calculation", 75, "2D sagittal biomechanics")
+    overlay_frames: list = []
     result = analyze_2d_sagittal_stream(
-        stream_frames(video_path, target_fps=pose_fps),
+        stream_frames(video_path, target_fps=pose_fps, target=target_xy),
         fps=eff_fps, azimuth_deg=azimuth, clip_id=analysis_id[:8],
+        overlay_out=overlay_frames,
     )
+    import cv2
+    _cap = cv2.VideoCapture(video_path)
+    vw, vh = int(_cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    _cap.release()
+    _write_overlay(video_path, s3_key, {"fps": eff_fps, "width": vw, "height": vh, "frames": overlay_frames})
     overall_score = int(round(result["captureQuality"]["overall"] * 100))
 
     notify_progress(analysis_id, "finalizing", 95, "Complete")
@@ -159,7 +188,7 @@ def _run_2d(analysis_id: str, video_path: str, capture: dict) -> None:
 def _process_2d_sagittal(analysis_id: str, s3_key: str, local_video: str) -> None:
     """SQS path: download the capture sidecar from S3, then run 2D biomechanics."""
     capture = download_capture_sidecar(s3_client, s3_bucket, s3_key, local_video)
-    _run_2d(analysis_id, local_video, capture)
+    _run_2d(analysis_id, local_video, capture, s3_key)
 
 
 def _process_wham_opencap(analysis_id: str, s3_key: str, local_video: str) -> None:
@@ -293,7 +322,7 @@ def _process_local(analysis_id: str, s3_key: str) -> None:
         elif PIPELINE == "legacy":
             _process_legacy_llm(analysis_id, video_path)
         else:
-            _run_2d(analysis_id, video_path, capture)
+            _run_2d(analysis_id, video_path, capture, s3_key)
     except Exception as err:
         logger.error("Error processing (local) analysis %s: %s", analysis_id, err)
         traceback.print_exc()

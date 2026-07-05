@@ -1,51 +1,79 @@
 """2D sagittal-plane sprint biomechanics (production path for side/oblique capture).
 
-Rationale (validated against the literature, e.g. VideoRun2D): for a side-on view,
-sagittal joint angles can be measured directly from good 2D keypoints at 3–5° error
-— WITHOUT the fragile monocular 3D lift. This module consumes RTMPose keypoints and
-emits the exact @stride/types AnalysisResult the API/mobile already render.
+For a side-on view, sagittal joint angles + temporal metrics can be measured
+directly from good 2D keypoints (VideoRun2D-style, ~3-5deg) WITHOUT the fragile
+monocular 3D lift. Consumes RTMPose COCO-17 keypoints, emits the @stride/types
+AnalysisResult the API/mobile render.
 
-Correctness: peak-based metrics (knee drive, hip extension) use the PEAK over the
-stride, not the clip average; gait metrics use the pelvis-relative ankle signal so a
-runner translating through frame does not corrupt stance detection.
+Metrics computed (all from a single side-on view):
+  sagittal angles : trunk_lean, knee_drive, hip_extension, knee_flexion, arm_swing
+  spatial         : overstride, vertical_oscillation
+  temporal        : contact_time_ms, cadence_spm
 
-Memory: `analyze_2d_sagittal_stream` consumes a frame *generator* and retains only
-scalar per-frame series (a few floats/frame) — never the full keypoint arrays — so
-peak memory is O(1) frames + O(N) scalars regardless of clip length.
+NOT computable from one side-on view (need frontal/back view or two runs):
+  knee valgus, pelvic drop, arm crossover, pronation, true left/right symmetry.
+
+Memory: `analyze_2d_sagittal_stream` consumes a frame generator and retains only
+scalar per-frame series — never the full keypoint arrays.
 """
 
 from __future__ import annotations
 
 import math
 from datetime import datetime, timezone
-from typing import Any, Iterable, Iterator
+from typing import Any, Iterable
 
 import numpy as np
 
 from src.biomechanics import KP, _angle_at_joint, _angle_between_vectors
 
+# lo/hi "healthy" bands (peak-based for angles). Sources: sprint biomech literature.
 NORMAL_RANGE: dict[str, tuple[float, float]] = {
     "trunk_lean": (8.0, 22.0),
     "knee_drive": (80.0, 110.0),
     "hip_extension": (160.0, 185.0),
+    "knee_flexion": (25.0, 55.0),          # peak swing flexion (min knee angle)
+    "arm_swing": (70.0, 110.0),            # mean elbow angle
+    "overstride": (0.0, 12.0),             # % of leg length foot lands ahead of hip
+    "vertical_oscillation": (4.0, 11.0),   # bounce as % of torso length
     "contact_time_ms": (80.0, 140.0),
     "cadence_spm": (270.0, 330.0),
 }
 UNIT = {"trunk_lean": "deg", "knee_drive": "deg", "hip_extension": "deg",
-        "contact_time_ms": "ms", "cadence_spm": "spm"}
+        "knee_flexion": "deg", "arm_swing": "deg", "overstride": "%",
+        "vertical_oscillation": "%", "contact_time_ms": "ms", "cadence_spm": "spm"}
 PLANE = {"trunk_lean": "sagittal", "knee_drive": "sagittal", "hip_extension": "sagittal",
-         "contact_time_ms": "temporal", "cadence_spm": "temporal"}
+         "knee_flexion": "sagittal", "arm_swing": "sagittal", "overstride": "sagittal",
+         "vertical_oscillation": "temporal", "contact_time_ms": "temporal", "cadence_spm": "temporal"}
 
 DRILLS: dict[str, dict[str, Any]] = {
     "trunk_lean": {"drillId": "drill-wall-drive", "drillName": "Wall drives", "cue": "Hold a long line from ankle to head; resist bending at the waist.", "demoAssetId": "demo-wall-drive", "sets": 3, "reps": 8, "rationale": "Grooves a stable trunk angle."},
     "knee_drive": {"drillId": "drill-high-knee-switch", "drillName": "High-knee wall switches", "cue": "Punch the knee up to hip height, toe up.", "demoAssetId": "demo-high-knee-switch", "sets": 3, "reps": 10, "rationale": "Trains a higher knee-drive position."},
     "hip_extension": {"drillId": "drill-dribble-bound", "drillName": "Dribble-to-bound build-ups", "cue": "Feel the back leg finish long behind you.", "demoAssetId": "demo-dribble-bound", "sets": 4, "reps": 6, "rationale": "Cues full hip extension at toe-off."},
+    "knee_flexion": {"drillId": "drill-heel-recovery", "drillName": "Heel-to-butt A-skips", "cue": "Snap the heel up under your glute as the knee drives.", "demoAssetId": "demo-heel-recovery", "sets": 3, "reps": 8, "rationale": "Improves swing-leg knee flexion and recovery speed."},
+    "arm_swing": {"drillId": "drill-arm-iso", "drillName": "Seated arm-drive isolation", "cue": "Drive elbows straight back, hands cheek-to-hip; don't cross the midline.", "demoAssetId": "demo-arm-iso", "sets": 3, "reps": 20, "rationale": "Keeps arm drive front-to-back for less rotational braking."},
+    "overstride": {"drillId": "drill-quick-feet", "drillName": "Quick-feet + cadence intervals", "cue": "Land the foot UNDER your hip, not out in front. Quicker, lighter steps.", "demoAssetId": "demo-quick-feet", "sets": 4, "reps": 30, "rationale": "Reduces overstride and braking impulse."},
+    "vertical_oscillation": {"drillId": "drill-wickets", "drillName": "Wicket runs", "cue": "Run TALL and flat — push horizontally, minimise bounce.", "demoAssetId": "demo-wickets", "sets": 3, "reps": 6, "rationale": "Lowers wasteful vertical oscillation."},
     "contact_time_ms": {"drillId": "drill-banded-starts", "drillName": "Resisted banded starts", "cue": "Punch the ground and get off it fast.", "demoAssetId": "demo-banded-starts", "sets": 4, "reps": 5, "rationale": "Shortens ground-contact time."},
-    "cadence_spm": {"drillId": "drill-wickets", "drillName": "Wicket runs", "cue": "Quick feet, snap each step down.", "demoAssetId": "demo-wickets", "sets": 3, "reps": 6, "rationale": "Raises step frequency."},
+    "cadence_spm": {"drillId": "drill-metronome", "drillName": "Metronome cadence intervals", "cue": "Match your footfalls to the beat; quick, light steps.", "demoAssetId": "demo-metronome", "sets": 4, "reps": 30, "rationale": "Raises step frequency toward the efficient range."},
 }
 NAMES = {"trunk_lean": "Trunk angle off-target", "knee_drive": "Low knee drive",
-         "hip_extension": "Limited hip extension", "contact_time_ms": "Long ground contact",
+         "hip_extension": "Limited hip extension", "knee_flexion": "Limited knee flexion",
+         "arm_swing": "Arm swing off-target", "overstride": "Overstriding",
+         "vertical_oscillation": "Excess vertical bounce", "contact_time_ms": "Long ground contact",
          "cadence_spm": "Cadence off-target"}
+# short "why it matters" used by the results UI + coach grounding.
+WHY = {
+    "trunk_lean": "A slight forward lean from the ankles keeps you driving forward; too upright or bent-at-the-waist wastes force.",
+    "knee_drive": "Higher knee drive sets up a longer, more powerful stride.",
+    "hip_extension": "Finishing the drive behind you is where most of your propulsion comes from.",
+    "knee_flexion": "A well-flexed swing leg shortens the lever so the leg recovers faster.",
+    "arm_swing": "Arms driving front-to-back (not across the body) reduce rotational braking.",
+    "overstride": "Landing your foot ahead of your hips brakes you on every step and loads the knee. This is the #1 efficiency leak.",
+    "vertical_oscillation": "Energy spent bouncing up is energy not spent moving forward.",
+    "contact_time_ms": "Less time on the ground generally means a springier, faster stride (needs high-fps video to measure well).",
+    "cadence_spm": "Quicker, lighter steps usually cut overstriding and braking (needs high-fps video to measure well).",
+}
 
 _VERT_DOWN = np.array([1.0, 0.0])  # image y increases downward
 _UP = np.array([-1.0, 0.0])
@@ -62,39 +90,50 @@ def _smooth(x: np.ndarray, w: int = 3) -> np.ndarray:
     return np.convolve(x, np.ones(w) / w, mode="same")
 
 
-def _frame_scalars(k: np.ndarray) -> tuple[float, float, float, float, float, float]:
-    """Extract the per-frame scalars we retain (discarding the 17×3 keypoints):
-    (knee_drive_deg, hip_ext_deg, trunk_deg, l_ankle_rel_y, r_ankle_rel_y, mean_conf)."""
+def _frame_scalars(k: np.ndarray) -> dict[str, float]:
+    """Extract per-frame scalars we retain (discarding the 17x3 keypoints)."""
     s = "left" if k[KP["left_hip"], 2] >= k[KP["right_hip"], 2] else "right"
-    hip, knee = k[KP[f"{s}_hip"], :2], k[KP[f"{s}_knee"], :2]
+    hip, knee, ank = k[KP[f"{s}_hip"], :2], k[KP[f"{s}_knee"], :2], k[KP[f"{s}_ankle"], :2]
     sh = k[KP[f"{s}_shoulder"], :2]
-    knee_drive = _angle_between_vectors(knee - hip, _VERT_DOWN)
-    hip_ext = _angle_at_joint(sh, hip, knee)
+    # arm: pick the higher-confidence elbow/wrist side
+    arm = "left" if (k[KP["left_elbow"], 2] + k[KP["left_wrist"], 2]) >= (k[KP["right_elbow"], 2] + k[KP["right_wrist"], 2]) else "right"
+    a_sh, a_el, a_wr = k[KP[f"{arm}_shoulder"], :2], k[KP[f"{arm}_elbow"], :2], k[KP[f"{arm}_wrist"], :2]
     mid_sh = (k[KP["left_shoulder"], :2] + k[KP["right_shoulder"], :2]) / 2
     mid_hp = (k[KP["left_hip"], :2] + k[KP["right_hip"], :2]) / 2
-    trunk = _angle_between_vectors(mid_sh - mid_hp, _UP)
-    hip_y = (k[KP["left_hip"], 0] + k[KP["right_hip"], 0]) / 2
-    l_rel = float(k[KP["left_ankle"], 0] - hip_y)
-    r_rel = float(k[KP["right_ankle"], 0] - hip_y)
-    return knee_drive, hip_ext, trunk, l_rel, r_rel, float(np.mean(k[:, 2]))
+    leg_len = float(np.linalg.norm(ank - hip)) or 1e-6
+    return {
+        "knee_drive": _angle_between_vectors(knee - hip, _VERT_DOWN),   # thigh vs vertical, peak
+        "hip_ext": _angle_at_joint(sh, hip, knee),                     # shoulder-hip-knee, peak
+        "knee_flex": _angle_at_joint(hip, knee, ank),                  # knee joint angle, min=peak flexion
+        "elbow": _angle_at_joint(a_sh, a_el, a_wr),                    # arm swing
+        "trunk": _angle_between_vectors(mid_sh - mid_hp, _UP),
+        "hip_y": float(mid_hp[1]),                                     # vertical oscillation source
+        "torso_len": float(np.linalg.norm(mid_sh - mid_hp)) or 1e-6,
+        "ank_x_rel": float(ank[0] - mid_hp[0]),                        # foot horizontal vs hip (overstride)
+        "ank_y_rel": float(ank[1] - mid_hp[1]),                        # foot vertical vs hip (contact)
+        "leg_len": leg_len,
+        "conf": float(np.mean(k[:, 2])),
+    }
 
 
-def _strikes_from_series(rel: np.ndarray, fps: float) -> list[int]:
-    rel = _smooth(rel)
-    if len(rel) < 3 or rel.max() - rel.min() < 1e-3:
+def _contact_positions(ank_y_rel: np.ndarray) -> list[int]:
+    """Frame indices where the (near) foot is planted — local maxima of the
+    pelvis-relative ankle height (foot lowest in image)."""
+    y = _smooth(ank_y_rel)
+    if len(y) < 3 or y.max() - y.min() < 1e-3:
         return []
-    thr = rel.min() + (rel.max() - rel.min()) * 0.7  # foot low in image = near ground
-    strikes, refractory = [], 0
-    for i in range(1, len(rel) - 1):
-        if refractory <= 0 and rel[i] >= thr and rel[i] >= rel[i - 1] and rel[i] >= rel[i + 1]:
-            strikes.append(i)
+    thr = y.min() + (y.max() - y.min()) * 0.7
+    out, refractory = [], 0
+    for i in range(1, len(y) - 1):
+        if refractory <= 0 and y[i] >= thr and y[i] >= y[i - 1] and y[i] >= y[i + 1]:
+            out.append(i)
             refractory = 4
         refractory -= 1
-    return strikes
+    return out
 
 
-def _gait_from_series(lank: np.ndarray, rank: np.ndarray, fps: float) -> tuple[float, float]:
-    all_strikes: list[int] = []
+def _gait(lank: np.ndarray, rank: np.ndarray, fps: float) -> tuple[float, float]:
+    strikes: list[int] = []
     contact_runs: list[int] = []
     for rel in (lank, rank):
         rs = _smooth(rel)
@@ -109,9 +148,9 @@ def _gait_from_series(lank: np.ndarray, rank: np.ndarray, fps: float) -> tuple[f
                 if run >= 1:
                     contact_runs.append(run)
                 run = 0
-        all_strikes += _strikes_from_series(rel, fps)
-    all_strikes.sort()
-    intervals = [(all_strikes[i] - all_strikes[i - 1]) / fps for i in range(1, len(all_strikes))]
+        strikes += _contact_positions(rel)
+    strikes.sort()
+    intervals = [(strikes[i] - strikes[i - 1]) / fps for i in range(1, len(strikes))]
     intervals = [d for d in intervals if d > 0.5 / fps]
     cadence = 60.0 / float(np.mean(intervals)) if intervals else 0.0
     contact_ms = float(np.mean(contact_runs)) / fps * 1000 if contact_runs else 0.0
@@ -131,24 +170,40 @@ def _band(value: float, conf: float) -> dict[str, float]:
             "high": round(value + half, 1), "confidence": round(conf, 2)}
 
 
-def _assemble(knee: list[float], hip: list[float], trunk: list[float],
-              lank: list[float], rank: list[float], frame_indices: list[int],
-              fps: float, mean_conf: float, azimuth_deg: float, clip_id: str) -> dict[str, Any]:
-    knee_a, hip_a, trunk_a = np.array(knee), np.array(hip), np.array(trunk)
-    knee_peak = float(np.percentile(knee_a, 95)); knee_evi = int(np.argmax(knee_a))
-    hip_peak = float(np.percentile(hip_a, 95)); hip_evi = int(np.argmax(hip_a))
-    trunk_mean = float(np.mean(trunk_a)); trunk_evi = int(np.argmin(np.abs(trunk_a - trunk_mean)))
-    contact_ms, cadence = _gait_from_series(np.array(lank), np.array(rank), fps)
+def _assemble(S: dict[str, list[float]], idxs: list[int], fps: float,
+              mean_conf: float, azimuth_deg: float, clip_id: str) -> dict[str, Any]:
+    a = {k: np.array(v) for k, v in S.items()}
+    # near-side foot contact frames (for overstride)
+    contacts = _contact_positions(a["ank_y_rel"])
+    overstride_pct = 0.0
+    if contacts:
+        os_vals = [abs(a["ank_x_rel"][i]) / max(a["leg_len"][i], 1e-6) for i in contacts]
+        overstride_pct = min(float(np.median(os_vals)) * 100.0, 40.0)  # clamp implausible off-axis values
+    vo_pct = min(float((a["hip_y"].max() - a["hip_y"].min()) / max(np.median(a["torso_len"]), 1e-6)) * 100.0, 25.0)
 
-    raw = {"trunk_lean": (trunk_mean, trunk_evi), "knee_drive": (knee_peak, knee_evi),
-           "hip_extension": (hip_peak, hip_evi), "contact_time_ms": (contact_ms, 0),
-           "cadence_spm": (cadence, 0)}
+    # Spatial metrics are harder from a single 2D view (perspective/scale corrupt
+    # them off-axis), so down-weight their confidence — they read 'experimental'
+    # unless the capture is clean side-on.
+    HARDER = {"overstride", "vertical_oscillation"}
+
+    values = {
+        "trunk_lean": (float(np.mean(a["trunk"])), int(np.argmin(np.abs(a["trunk"] - np.mean(a["trunk"]))))),
+        "knee_drive": (float(np.percentile(a["knee_drive"], 95)), int(np.argmax(a["knee_drive"]))),
+        "hip_extension": (float(np.percentile(a["hip_ext"], 95)), int(np.argmax(a["hip_ext"]))),
+        "knee_flexion": (float(np.percentile(a["knee_flex"], 5)), int(np.argmin(a["knee_flex"]))),
+        "arm_swing": (float(np.mean(a["elbow"])), 0),
+        "overstride": (round(overstride_pct, 1), contacts[0] if contacts else 0),
+        "vertical_oscillation": (round(vo_pct, 1), 0),
+    }
+    contact_ms, cadence = _gait(a["l_rel"], a["r_rel"], fps)
+    values["contact_time_ms"] = (contact_ms, 0)
+    values["cadence_spm"] = (cadence, 0)
 
     metrics, flaws, recs, per_usable = [], [], [], {}
     phase = "acceleration" if azimuth_deg < 45 else "max_velocity"
-    for key, (val, evi) in raw.items():
+    for key, (val, evi) in values.items():
         vp = _viewpoint_penalty(azimuth_deg, PLANE[key])
-        conf = max(0.0, min(1.0, mean_conf * (1 - vp)))
+        conf = max(0.0, min(1.0, mean_conf * (1 - vp) * (0.7 if key in HARDER else 1.0)))
         band = _band(val, conf)
         usable = conf >= 0.35 and val > 0
         per_usable[key] = usable
@@ -162,27 +217,38 @@ def _assemble(knee: list[float], hip: list[float], trunk: list[float],
             sev = 3 if dev > 0.5 else 2 if dev > 0.2 else 1
             fid = f"flaw-{key.replace('_', '-')}"
             direction = "below" if val < lo else "above"
-            ts = int((frame_indices[evi] if evi < len(frame_indices) else 0) / fps * 1000)
+            ts = int((idxs[evi] if evi < len(idxs) else 0) / fps * 1000)
             flaws.append({
                 "id": fid, "name": NAMES[key], "phase": phase, "severity": sev,
-                "plainExplanation": f"Your {key.replace('_', ' ')} ({val:.0f}{UNIT[key]}) is {direction} the typical {lo:.0f}–{hi:.0f}{UNIT[key]}.",
+                "plainExplanation": f"Your {key.replace('_', ' ')} ({val:.0f}{UNIT[key]}) is {direction} the typical {lo:.0f}-{hi:.0f}{UNIT[key]}. {WHY[key]}",
                 "evidence": {"frameTimestampMs": ts,
-                             "jointAngles3D": {"knee_drive": round(knee_peak, 1), "hip_extension": round(hip_peak, 1), "trunk_lean": round(trunk_mean, 1)},
+                             "jointAngles3D": {"knee_drive": round(values['knee_drive'][0], 1), "hip_extension": round(values['hip_extension'][0], 1), "trunk_lean": round(values['trunk_lean'][0], 1)},
                              "measured": band, "normalRange": list(NORMAL_RANGE[key]), "viewpointPenalty": round(vp, 2)},
             })
             recs.append({"flawId": fid, **DRILLS[key]})
+
+    # Running economy: composite 0-100 from how close usable metrics sit to their band.
+    econ_terms = []
+    for m in metrics:
+        k = m["key"]; v = m["measured"]["value"]
+        if not per_usable[k] or v <= 0:
+            continue
+        lo, hi = NORMAL_RANGE[k]
+        mid = (lo + hi) / 2; half = max((hi - lo) / 2, 1e-6)
+        econ_terms.append(max(0.0, 1.0 - abs(v - mid) / (half * 2)))
+    economy = int(round(100 * (sum(econ_terms) / len(econ_terms)))) if econ_terms else 0
 
     overall = float(np.mean([m["measured"]["confidence"] for m in metrics]))
     nudge = None
     if azimuth_deg > 45:
         nudge = "Film from the side (perpendicular to running direction) for trustworthy joint angles."
     elif fps < 60:
-        nudge = "Record at 120fps+ if possible — sprint ground-contact is very fast."
+        nudge = "Record at 120fps+ for accurate ground-contact and cadence."
 
     return {
-        "id": f"analysis-{clip_id}", "phase": phase,
-        "summary": ("Clean sprint mechanics — nothing flagged this run." if not flaws
-                    else f"We found {len(flaws)} thing{'s' if len(flaws) > 1 else ''} to work on."),
+        "id": f"analysis-{clip_id}", "phase": phase, "economyScore": economy,
+        "summary": (f"Clean mechanics — nothing flagged. Economy {economy}/100." if not flaws
+                    else f"{len(flaws)} thing{'s' if len(flaws) > 1 else ''} to work on. Economy {economy}/100."),
         "flaws": flaws, "recommendations": recs, "metrics": metrics,
         "captureQuality": {"overall": round(overall, 2), "fps": fps, "motionBlur": "low",
                            "framing": "full", "perMetricUsable": per_usable,
@@ -191,16 +257,23 @@ def _assemble(knee: list[float], hip: list[float], trunk: list[float],
     }
 
 
+_KEYS = ["knee_drive", "hip_ext", "knee_flex", "elbow", "trunk", "hip_y",
+         "torso_len", "ank_x_rel", "ank_y_rel", "leg_len", "conf"]
+
+
 def analyze_2d_sagittal_stream(frame_iter: Iterable[dict], fps: float,
                                azimuth_deg: float, clip_id: str = "clip",
-                               min_frames: int = 8, max_frames: int = 450) -> dict[str, Any]:
+                               min_frames: int = 8, max_frames: int = 450,
+                               overlay_out: list | None = None) -> dict[str, Any]:
     """Memory-lean: consume a frame generator in ONE pass, retaining only scalar
-    series (never the keypoint arrays). Raises low_confidence_video if too few
-    usable frames survive. Stops after max_frames to bound worst-case latency
-    (enough strides for stable peak/gait stats)."""
-    knee: list[float] = []; hip: list[float] = []; trunk: list[float] = []
-    lank: list[float] = []; rank: list[float] = []; idxs: list[int] = []
-    conf_sum = 0.0
+    series. Raises low_confidence_video if too few usable frames survive. Stops
+    after max_frames to bound worst-case latency.
+
+    If `overlay_out` is provided, it is filled with one record per included frame
+    {tMs, kp:[[y,x,conf]x17]} for the mobile skeleton overlay (normalized coords)."""
+    S: dict[str, list[float]] = {k: [] for k in _KEYS}
+    S["l_rel"] = []; S["r_rel"] = []
+    idxs: list[int] = []
     total = 0
     for f in frame_iter:
         total += 1
@@ -208,24 +281,29 @@ def analyze_2d_sagittal_stream(frame_iter: Iterable[dict], fps: float,
             break
         if f.get("excluded"):
             continue
-        kd, he, tr, lr, rr, mc = _frame_scalars(_kp(f))
-        knee.append(kd); hip.append(he); trunk.append(tr)
-        lank.append(lr); rank.append(rr); idxs.append(int(f["frame_index"]))
-        conf_sum += mc
-    included = len(knee)
+        k = _kp(f)
+        sc = _frame_scalars(k)
+        for kk in _KEYS:
+            S[kk].append(sc[kk])
+        # per-side ankle-rel for gait (independent of which side was "better")
+        hy = (k[KP["left_hip"], 1] + k[KP["right_hip"], 1]) / 2
+        S["l_rel"].append(float(k[KP["left_ankle"], 1] - hy))
+        S["r_rel"].append(float(k[KP["right_ankle"], 1] - hy))
+        idxs.append(int(f["frame_index"]))
+        if overlay_out is not None:
+            overlay_out.append({
+                "tMs": round(int(f["frame_index"]) / fps * 1000, 1),
+                "kp": [[round(float(k[i, 0]), 4), round(float(k[i, 1]), 4), round(float(k[i, 2]), 3)] for i in range(17)],
+            })
+    included = len(idxs)
     excluded_pct = (total - included) / total if total else 1.0
     if included < min_frames or excluded_pct > 0.60:
         raise ValueError("low_confidence_video")
-    mean_conf = conf_sum / len(knee)
-    return _assemble(knee, hip, trunk, lank, rank, idxs, fps, mean_conf, azimuth_deg, clip_id)
+    mean_conf = float(np.mean(S["conf"]))
+    return _assemble(S, idxs, fps, mean_conf, azimuth_deg, clip_id)
 
 
 def analyze_2d_sagittal(frames: list[dict], fps: float, mean_conf: float,
                         azimuth_deg: float, clip_id: str = "clip") -> dict[str, Any]:
     """List-based variant (kept for callers/tests that already hold frames)."""
-    knee, hip, trunk, lank, rank, idxs = [], [], [], [], [], []
-    for f in frames:
-        kd, he, tr, lr, rr, _ = _frame_scalars(_kp(f))
-        knee.append(kd); hip.append(he); trunk.append(tr)
-        lank.append(lr); rank.append(rr); idxs.append(int(f["frame_index"]))
-    return _assemble(knee, hip, trunk, lank, rank, idxs, fps, mean_conf, azimuth_deg, clip_id)
+    return analyze_2d_sagittal_stream(iter(frames), fps, azimuth_deg, clip_id)

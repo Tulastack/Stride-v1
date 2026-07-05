@@ -4,7 +4,8 @@ import { z } from 'zod';
 import type { Response, NextFunction } from 'express';
 import { authenticate } from '../middleware/auth.js';
 import { requireConsent } from '../middleware/consent.js';
-import { isLocalStorage, writeLocalBlob, writeLocalJson, PUBLIC_API_URL } from '../lib/storage.js';
+import { isLocalStorage, writeLocalBlob, writeLocalJson, localKeyPath, PUBLIC_API_URL } from '../lib/storage.js';
+import fs from 'node:fs';
 import type { AuthenticatedRequest } from '../types.js';
 import {
   createAnalysis,
@@ -223,6 +224,57 @@ router.put(
     }
   },
 );
+
+/**
+ * 2c. Per-frame keypoint overlay (skeleton + angles) for the results-screen player.
+ */
+router.get('/:analysisId/overlay', authenticate, async (req: any, res: Response, next: NextFunction) => {
+  try {
+    const analysis = await getAnalysis(req.params.analysisId, req.userId);
+    if (!analysis) {
+      res.status(404).json({ error: 'Analysis not found' });
+      return;
+    }
+    if (!isLocalStorage) {
+      res.status(501).json({ error: 'overlay serving is local-mode only for now' });
+      return;
+    }
+    const p = localKeyPath(analysis.s3_key.replace(/\.[^.]+$/, '') + '.overlay.json');
+    if (!fs.existsSync(p)) {
+      res.status(404).json({ error: 'overlay not ready' });
+      return;
+    }
+    res.type('application/json').send(fs.readFileSync(p, 'utf8'));
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * 2d. Stream the recorded video for playback (token in query so the native
+ * video player needs no headers). res.sendFile handles HTTP Range → scrubbing.
+ */
+router.get('/:analysisId/file', authenticateSSE, async (req: any, res: Response, next: NextFunction) => {
+  try {
+    if (!isLocalStorage) {
+      res.status(501).json({ error: 'file serving is local-mode only for now' });
+      return;
+    }
+    const analysis = await getAnalysis(req.params.analysisId, req.userId);
+    if (!analysis) {
+      res.status(404).json({ error: 'Analysis not found' });
+      return;
+    }
+    const p = localKeyPath(analysis.s3_key);
+    if (!fs.existsSync(p)) {
+      res.status(404).json({ error: 'video not found' });
+      return;
+    }
+    res.sendFile(p);
+  } catch (err) {
+    next(err);
+  }
+});
 
 /**
  * 3. SSE stream endpoint

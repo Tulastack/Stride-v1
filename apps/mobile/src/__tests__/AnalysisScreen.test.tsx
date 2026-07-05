@@ -14,7 +14,13 @@ jest.mock('../store/useStrideStore', () => ({
 }));
 
 const mockGetAnalysis = jest.fn();
-jest.mock('../services/api', () => ({ strideApi: { getAnalysis: (...args: unknown[]) => mockGetAnalysis(...args) } }));
+jest.mock('../services/api', () => ({
+  strideApi: {
+    getAnalysis: (...args: unknown[]) => mockGetAnalysis(...args),
+    videoFileUrl: async () => 'http://test/video.mp4',
+    getOverlay: async () => ({ fps: 15, width: 9, height: 16, frames: [] }),
+  },
+}));
 
 import AnalysisScreen from '../../app/(tabs)/analysis';
 import { lowQualityHeadOnResult, highQualitySideResult } from '../fixtures/analysisResult';
@@ -33,7 +39,8 @@ describe('AnalysisScreen (F.3 confidence-aware)', () => {
     const { getByText, getByLabelText } = render(<AnalysisScreen />);
     await waitFor(() => expect(getByText('Biomechanics Report')).toBeTruthy());
     expect(getByLabelText('analysis-summary')).toBeTruthy();
-    expect(getByLabelText('evidence-anchor')).toBeTruthy();
+    // (the static skeleton evidence-anchor was replaced by the scrubbable
+    //  PoseVideoPlayer, which loads video/overlay asynchronously)
   });
 
   it('shows a capture nudge for the low-quality head-on result', async () => {

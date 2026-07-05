@@ -5,12 +5,12 @@ import { strideApi } from '../../src/services/api';
 import { parseAnalysisResult, waitForAnalysisResult, type AnalysisRow } from '../../src/lib/analysisApi';
 import { semantic, spacing, radius, borderWidth, typography } from '../../src/ui/theme';
 import {
-  EvidenceAnchor,
   FlawCard,
   DrillCard,
   MetricRow,
   CaptureQualityCard,
 } from '../../src/components/analysis';
+import { PoseVideoPlayer } from '../../src/components/analysis/PoseVideoPlayer';
 import type { AnalysisResult, Flaw } from '../../src/types/analysis';
 
 type Status = 'pending' | 'processing' | 'failed' | 'done';
@@ -136,7 +136,16 @@ export default function AnalysisScreen() {
       <ScrollView contentContainerStyle={styles.scroll}>
         <Text style={styles.title}>Biomechanics Report</Text>
 
-        {worstFlaw ? <EvidenceAnchor flaw={worstFlaw} testID="evidence-anchor" /> : null}
+        {analysisId ? (
+          <PoseVideoPlayer analysisId={analysisId} seekToMs={worstFlaw?.evidence?.frameTimestampMs} />
+        ) : null}
+
+        {result.economyScore != null ? (
+          <View style={styles.economyRow} accessibilityLabel="economy-score">
+            <Text style={styles.economyNum}>{result.economyScore}</Text>
+            <Text style={styles.economyLabel}>RUNNING ECONOMY{'\n'}/ 100</Text>
+          </View>
+        ) : null}
 
         <Text style={styles.summary} accessibilityLabel="analysis-summary">
           {result.summary}
@@ -149,7 +158,13 @@ export default function AnalysisScreen() {
           <View key={flaw.id} style={styles.flawBlock}>
             <FlawCard flaw={flaw} testID={`flawcard-${flaw.id}`} />
             {(recByFlaw.get(flaw.id) ?? []).map((rec) => (
-              <DrillCard key={rec.drillId} rec={rec} testID={`drillcard-${rec.drillId}`} />
+              <DrillCard
+                key={rec.drillId}
+                rec={rec}
+                testID={`drillcard-${rec.drillId}`}
+                analysisId={analysisId}
+                seekMs={flaw.evidence?.frameTimestampMs}
+              />
             ))}
           </View>
         ))}
@@ -208,6 +223,9 @@ export default function AnalysisScreen() {
 }
 
 const styles = StyleSheet.create({
+  economyRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.md },
+  economyNum: { fontSize: 48, fontWeight: '900', color: semantic.action.primary, letterSpacing: -2 },
+  economyLabel: { ...(typography.caption as object), color: semantic.text.muted, letterSpacing: 1 },
   container: { flex: 1, backgroundColor: semantic.surface.base },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.lg, padding: spacing.xl },
   scanText: { ...(typography.caption as object), color: semantic.text.muted, letterSpacing: 2 },

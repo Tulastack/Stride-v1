@@ -15,6 +15,7 @@ import {
   type MetricDelta,
 } from '../../src/lib/briefing';
 import { fetchAnalysisHistory } from '../../src/lib/analysisApi';
+import { CoachChat } from '../../src/components/CoachChat';
 import type { AnalysisResult } from '../../src/types/analysis';
 
 export default function CoachScreen() {
@@ -67,6 +68,8 @@ export default function CoachScreen() {
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scroll}>
         <Text style={styles.title}>Coach Briefing</Text>
+
+        <CoachChat />
 
         <Text style={styles.section}>SINCE LAST UPLOAD</Text>
         {history.length < 2 ? (

@@ -49,6 +49,14 @@ async function request<T>(path: string, options: FetchOptions = {}): Promise<T> 
   return response.json();
 }
 
+export interface OverlayData {
+  fps: number;
+  width: number;
+  height: number;
+  frames: { tMs: number; kp: number[][] }[];
+}
+const overlayCache = new Map<string, OverlayData>();
+
 // ─── API Service Client ───────────────────────────────────────────
 
 export const strideApi = {
@@ -71,6 +79,23 @@ export const strideApi = {
 
   getAnalysis: async (analysisId: string) => {
     return request<any>(`/videos/${analysisId}`);
+  },
+
+  // Per-frame keypoint overlay for the results-screen skeleton player (cached
+  // per analysis so multiple cards don't refetch).
+  getOverlay: async (analysisId: string) => {
+    const cached = overlayCache.get(analysisId);
+    if (cached) return cached;
+    const data = await request<OverlayData>(`/videos/${analysisId}/overlay`);
+    overlayCache.set(analysisId, data);
+    return data;
+  },
+
+  // Token-in-query URL the native video player can load directly (no headers).
+  videoFileUrl: async (analysisId: string): Promise<string> => {
+    const state = useStrideStore.getState();
+    const token = (await getAccessToken()) ?? state.token ?? '';
+    return `${state.apiBaseUrl}/videos/${analysisId}/file?token=${encodeURIComponent(token)}`;
   },
 
   requestUploadUrls: async (numParts: number) => {
@@ -157,6 +182,14 @@ export const strideApi = {
     return request<any>(`/coach-sessions/${sessionId}/message`, {
       method: 'POST',
       body: JSON.stringify({ content: content ?? CHIP_LABELS[actionChip], action_chip: actionChip }),
+    });
+  },
+
+  // Free-form question to the grounded Groq coach (free_coach sessions).
+  askCoach: async (sessionId: string, content: string) => {
+    return request<{ role: string; content: string }>(`/coach-sessions/${sessionId}/message`, {
+      method: 'POST',
+      body: JSON.stringify({ content }),
     });
   },
 
