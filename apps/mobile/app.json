@@ -32,7 +32,8 @@
           "cameraPermission": "Allow Stride to access your camera to capture and analyze your sprint form.",
           "microphonePermission": "Allow Stride to access your microphone during sprint recording."
         }
-      ]
+      ],
+      "expo-video"
     ],
     "scheme": "stride"
   }

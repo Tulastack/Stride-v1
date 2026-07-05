@@ -31,6 +31,8 @@ export interface CaptureManifest {
   gyro: GyroSample[];
   intrinsics: CameraIntrinsics;
   sloMoRequested: boolean;
+  /** User-selected target runner to analyze (normalized 0..1), for multi-person clips. */
+  target?: { xNorm: number; yNorm: number; tMs: number };
 }
 
 const { width: screenW, height: screenH } = Dimensions.get('window');

@@ -18,6 +18,8 @@ const createSessionSchema = z.object({
   analysis_id: z.string().uuid().optional().nullable(),
 });
 
+import { generateCoachReply, buildAnalysisContext } from '../lib/coach.js';
+
 const messageSchema = z.object({
   content: z.string().min(1).max(5000),
   action_chip: z
@@ -180,38 +182,22 @@ router.post('/:id/message', authenticate, async (req: any, res: Response, next: 
       }
     }
 
-    // ── free_coach or ask_coach chip: call Gemini ──
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      throw new Error('GEMINI_API_KEY environment variable is not configured');
-    }
+    // ── free_coach or ask_coach chip: Groq coach, GROUNDED in the athlete's
+    //    latest analysis and scoped to form / training / nutrition / recovery ──
+    const { getAnalysesByUser } = await import('../db/queries.js');
+    const analyses = await getAnalysesByUser(req.userId);
+    const grounding = session.analysis_id
+      ? analyses.find((a: any) => a.id === session.analysis_id)
+      : analyses.find((a: any) => a.status === 'completed' && a.result_json);
+    const analysisContext = buildAnalysisContext(
+      (grounding?.result_json as any) ?? null,
+      req.user,
+    );
 
-    const systemInstruction = `You are "Stride Coach", an elite sprint coach and expert biomechanist.
-Your goal is to guide solo athletes on improving their sprinting form using structured, biomechanically-driven advice.
-Keep your tone encouraging, direct, and authoritative yet supportive. Focus on giving action-oriented feedback.
-When discussing drills, specify exactly what cues to keep in mind.`;
-
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-    const response = await fetch(geminiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: systemInstruction }] },
-        contents: [{ role: 'user', parts: [{ text: content }] }],
-      }),
+    const assistantText = await generateCoachReply({
+      analysisContext,
+      userMessage: content,
     });
-
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error('Gemini API request failed:', errText);
-      throw new Error(`Gemini API error: ${response.statusText}`);
-    }
-
-    const resJson = (await response.json()) as any;
-    const assistantText = resJson.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!assistantText) {
-      throw new Error('No text content returned from Gemini API');
-    }
 
     await touchCoachSession(id);
     res.json({ role: 'assistant', content: assistantText });

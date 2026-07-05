@@ -21,6 +21,7 @@ import {
   CAPTURE_PREFS,
 } from '../../src/services/capture';
 import { semantic, spacing, radius, borderWidth, typography } from '../../src/ui/theme';
+import { TargetSelect } from '../../src/components/TargetSelect';
 
 export default function UploadScreen() {
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
@@ -30,6 +31,13 @@ export default function UploadScreen() {
   const [progressStep, setProgressStep] = useState<string | null>(null);
   const [showCamera, setShowCamera] = useState(false);
   const [sloMoPreferred, setSloMoPreferred] = useState(true);
+  const [pending, setPending] = useState<{
+    uri: string;
+    gyro: ReturnType<GyroRecorder['stop']>;
+    durationMs: number;
+    width?: number;
+    height?: number;
+  } | null>(null);
   const cameraRef = useRef<CameraView>(null);
   const gyroRef = useRef(new GyroRecorder());
 
@@ -44,7 +52,12 @@ export default function UploadScreen() {
     }
   }, [cameraPermission, micPermission, requestCameraPermission, requestMicPermission]);
 
-  const processVideo = async (uri: string, gyroSamples: ReturnType<GyroRecorder['stop']>, durationMs: number) => {
+  const processVideo = async (
+    uri: string,
+    gyroSamples: ReturnType<GyroRecorder['stop']>,
+    durationMs: number,
+    target?: { xNorm: number; yNorm: number; tMs: number },
+  ) => {
     setUploading(true);
     setProgressStep('UPLOADING · GYRO ATTACHED');
 
@@ -57,6 +70,7 @@ export default function UploadScreen() {
         preferredFps: CAPTURE_PREFS.preferredFps,
         sloMoRequested: sloMoPreferred,
       });
+      if (target) manifest.target = target;
 
       setProgressStep('RECONSTRUCTING 3D · QUEUED');
       const { analysisId } = await uploadCaptureVideo(uri, manifest, strideApi);
@@ -80,7 +94,7 @@ export default function UploadScreen() {
       });
       if (pick.canceled || !pick.assets[0]) return;
       const asset = pick.assets[0];
-      await processVideo(asset.uri, [], asset.duration ?? 4000);
+      setPending({ uri: asset.uri, gyro: [], durationMs: asset.duration ?? 4000, width: asset.width, height: asset.height });
     } catch (err: unknown) {
       Alert.alert('Import failed', err instanceof Error ? err.message : 'Could not import video.');
     }
@@ -104,7 +118,7 @@ export default function UploadScreen() {
       const gyro = gyroRef.current.stop();
       setRecording(false);
       setShowCamera(false);
-      if (video?.uri) await processVideo(video.uri, gyro, 12000);
+      if (video?.uri) setPending({ uri: video.uri, gyro, durationMs: 12000 });
     } catch (err: unknown) {
       gyroRef.current.stop();
       setRecording(false);
@@ -134,6 +148,20 @@ export default function UploadScreen() {
             </TouchableOpacity>
           </View>
         </CameraView>
+      </SafeAreaView>
+    );
+  }
+
+  if (pending) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <TargetSelect
+          uri={pending.uri}
+          videoWidth={pending.width}
+          videoHeight={pending.height}
+          onConfirm={(target) => { const p = pending; setPending(null); void processVideo(p.uri, p.gyro, p.durationMs, target); }}
+          onSkip={() => { const p = pending; setPending(null); void processVideo(p.uri, p.gyro, p.durationMs); }}
+        />
       </SafeAreaView>
     );
   }

@@ -42,10 +42,47 @@ def _load_body(mode: str | None = None) -> Any:
     return _body
 
 
-def iter_frames(video_path: str, target_fps: int = 30):
+# Torso keypoints define a stable person centroid (for target association).
+_TORSO = [5, 6, 11, 12]
+# Max normalized distance a tracked target may jump between sampled frames before
+# we treat it as "target not in frame" (occluded / left).
+_TRACK_GATE = 0.35
+
+
+def _person_centroids(kpts: np.ndarray, w: int, h: int) -> list[tuple[float, float]]:
+    """Normalized (x, y) torso centroid for each detected person."""
+    out = []
+    for xy in kpts:
+        out.append((float(np.mean(xy[_TORSO, 0])) / w, float(np.mean(xy[_TORSO, 1])) / h))
+    return out
+
+
+def _select_person(kpts, scores, w, h, target, core_idx):
+    """Return (index, centroid). Without a target: highest-confidence person.
+    With a target (running normalized x,y): the nearest person within the gate,
+    else (None, target) so the frame is dropped while the target is out of view."""
+    if len(scores) == 0:
+        return None, target
+    cents = _person_centroids(kpts, w, h)
+    if target is None:
+        best = int(np.argmax([np.mean(s[core_idx]) for s in scores]))
+        return best, cents[best]
+    dists = [(c[0] - target[0]) ** 2 + (c[1] - target[1]) ** 2 for c in cents]
+    best = int(np.argmin(dists))
+    if dists[best] ** 0.5 > _TRACK_GATE:
+        return None, target  # target not near any detection this frame
+    return best, cents[best]
+
+
+def iter_frames(video_path: str, target_fps: int = 30, target: tuple[float, float] | None = None):
     """Streaming generator: yields ONE lean per-frame dict at a time
     (frame_index, keypoints, avg_confidence, excluded) — no keypoint_dict, and
-    only the current frame is ever held in memory. Use this for the 2D path."""
+    only the current frame is ever held in memory. Use this for the 2D path.
+
+    `target` = the user-selected normalized (x, y) of the athlete to analyze.
+    When set, the SAME person is tracked across frames (nearest-centroid, gated),
+    so a multi-person clip focuses on the intended runner instead of whoever has
+    the cleanest keypoints."""
     body = _load_body()
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
@@ -60,6 +97,7 @@ def iter_frames(video_path: str, target_fps: int = 30):
     effective_fps = min(target_fps, source_fps)
     interval = source_fps / effective_fps
     core_idx = [KEYPOINT_INDEX[j] for j in CORE_JOINTS]
+    tgt = tuple(target) if target is not None else None
     frame_idx = 0
     next_sample = 0.0
     try:
@@ -70,10 +108,12 @@ def iter_frames(video_path: str, target_fps: int = 30):
             if frame_idx >= next_sample:
                 h, w = frame.shape[:2]
                 kpts, scores = body(frame)  # kpts (N,17,2) pixel xy, scores (N,17)
-                if len(scores) == 0:
-                    kp = np.zeros((17, 3), dtype=float)
+                best, cent = _select_person(kpts, scores, w, h, tgt, core_idx)
+                if best is None:
+                    kp = np.zeros((17, 3), dtype=float)  # excluded (no/absent target)
                 else:
-                    best = int(np.argmax([np.mean(s[core_idx]) for s in scores]))
+                    if tgt is not None:
+                        tgt = cent  # follow the target as it moves
                     xy, sc = kpts[best], scores[best]
                     kp = np.zeros((17, 3), dtype=float)
                     kp[:, 0] = np.clip(xy[:, 1] / h, 0, 1)
@@ -84,7 +124,7 @@ def iter_frames(video_path: str, target_fps: int = 30):
                     "frame_index": frame_idx,
                     "keypoints": kp,
                     "avg_confidence": round(float(np.mean(kp[:, 2])), 4),
-                    "excluded": core_conf < CONFIDENCE_THRESHOLD,
+                    "excluded": best is None or core_conf < CONFIDENCE_THRESHOLD,
                 }
                 next_sample += interval
             frame_idx += 1

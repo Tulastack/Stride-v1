@@ -7,8 +7,19 @@ import { PlayCircle, User } from 'lucide-react-native';
 import { semantic, spacing, radius, borderWidth, typography } from '../../ui/theme';
 import { resolveDemoAsset } from '@stride/content';
 import type { DrillRec } from '../../types/analysis';
+import { PoseSnapshot } from './PoseSnapshot';
 
-export function DrillCard({ rec, testID }: { rec: DrillRec; testID?: string }) {
+export function DrillCard({
+  rec,
+  testID,
+  analysisId,
+  seekMs,
+}: {
+  rec: DrillRec;
+  testID?: string;
+  analysisId?: string;
+  seekMs?: number;
+}) {
   const asset = resolveDemoAsset(rec.demoAssetId);
   return (
     <View style={styles.card} testID={testID} accessibilityLabel={`drill-${rec.drillId}`}>
@@ -16,14 +27,20 @@ export function DrillCard({ rec, testID }: { rec: DrillRec; testID?: string }) {
       <Text style={styles.name}>{rec.drillName}</Text>
 
       <View style={styles.frames}>
-        <View style={styles.frame}>
-          <User size={20} color={semantic.text.muted} />
+        <View style={styles.frameCol} testID={`your-form-${rec.drillId}`}>
+          {analysisId && seekMs != null ? (
+            <PoseSnapshot analysisId={analysisId} tMs={seekMs} />
+          ) : (
+            <View style={styles.frame}><User size={20} color={semantic.text.muted} /></View>
+          )}
           <Text style={styles.frameLabel}>your form</Text>
         </View>
-        <View style={[styles.frame, styles.demoFrame]} accessibilityLabel={`demo-${rec.demoAssetId}`} testID={`demo-${rec.demoAssetId}`}>
-          <PlayCircle size={22} color={semantic.action.primary} />
+        <View style={styles.frameCol}>
+          <View style={[styles.frame, styles.demoFrame]} accessibilityLabel={`demo-${rec.demoAssetId}`} testID={`demo-${rec.demoAssetId}`}>
+            <PlayCircle size={22} color={semantic.action.primary} />
+          </View>
           <Text style={[styles.frameLabel, { color: semantic.action.primary }]}>
-            {asset ? 'correct form' : 'demo missing'}
+            {asset ? 'correct form' : 'reference'}
           </Text>
         </View>
       </View>
@@ -50,8 +67,9 @@ const styles = StyleSheet.create({
   kicker: { ...(typography.caption as object), color: semantic.action.primary, letterSpacing: 1 },
   name: { ...(typography.title as object), color: semantic.text.primary },
   frames: { flexDirection: 'row', gap: spacing.sm, marginVertical: spacing.sm },
+  frameCol: { flex: 1, gap: spacing.xs, alignItems: 'center' },
   frame: {
-    flex: 1,
+    width: '100%',
     height: 84,
     borderRadius: radius.sm,
     borderWidth: borderWidth.hairline,

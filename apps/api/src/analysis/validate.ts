@@ -110,6 +110,7 @@ export const analysisResultSchema = z
     captureQuality: captureQualitySchema,
     reconstructionMethod: reconstructionMethodSchema,
     createdAt: z.string().min(1),
+    economyScore: z.number().int().min(0).max(100).optional(),
   })
   .strict()
   .superRefine((result, ctx) => {

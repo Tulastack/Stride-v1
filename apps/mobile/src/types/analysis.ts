@@ -71,6 +71,8 @@ export interface AnalysisResult {
   captureQuality: CaptureQuality;
   reconstructionMethod: ReconstructionMethod;
   createdAt: string;
+  /** Composite running-economy index (0–100). */
+  economyScore?: number;
 }
 
 /** Confidence tier for UI demotion: low-confidence metrics are muted + labeled. */

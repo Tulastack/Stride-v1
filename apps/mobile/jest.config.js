@@ -12,5 +12,7 @@ module.exports = {
     '^expo-blur$': '<rootDir>/__mocks__/expo-blur.js',
     '.*ViewConfigIgnore.*': '<rootDir>/__mocks__/ViewConfigIgnore.js',
     '.*/lib/supabase$': '<rootDir>/__mocks__/supabase.js',
+    '^expo-video$': '<rootDir>/__mocks__/expo-video.js',
+    '^@react-native-community/slider$': '<rootDir>/__mocks__/slider.js',
   },
 };
