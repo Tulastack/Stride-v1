@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TextInput, TouchableOpacity, KeyboardAvoidingVi
 import { useRouter } from 'expo-router';
 import { useStrideStore } from '../../src/store/useStrideStore';
 import { strideApi } from '../../src/services/api';
+import { supabase, isSupabaseConfigured } from '../../src/lib/supabase';
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -24,17 +25,26 @@ export default function LoginScreen() {
     setError('');
 
     try {
-      // Simulate/mock Supabase authentication response
-      // In production, we would use Supabase SDK: await supabase.auth.signInWithPassword({ email, password })
+      if (isSupabaseConfigured && supabase) {
+        // Real auth: exchange email/password for a Supabase JWT the API verifies.
+        const { data, error: authError } = await supabase.auth.signInWithPassword({ email, password });
+        if (authError) throw authError;
+        const token = data.session?.access_token;
+        if (!token) throw new Error('No session returned from Supabase');
+        setToken(token);
+        const profile = await strideApi.getProfile(token);
+        setUser(profile);
+        router.replace('/(tabs)');
+        return;
+      }
+
+      // No Supabase configured — dev/demo fallback (UI exploration only).
       const mockToken = 'mock_jwt_token_stripe_user';
       setToken(mockToken);
-
-      // Fetch or create profile via API
       try {
         const profile = await strideApi.getProfile(mockToken);
         setUser(profile);
       } catch (profileErr) {
-        // Fallback user if API is not fully running locally during development
         setUser({
           id: 'dev_user_uuid',
           email,
@@ -44,7 +54,6 @@ export default function LoginScreen() {
           personal_best_seconds: 10.85,
         });
       }
-
       router.replace('/(tabs)');
     } catch (err: any) {
       setError(err.message || 'Authentication failed');

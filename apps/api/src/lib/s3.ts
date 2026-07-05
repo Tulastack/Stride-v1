@@ -12,6 +12,12 @@ const endpoint = process.env.AWS_ENDPOINT || undefined;
 
 export const s3Client = new S3Client({
   region: process.env.AWS_REGION ?? 'us-east-1',
+  // AWS SDK v3 defaults to attaching a CRC32 integrity checksum to uploads
+  // ('WHEN_SUPPORTED'). That bakes an x-amz-checksum requirement into presigned
+  // PUT URLs, so a plain client PUT (mobile app / any HTTP client) fails with
+  // "Checksum Type mismatch". Only require checksums when the caller sets one.
+  requestChecksumCalculation: 'WHEN_REQUIRED',
+  responseChecksumValidation: 'WHEN_REQUIRED',
   ...(endpoint && {
     endpoint,
     forcePathStyle: true, // Required for LocalStack
@@ -100,6 +106,7 @@ export async function putJsonSidecar(videoKey: string, suffix: string, body: unk
   return sidecarKey;
 }
 export async function checkS3Health(): Promise<boolean> {
+  if (process.env.STORAGE_DRIVER === 'local') return true; // local FS, no S3
   try {
     await s3Client.send(new HeadBucketCommand({ Bucket: BUCKET }));
     return true;

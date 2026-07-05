@@ -1,8 +1,10 @@
 import { Router } from 'express';
+import express from 'express';
 import { z } from 'zod';
 import type { Response, NextFunction } from 'express';
 import { authenticate } from '../middleware/auth.js';
 import { requireConsent } from '../middleware/consent.js';
+import { isLocalStorage, writeLocalBlob, writeLocalJson, PUBLIC_API_URL } from '../lib/storage.js';
 import type { AuthenticatedRequest } from '../types.js';
 import {
   createAnalysis,
@@ -39,11 +41,16 @@ const finalizeSchema = z.object({
   captureManifest: z.record(z.unknown()).optional(),
 });
 
-// Custom helper for query token authentication in SSE
+// Token auth from a query param OR Authorization header (used by SSE and the
+// local blob-upload endpoint, whose URL carries the token so the client needs
+// no extra headers — the same way S3 presigned URLs are self-authenticating).
 async function authenticateSSE(req: any, res: Response, next: NextFunction): Promise<void> {
-  const token = req.query.token as string;
+  const headerToken = req.headers.authorization?.startsWith('Bearer ')
+    ? req.headers.authorization.slice(7)
+    : undefined;
+  const token = (req.query.token as string) || headerToken;
   if (!token) {
-    res.status(401).json({ error: 'Missing token in query parameters' });
+    res.status(401).json({ error: 'Missing token' });
     return;
   }
 
@@ -93,6 +100,26 @@ router.post('/upload-url', authenticate, requireConsent, async (req: any, res: R
     const analysisId = analysis.id;
 
     const actualS3Key = `uploads/${userId}/${analysisId}.mp4`;
+
+    // ── Local storage: return a single upload URL pointing back at this API.
+    // The URL carries the caller's token so the plain PUT is self-authenticating
+    // (mirrors an S3 presigned URL — the mobile client sends no extra headers).
+    if (isLocalStorage) {
+      const { pool } = await import('../db/queries.js');
+      await pool.query('UPDATE analyses SET s3_key = $1 WHERE id = $2', [actualS3Key, analysisId]);
+      const bearer = req.headers.authorization?.startsWith('Bearer ')
+        ? req.headers.authorization.slice(7)
+        : '';
+      res.json({
+        analysisId,
+        uploadId: 'local',
+        parts: [{
+          partNumber: 1,
+          url: `${PUBLIC_API_URL}/videos/${analysisId}/blob?token=${encodeURIComponent(bearer)}`,
+        }],
+      });
+      return;
+    }
     // We update the analysis key to be the proper path (using a custom direct query or standard behavior,
     // actually our updateAnalysisStatus handles updating fields, let's keep it clean by inserting the correct key
     // immediately if possible, but since we need analysisId first, let's execute a quick query or let's create a custom update key query if we need to).
@@ -131,6 +158,19 @@ router.post('/finalize', authenticate, requireConsent, async (req: any, res: Res
       return;
     }
 
+    if (isLocalStorage) {
+      // Bytes were already written by PUT /videos/:id/blob. Just drop the
+      // capture sidecar next to the video; the worker's DB poller picks it up.
+      if (captureManifest) {
+        await writeLocalJson(
+          analysis.s3_key.replace(/\.[^.]+$/, '') + '.capture.json',
+          captureManifest,
+        );
+      }
+      res.json({ ...analysis, status: 'pending' });
+      return;
+    }
+
     // Complete S3 multipart upload
     await completeMultipartUpload(analysis.s3_key, uploadId, parts);
 
@@ -150,6 +190,39 @@ router.post('/finalize', authenticate, requireConsent, async (req: any, res: Res
     next(err);
   }
 });
+
+/**
+ * 2b. Local-storage blob upload target (Docker-free dev). The phone PUTs the
+ * raw video bytes here; we write them to the shared local dir the worker reads.
+ */
+router.put(
+  '/:analysisId/blob',
+  authenticateSSE, // token via ?token= or Authorization header (consent already enforced at upload-url)
+  express.raw({ type: '*/*', limit: '500mb' }),
+  async (req: any, res: Response, next: NextFunction) => {
+    try {
+      if (!isLocalStorage) {
+        res.status(404).json({ error: 'Not found' });
+        return;
+      }
+      const { analysisId } = req.params;
+      const analysis = await getAnalysis(analysisId, req.userId);
+      if (!analysis) {
+        res.status(404).json({ error: 'Analysis not found' });
+        return;
+      }
+      const body: Buffer = req.body;
+      if (!body || !body.length) {
+        res.status(400).json({ error: 'Empty upload body' });
+        return;
+      }
+      await writeLocalBlob(analysis.s3_key, body);
+      res.set('ETag', `"local-${analysisId}"`).status(200).json({ ok: true, bytes: body.length });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 /**
  * 3. SSE stream endpoint

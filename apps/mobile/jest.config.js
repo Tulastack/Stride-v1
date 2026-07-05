@@ -11,5 +11,6 @@ module.exports = {
     '^expo-linear-gradient$': '<rootDir>/__mocks__/expo-linear-gradient.js',
     '^expo-blur$': '<rootDir>/__mocks__/expo-blur.js',
     '.*ViewConfigIgnore.*': '<rootDir>/__mocks__/ViewConfigIgnore.js',
+    '.*/lib/supabase$': '<rootDir>/__mocks__/supabase.js',
   },
 };

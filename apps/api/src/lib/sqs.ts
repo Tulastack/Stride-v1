@@ -12,6 +12,12 @@ export const sqsClient = new SQSClient({
 const QUEUE_URL = process.env.SQS_QUEUE_URL!;
 
 export async function enqueueAnalysis(analysisId: string, s3Key: string): Promise<void> {
+  if (process.env.STORAGE_DRIVER === 'local') {
+    // No SQS in local mode — the 'pending' analyses row IS the queue; the worker
+    // polls the DB (FOR UPDATE SKIP LOCKED).
+    console.log(`[queue] local mode: analysis ${analysisId} left pending for DB poller`);
+    return;
+  }
   const command = new SendMessageCommand({
     QueueUrl: QUEUE_URL,
     MessageBody: JSON.stringify({
@@ -24,6 +30,7 @@ export async function enqueueAnalysis(analysisId: string, s3Key: string): Promis
 }
 
 export async function checkSQSHealth(): Promise<boolean> {
+  if (process.env.STORAGE_DRIVER === 'local') return true; // DB-queue, no SQS
   try {
     const command = new GetQueueAttributesCommand({
       QueueUrl: QUEUE_URL,

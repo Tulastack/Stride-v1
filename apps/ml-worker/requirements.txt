@@ -1,5 +1,8 @@
 tensorflow>=2.14.0
 tensorflow-hub>=0.16.0
+# Production 2D pose backbone (RTMDet detector + RTMPose, ONNX/CPU):
+rtmlib>=0.0.13
+onnxruntime>=1.17.0
 opencv-python-headless>=4.10.0
 google-genai>=1.0.0
 groq>=0.12.0

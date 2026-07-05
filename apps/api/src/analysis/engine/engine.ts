@@ -151,14 +151,28 @@ export function assembleAnalysisFromFrames(ctx: AssembleContext): AnalysisResult
     framing: ctx.framing,
   });
 
-  const outMetrics: Metric[] = withConfidence.map((mc) => ({
-    key: mc.metric.key,
-    measured: mc.band,
-    unit: mc.metric.unit,
-    normalRange: mc.metric.normalRange,
-    comparableAcrossViews: true,
-    trustStatus: metricTrustStatus(mc.metric.key as import('../validation/harness.js').MetricKey, view),
-  }));
+  // Trust is the AND of two gates: (1) the offline per-viewpoint validation
+  // table, and (2) the ACTUAL per-clip confidence. A metric the validation
+  // table trusts for this view is still demoted to 'experimental' if this
+  // specific clip's reconstruction confidence is low — we never stamp a
+  // low-confidence number "trusted".
+  const CONFIDENCE_TRUST_FLOOR = 0.6;
+  const outMetrics: Metric[] = withConfidence.map((mc) => {
+    const tableTrust = metricTrustStatus(
+      mc.metric.key as import('../validation/harness.js').MetricKey,
+      view,
+    );
+    const trustStatus =
+      mc.band.confidence < CONFIDENCE_TRUST_FLOOR ? 'experimental' : tableTrust;
+    return {
+      key: mc.metric.key,
+      measured: mc.band,
+      unit: mc.metric.unit,
+      normalRange: mc.metric.normalRange,
+      comparableAcrossViews: true,
+      trustStatus,
+    };
+  });
 
   const flaws: Flaw[] = [];
   const recommendations: DrillRec[] = [];

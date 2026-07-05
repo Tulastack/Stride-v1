@@ -46,13 +46,27 @@ export interface Stance {
   offIdx: number;
 }
 
-/** Detect ground-contact stances from world-frame ankle height. */
+/** Detect ground-contact stances from PELVIS-RELATIVE ankle height.
+ *
+ * A sprinter translates through the world, so absolute world-frame ankle height
+ * drifts monotonically and a global min/max threshold detects a single fake
+ * "contact". Measuring the ankle relative to the pelvis removes that drift and
+ * isolates the leg cycle; light smoothing tames reconstruction noise. A stance
+ * is the low phase of that signal (foot planted under/behind the hips). */
 export function detectStances(frames: Frame3D[], side: 'l' | 'r'): Stance[] {
   const ankle = side === 'l' ? 'l_ankle' : 'r_ankle';
-  const ys = frames.map((f) => f.pose[ankle][1]);
+  const raw = frames.map(
+    (f) => f.pose[ankle][1] - (f.pose.l_hip[1] + f.pose.r_hip[1]) / 2,
+  );
+  // 3-point moving average.
+  const ys = raw.map((_, i) => {
+    const w = raw.slice(Math.max(0, i - 1), Math.min(raw.length, i + 2));
+    return w.reduce((s, v) => s + v, 0) / w.length;
+  });
   const ground = Math.min(...ys);
   const peak = Math.max(...ys);
-  const threshold = ground + (peak - ground) * 0.18;
+  if (peak - ground < 1e-3) return []; // no stride signal (static / degenerate)
+  const threshold = ground + (peak - ground) * 0.3;
 
   const stances: Stance[] = [];
   let start = -1;
@@ -60,11 +74,13 @@ export function detectStances(frames: Frame3D[], side: 'l' | 'r'): Stance[] {
     const contact = ys[i] <= threshold;
     if (contact && start === -1) start = i;
     if (!contact && start !== -1) {
-      stances.push({ side, strikeIdx: start, offIdx: i - 1 });
+      if (i - 1 - start >= 1) stances.push({ side, strikeIdx: start, offIdx: i - 1 });
       start = -1;
     }
   }
-  if (start !== -1) stances.push({ side, strikeIdx: start, offIdx: ys.length - 1 });
+  if (start !== -1 && ys.length - 1 - start >= 1) {
+    stances.push({ side, strikeIdx: start, offIdx: ys.length - 1 });
+  }
   return stances;
 }
 

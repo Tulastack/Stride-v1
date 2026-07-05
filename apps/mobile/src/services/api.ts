@@ -1,4 +1,5 @@
 import { useStrideStore } from '../store/useStrideStore';
+import { getAccessToken } from '../lib/supabase';
 import type { CaptureManifest } from './capture';
 
 interface FetchOptions extends RequestInit {
@@ -23,7 +24,10 @@ const CHIP_LABELS: Record<CoachActionChip, string> = {
 
 async function request<T>(path: string, options: FetchOptions = {}): Promise<T> {
   const state = useStrideStore.getState();
-  const token = options.token ?? state.token;
+  // Prefer an explicit token, else a FRESH Supabase token (auto-refreshed),
+  // else the stored token (demo/mock mode). This prevents stale-JWT 401s on
+  // long-lived screens.
+  const token = options.token ?? (await getAccessToken()) ?? state.token;
   const baseUrl = state.apiBaseUrl;
 
   const headers = new Headers(options.headers);

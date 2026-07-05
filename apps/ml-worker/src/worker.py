@@ -40,7 +40,8 @@ if sentry_dsn:
     logger.info("Sentry initialized successfully.")
 
 from src.db import get_db_connection
-from src.movenet import process_video, CONFIDENCE_THRESHOLD, MOVENET_VERSION
+from src.pose2d import process_video
+from src.movenet import CONFIDENCE_THRESHOLD, MOVENET_VERSION
 from src.biomechanics import analyze
 from src.llm import generate_sprint_report
 from src.notify import (
@@ -50,8 +51,10 @@ from src.notify import (
     notify_progress,
 )
 from src.capture_loader import download_capture_sidecar
-from src.pipeline3d import run_pipeline_3d
+from src.pipeline3d import run_pipeline_3d, _estimate_azimuth
 from src.frames3d_io import write_frames_sidecar
+from src.pose2d import stream_frames
+from src.biomech2d import analyze_2d_sagittal_stream
 
 # Initialize AWS clients
 aws_endpoint = os.environ.get("AWS_ENDPOINT")
@@ -70,8 +73,19 @@ if aws_endpoint:
 s3_client = boto3.client("s3", **s3_client_args)
 sqs_client = boto3.client("sqs", **sqs_client_args)
 
-# WHAM+OpenCap is the default production path (set STRIDE_LEGACY_PIPELINE=1 for old LLM flow)
-USE_WHAM_OPENCAP = os.environ.get("STRIDE_LEGACY_PIPELINE", "0") != "1"
+# Docker-free local mode: read videos from a shared dir, poll the DB for jobs.
+STORAGE_DRIVER = os.environ.get("STORAGE_DRIVER", "s3").lower()
+LOCAL_STORAGE = STORAGE_DRIVER == "local"
+LOCAL_STORAGE_DIR = os.environ.get("LOCAL_STORAGE_DIR", "/tmp/stride-local-storage")
+
+# Pipeline selection:
+#   STRIDE_PIPELINE=2d      (default) — RTMPose + 2D sagittal biomechanics. The
+#                           production path: accurate sagittal angles from a good
+#                           2D backbone, no fragile monocular 3D lift. CPU-friendly.
+#   STRIDE_PIPELINE=wham    — MoveNet/RTMPose + WHAM 3D lift (needs GPU + STRIDE_WHAM_REPO)
+#   STRIDE_PIPELINE=legacy  — old 2D + Gemini LLM report
+PIPELINE = os.environ.get("STRIDE_PIPELINE", "2d").lower()
+USE_WHAM_OPENCAP = PIPELINE == "wham"
 
 
 def update_analysis_status_in_db(analysis_id: str, status: str, error_message: str | None = None) -> None:
@@ -107,6 +121,45 @@ def _upload_frames_sidecar(s3_key: str, pipeline_result: dict) -> None:
         ContentType="application/json",
     )
     logger.info("Uploaded frames3d sidecar to s3://%s/%s", s3_bucket, sidecar_key)
+
+
+def _run_2d(analysis_id: str, video_path: str, capture: dict) -> None:
+    """RTMPose 2D keypoints -> 2D sagittal biomechanics -> AnalysisResult.
+
+    Streaming: frames are consumed one at a time and reduced to scalar series, so
+    peak memory is bounded regardless of clip length (no full keypoint buffer)."""
+    fps = float(capture.get("fps") or 30)
+    notify_progress(analysis_id, "pose_extraction", 30, "RTMPose 2D keypoints")
+    os.environ.setdefault("POSE2D_BACKEND", "rtmpose")
+    azimuth = float(capture["cameraAzimuthDeg"]) if capture.get("cameraAzimuthDeg") is not None else 20.0
+
+    # Speed: sample pose at a lower fps (angles don't need 30/60fps) and pass that
+    # effective rate to the analyzer so gait timing stays consistent.
+    pose_fps = int(os.environ.get("POSE_FPS", "15"))
+    eff_fps = float(min(pose_fps, fps))
+
+    notify_progress(analysis_id, "biomechanics_calculation", 75, "2D sagittal biomechanics")
+    result = analyze_2d_sagittal_stream(
+        stream_frames(video_path, target_fps=pose_fps),
+        fps=eff_fps, azimuth_deg=azimuth, clip_id=analysis_id[:8],
+    )
+    overall_score = int(round(result["captureQuality"]["overall"] * 100))
+
+    notify_progress(analysis_id, "finalizing", 95, "Complete")
+    ok = notify_analysis_completed(analysis_id, overall_score, result)
+    if not ok:
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE analyses SET status='completed', overall_score=%s, result_json=%s, movenet_version=%s, completed_at=now() WHERE id=%s",
+                    (overall_score, json.dumps(result), "rtmpose+2d-sagittal", analysis_id),
+                )
+
+
+def _process_2d_sagittal(analysis_id: str, s3_key: str, local_video: str) -> None:
+    """SQS path: download the capture sidecar from S3, then run 2D biomechanics."""
+    capture = download_capture_sidecar(s3_client, s3_bucket, s3_key, local_video)
+    _run_2d(analysis_id, local_video, capture)
 
 
 def _process_wham_opencap(analysis_id: str, s3_key: str, local_video: str) -> None:
@@ -191,12 +244,15 @@ def process_sqs_message(message: dict) -> None:
         notify_progress(analysis_id, "downloading", 10)
         s3_client.download_file(s3_bucket, s3_key, local_temp_file)
 
-        if USE_WHAM_OPENCAP:
+        if PIPELINE == "wham":
             logger.info("Running WHAM + OpenCap pipeline (Stages 2–3)")
             _process_wham_opencap(analysis_id, s3_key, local_temp_file)
-        else:
+        elif PIPELINE == "legacy":
             logger.info("Running legacy 2D + LLM pipeline")
             _process_legacy_llm(analysis_id, local_temp_file)
+        else:
+            logger.info("Running RTMPose + 2D sagittal biomechanics pipeline")
+            _process_2d_sagittal(analysis_id, s3_key, local_temp_file)
 
     except Exception as err:
         logger.error("Error processing analysis %s: %s", analysis_id, err)
@@ -213,7 +269,82 @@ def process_sqs_message(message: dict) -> None:
                 logger.error("Failed to delete temp file %s: %s", local_temp_file, e)
 
 
+def _read_local_capture(s3_key: str) -> dict:
+    """Read the capture sidecar written by the API in local mode (if any)."""
+    sidecar = os.path.join(LOCAL_STORAGE_DIR, os.path.splitext(s3_key)[0] + ".capture.json")
+    if os.path.exists(sidecar):
+        try:
+            with open(sidecar, encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            logger.warning("Failed to read local capture sidecar: %s", e)
+    return {}
+
+
+def _process_local(analysis_id: str, s3_key: str) -> None:
+    """Local mode: the video is already on disk (shared dir); run 2D biomechanics."""
+    video_path = os.path.join(LOCAL_STORAGE_DIR, s3_key)
+    try:
+        if not os.path.exists(video_path):
+            raise ValueError(f"video not found in local storage: {video_path}")
+        capture = _read_local_capture(s3_key)
+        if PIPELINE == "wham":
+            _process_wham_opencap(analysis_id, s3_key, video_path)
+        elif PIPELINE == "legacy":
+            _process_legacy_llm(analysis_id, video_path)
+        else:
+            _run_2d(analysis_id, video_path, capture)
+    except Exception as err:
+        logger.error("Error processing (local) analysis %s: %s", analysis_id, err)
+        traceback.print_exc()
+        sentry_sdk.capture_exception(err)
+        update_analysis_status_in_db(analysis_id, "failed", error_message=str(err))
+        notify_analysis_failed(analysis_id, str(err))
+
+
+def _claim_pending():
+    """Atomically claim the next pending analysis (FOR UPDATE SKIP LOCKED)."""
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE analyses SET status='processing'
+                WHERE id = (
+                    SELECT id FROM analyses WHERE status='pending'
+                    ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED
+                )
+                RETURNING id, s3_key
+                """
+            )
+            return cur.fetchone()
+
+
+def _start_local_worker() -> None:
+    logger.info("Starting Stride ML Worker (LOCAL DB-poll, pipeline=%s) dir=%s", PIPELINE, LOCAL_STORAGE_DIR)
+    last_heartbeat = time.time()
+    while True:
+        try:
+            if time.time() - last_heartbeat > 60:
+                logger.info("[Heartbeat] Polling DB for pending analyses...")
+                last_heartbeat = time.time()
+            row = _claim_pending()
+            if row:
+                analysis_id, s3_key = str(row[0]), row[1]
+                logger.info("Claimed analysis %s (key: %s)", analysis_id, s3_key)
+                _process_local(analysis_id, s3_key)
+            else:
+                time.sleep(2)
+        except Exception as poll_err:
+            logger.error("Error in DB poll loop: %s", poll_err)
+            sentry_sdk.capture_exception(poll_err)
+            time.sleep(3)
+
+
 def start_worker() -> None:
+    if LOCAL_STORAGE:
+        _start_local_worker()
+        return
+
     if not queue_url:
         logger.error("SQS_QUEUE_URL environment variable is not configured. Exiting.")
         sys.exit(1)

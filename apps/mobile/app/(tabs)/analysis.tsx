@@ -15,6 +15,18 @@ import type { AnalysisResult, Flaw } from '../../src/types/analysis';
 
 type Status = 'pending' | 'processing' | 'failed' | 'done';
 
+/** Turn worker error codes into actionable, human-readable guidance. */
+function friendlyError(err?: string | null): string {
+  if (!err) return 'Something went wrong analyzing your run.';
+  if (err.includes('low_confidence_video')) {
+    return "We couldn't track your body clearly enough. Film your FULL body from the SIDE, in good lighting, with the whole run in frame — then try again.";
+  }
+  if (err.includes('video not found')) {
+    return 'Your video didn\'t finish uploading. Check your connection and re-upload.';
+  }
+  return err;
+}
+
 function severitySort(a: Flaw, b: Flaw): number {
   return b.severity - a.severity;
 }
@@ -98,7 +110,7 @@ export default function AnalysisScreen() {
         <View style={styles.center} accessibilityLabel="analysis-scanning">
           <ActivityIndicator size="large" color={semantic.action.primary} />
           <Text style={styles.scanText}>
-            {status === 'processing' ? 'WHAM + OPENCAP · CANONICALIZING' : 'LOADING ANALYSIS'}
+            {status === 'processing' ? 'RTMPOSE · CANONICALIZING' : 'LOADING ANALYSIS'}
           </Text>
         </View>
       </SafeAreaView>
@@ -110,7 +122,7 @@ export default function AnalysisScreen() {
       <SafeAreaView style={styles.container}>
         <View style={styles.center} accessibilityLabel="analysis-failed">
           <Text style={styles.failTitle}>Analysis failed</Text>
-          <Text style={styles.failMsg}>{error ?? 'Something went wrong reconstructing your run.'}</Text>
+          <Text style={styles.failMsg}>{friendlyError(error)}</Text>
           <Pressable style={styles.retry} onPress={() => load(analysisId)} accessibilityLabel="analysis-retry">
             <Text style={styles.retryText}>Retry</Text>
           </Pressable>

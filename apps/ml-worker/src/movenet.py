@@ -44,6 +44,15 @@ KEYPOINT_INDEX: dict[str, int] = {name: idx for idx, name in enumerate(KEYPOINT_
 # Minimum average confidence for a frame to be considered usable
 CONFIDENCE_THRESHOLD: float = 0.3
 
+# Core sprint-relevant joints (shoulders, hips, knees, ankles). We gate frames
+# on the mean confidence of THESE joints, not all 17 — face/ear keypoints are
+# irrelevant to biomechanics and, on side/running views, drag the 17-kp mean
+# below threshold even when the body is tracked well.
+CORE_JOINTS: list[str] = [
+    "left_shoulder", "right_shoulder", "left_hip", "right_hip",
+    "left_knee", "right_knee", "left_ankle", "right_ankle",
+]
+
 # Model version string used in analysis results
 MOVENET_VERSION: str = "singlepose-thunder-v4"
 
@@ -64,25 +73,84 @@ def _load_model() -> Any:
     return _model
 
 
-def _run_inference(model: Any, frame: np.ndarray) -> np.ndarray:
-    """Run MoveNet on a single BGR frame.
-
-    Args:
-        model: The loaded MoveNet serving signature.
-        frame: An OpenCV BGR image (HxWx3, uint8).
-
-    Returns:
-        A (17, 3) numpy array where each row is [y, x, confidence].
-    """
-    # MoveNet Thunder expects 256×256 int32
-    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    resized = cv2.resize(rgb, (256, 256))
+def _infer_square(model: Any, square_rgb: np.ndarray) -> np.ndarray:
+    """Run MoveNet on an already-square RGB image. Returns (17,3) [y,x,conf]
+    in the square image's normalized coordinates."""
+    resized = cv2.resize(square_rgb, (256, 256))
     input_tensor = tf.cast(tf.expand_dims(resized, axis=0), dtype=tf.int32)
-
     outputs = model(input_tensor)
-    # output_0 shape: (1, 1, 17, 3)
-    keypoints = outputs["output_0"].numpy().squeeze()  # (17, 3)
-    return keypoints
+    return outputs["output_0"].numpy().squeeze()  # (17, 3)
+
+
+def _letterbox(rgb: np.ndarray) -> tuple[np.ndarray, int, int, int]:
+    """Pad a HxW RGB image to a centered square WITHOUT distorting aspect ratio.
+    MoveNet's own guidance is to keep aspect ratio; a raw resize to 256×256 of a
+    720×1280 portrait squashes the runner and destroys keypoint confidence.
+    Returns (square_img, offset_y, offset_x, side)."""
+    h, w = rgb.shape[:2]
+    side = max(h, w)
+    oy, ox = (side - h) // 2, (side - w) // 2
+    sq = np.zeros((side, side, 3), dtype=rgb.dtype)
+    sq[oy:oy + h, ox:ox + w] = rgb
+    return sq, oy, ox, side
+
+
+def _to_original(kp_sq: np.ndarray, oy: int, ox: int, side: int, h: int, w: int) -> np.ndarray:
+    """Map (17,3) keypoints from a square-normalized frame back to the ORIGINAL
+    frame's normalized [0,1] coordinates, so downstream geometry is unchanged."""
+    out = kp_sq.copy()
+    out[:, 0] = (kp_sq[:, 0] * side - oy) / h  # y
+    out[:, 1] = (kp_sq[:, 1] * side - ox) / w  # x
+    return out
+
+
+def _run_inference(model: Any, frame: np.ndarray) -> np.ndarray:
+    """Run MoveNet on a single BGR frame with aspect-preserving letterboxing plus
+    a detect→crop→re-infer refinement pass (MoveNet's recommended pattern).
+
+    Returns a (17, 3) numpy array [y, x, confidence] in ORIGINAL-frame normalized
+    coordinates.
+    """
+    h, w = frame.shape[:2]
+    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+    # Pass 1: letterboxed full frame.
+    sq, oy, ox, side = _letterbox(rgb)
+    kp1_sq = _infer_square(model, sq)
+    kp1 = _to_original(kp1_sq, oy, ox, side, h, w)
+
+    # Pass 2: crop to the detected person and re-infer for a larger, sharper
+    # subject. Only attempt if pass 1 found enough moderately-confident joints.
+    good = kp1[:, 2] > 0.15
+    if int(good.sum()) < 4:
+        return kp1
+
+    ys = np.clip(kp1[good, 0] * h, 0, h)
+    xs = np.clip(kp1[good, 1] * w, 0, w)
+    cy, cx = (ys.min() + ys.max()) / 2, (xs.min() + xs.max()) / 2
+    box = max(ys.max() - ys.min(), xs.max() - xs.min()) * 1.3  # 30% margin
+    if box < 8:
+        return kp1
+    y0 = int(max(0, cy - box / 2)); y1 = int(min(h, cy + box / 2))
+    x0 = int(max(0, cx - box / 2)); x1 = int(min(w, cx + box / 2))
+    crop = rgb[y0:y1, x0:x1]
+    if crop.size == 0:
+        return kp1
+
+    ch, cw = crop.shape[:2]
+    csq, coy, cox, cside = _letterbox(crop)
+    kp2_sq = _infer_square(model, csq)
+    kp2_crop = _to_original(kp2_sq, coy, cox, cside, ch, cw)  # normalized to crop
+    # Map crop-normalized -> original-frame normalized.
+    kp2 = kp2_crop.copy()
+    kp2[:, 0] = (kp2_crop[:, 0] * ch + y0) / h
+    kp2[:, 1] = (kp2_crop[:, 1] * cw + x0) / w
+
+    # Keep pass 2 only if it actually improved core-joint confidence.
+    core_idx = [KEYPOINT_INDEX[j] for j in CORE_JOINTS]
+    if float(np.mean(kp2[core_idx, 2])) >= float(np.mean(kp1[core_idx, 2])):
+        return kp2
+    return kp1
 
 
 def process_video(
@@ -147,8 +215,11 @@ def process_video(
 
         if frame_idx >= next_sample:
             keypoints = _run_inference(model, frame)
+            # Gate on CORE joints (biomechanically relevant), not the 17-kp mean.
+            core_idx = [KEYPOINT_INDEX[j] for j in CORE_JOINTS]
+            core_conf: float = float(np.mean(keypoints[core_idx, 2]))
             avg_conf: float = float(np.mean(keypoints[:, 2]))
-            excluded: bool = avg_conf < CONFIDENCE_THRESHOLD
+            excluded: bool = core_conf < CONFIDENCE_THRESHOLD
 
             keypoint_dict: dict[str, list[float]] = {
                 name: keypoints[idx].tolist()

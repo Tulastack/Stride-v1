@@ -79,9 +79,9 @@ export default function ProfileScreen() {
           <View style={styles.avatar}>
             <User color="#FFFFFF" size={32} />
           </View>
-          <View>
-            <Text style={styles.profileName}>{user?.display_name || 'Athlete'}</Text>
-            <Text style={styles.profileEmail}>{user?.email || 'athlete@stride.ai'}</Text>
+          <View style={styles.profileInfo}>
+            <Text style={styles.profileName} numberOfLines={1}>{user?.display_name || 'Athlete'}</Text>
+            <Text style={styles.profileEmail} numberOfLines={1} ellipsizeMode="tail">{user?.email || 'athlete@stride.ai'}</Text>
           </View>
         </View>
 
@@ -204,8 +204,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  profileInfo: {
+    flex: 1,
+  },
   profileName: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: '900',
     color: '#000000',
     letterSpacing: -0.5,

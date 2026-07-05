@@ -39,6 +39,7 @@ __pycache__/
 .eggs/
 *.egg
 .venv/
+.venv*/
 venv/
 venv*/
 env/
@@ -87,3 +88,5 @@ yarn-error.log*
 # Misc
 *.tgz
 .cache
+
+test-videos/

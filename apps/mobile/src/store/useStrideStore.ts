@@ -27,8 +27,8 @@ interface StrideState {
 export const useStrideStore = create<StrideState>((set) => ({
   token: null,
   user: null,
-  // Fallback to localhost for simulator, can be configured to point to ALB
-  apiBaseUrl: 'http://localhost:3000',
+  // Env-driven (EXPO_PUBLIC_API_BASE_URL); falls back to localhost for the simulator.
+  apiBaseUrl: process.env.EXPO_PUBLIC_API_BASE_URL || 'http://localhost:3000',
   consentGiven: false,
   isInjured: false,
   drillIntensityCap: null,

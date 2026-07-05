@@ -10,7 +10,7 @@ import sys
 
 from src.capture_loader import load_capture_manifest_local
 from src.frames3d_io import frames_to_json
-from src.movenet import process_video
+from src.pose2d import process_video
 from src.pipeline3d import run_pipeline_3d
 
 
