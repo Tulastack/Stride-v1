@@ -22,6 +22,10 @@ import { generateCoachReply, buildAnalysisContext } from '../lib/coach.js';
 
 const messageSchema = z.object({
   content: z.string().min(1).max(5000),
+  history: z.array(z.object({
+    role: z.enum(['user', 'assistant']),
+    content: z.string(),
+  })).optional(),
   action_chip: z
     .enum(['why_is_this_an_issue', 'mark_understood', 'show_drill', 'ask_coach', 'view_timeline'])
     .optional()
@@ -91,7 +95,7 @@ router.post('/:id/message', authenticate, async (req: any, res: Response, next: 
   try {
     const { id } = req.params;
     const userId = req.userId as string;
-    const { content, action_chip } = messageSchema.parse(req.body);
+    const { content, history, action_chip } = messageSchema.parse(req.body);
 
     const session = await getCoachSession(id, userId);
     if (!session) {
@@ -197,10 +201,71 @@ router.post('/:id/message', authenticate, async (req: any, res: Response, next: 
     const assistantText = await generateCoachReply({
       analysisContext,
       userMessage: content,
+      history: history ?? [],
     });
 
     await touchCoachSession(id);
     res.json({ role: 'assistant', content: assistantText });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /coach-sessions/:id/add-to-calendar — ask LLM to generate structured
+ * calendar events from the conversation, then create them.
+ */
+router.post('/:id/add-to-calendar', authenticate, async (req: any, res: Response, next: NextFunction) => {
+  try {
+    const userId = req.userId as string;
+    const { id } = req.params;
+    const { history } = req.body || {};
+
+    const session = await getCoachSession(id, userId);
+    if (!session) { res.status(404).json({ error: 'Session not found' }); return; }
+
+    // Build context from the conversation history
+    const conversationSummary = (history ?? [])
+      .slice(-8)
+      .map((m: any) => `${m.role}: ${m.content}`)
+      .join('\n');
+
+    const planPrompt = `Based on this conversation:\n${conversationSummary}\n\nGenerate a JSON array of workout/drill events for the next 2 weeks.
+Each event: {"title": "string", "eventType": "drill" or "workout" or "rest", "scheduledDate": "YYYY-MM-DD", "details": {"volume": "string", "cue": "string"}}
+Rules: max 2 hard days in a row, include rest days, start from tomorrow (use realistic dates starting from 2026-07-07).
+Output ONLY the raw JSON array. No markdown. No explanation. Just [ ... ]`;
+
+    const { getAnalysesByUser } = await import('../db/queries.js');
+    const analyses = await getAnalysesByUser(userId);
+    const latest = analyses.find((a: any) => a.status === 'completed' && a.result_json);
+    const analysisContext = buildAnalysisContext((latest?.result_json as any) ?? null, req.user);
+
+    const planJson = await generateCoachReply({
+      analysisContext,
+      userMessage: planPrompt,
+      history: history ?? [],
+    });
+
+    let events: any[];
+    try {
+      const cleaned = planJson.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      events = JSON.parse(cleaned);
+      if (!Array.isArray(events)) throw new Error('Not an array');
+    } catch {
+      res.status(422).json({ error: 'Could not generate calendar plan. Try asking for a specific workout plan first.' });
+      return;
+    }
+
+    const { createCalendarEvents } = await import('../db/queries.js');
+    const dbEvents = events.map((e: any) => ({
+      title: e.title || 'Workout',
+      event_type: e.eventType || 'drill',
+      scheduled_date: e.scheduledDate,
+      details: e.details || {},
+    }));
+
+    const created = await createCalendarEvents(userId, dbEvents);
+    res.json({ created: created.length, events: created });
   } catch (err) {
     next(err);
   }

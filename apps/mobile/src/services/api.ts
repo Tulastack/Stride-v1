@@ -186,10 +186,17 @@ export const strideApi = {
   },
 
   // Free-form question to the grounded Groq coach (free_coach sessions).
-  askCoach: async (sessionId: string, content: string) => {
+  askCoach: async (sessionId: string, content: string, history?: { role: string; content: string }[]) => {
     return request<{ role: string; content: string }>(`/coach-sessions/${sessionId}/message`, {
       method: 'POST',
-      body: JSON.stringify({ content }),
+      body: JSON.stringify({ content, history: history?.slice(-10) }),
+    });
+  },
+
+  // Add coach's suggested plan to the user's calendar
+  addCoachPlanToCalendar: async (sessionId: string) => {
+    return request<{ created: number; events: any[] }>(`/coach-sessions/${sessionId}/add-to-calendar`, {
+      method: 'POST',
     });
   },
 

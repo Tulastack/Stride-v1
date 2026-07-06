@@ -1,66 +1,27 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, SafeAreaView, Pressable, ActivityIndicator } from 'react-native';
-import { RotateCcw } from 'lucide-react-native';
-import { semantic, spacing, radius, borderWidth, typography } from '../../src/ui/theme';
-import { TrendChart } from '../../src/components/TrendChart';
-import {
-  trendSeries,
-  personalBestIndex,
-  deltaVsBaseline,
-  nextCheckpoint,
-  primaryFlaw,
-  recommendedRetestCapture,
-  flawIdToMetric,
-} from '../../src/lib/briefing';
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, SafeAreaView, ActivityIndicator, Pressable } from 'react-native';
+import { useRouter } from 'expo-router';
+import { Video, TrendingUp } from 'lucide-react-native';
 import { fetchAnalysisHistory } from '../../src/lib/analysisApi';
 import type { AnalysisResult } from '../../src/types/analysis';
 
 export default function ProgressScreen() {
+  const router = useRouter();
   const [history, setHistory] = useState<AnalysisResult[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [compareToFirst, setCompareToFirst] = useState(false);
 
   useEffect(() => {
     fetchAnalysisHistory()
       .then(setHistory)
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : 'Failed to load history'))
+      .catch(() => setHistory([]))
       .finally(() => setLoading(false));
   }, []);
-
-  const trackedKeys = useMemo(
-    () => Array.from(new Set(history.flatMap((h) => h.metrics.map((m) => m.key)))),
-    [history]
-  );
-  const checkpoint = nextCheckpoint(history.length);
-  const focus = primaryFlaw(history);
-  const retestCaptureHint = recommendedRetestCapture(focus?.id, focus ? flawIdToMetric(focus.id) : undefined);
 
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.center}>
-          <ActivityIndicator color={semantic.action.primary} />
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  if (error) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.center} accessibilityLabel="progress-error">
-          <Text style={styles.body}>{error}</Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  if (history.length === 0) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.empty} accessibilityLabel="progress-empty">
-          <Text style={styles.body}>Upload your first run to start tracking progress.</Text>
+          <ActivityIndicator size="large" color="#000000" />
         </View>
       </SafeAreaView>
     );
@@ -69,94 +30,80 @@ export default function ProgressScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scroll}>
-        <Text style={styles.title}>Progress</Text>
-
-        <Pressable
-          style={[styles.toggle, compareToFirst && styles.toggleOn]}
-          onPress={() => setCompareToFirst((v) => !v)}
-          testID="compare-first-toggle"
-          accessibilityLabel="compare-first-toggle"
-        >
-          <Text style={[styles.toggleText, compareToFirst && styles.toggleTextOn]}>
-            {compareToFirst ? 'Comparing to first upload' : 'Compare to first upload'}
-          </Text>
-        </Pressable>
-
-        {trackedKeys.map((key) => {
-          const series = trendSeries(history, key);
-          if (series.length === 0) return null;
-          const pb = personalBestIndex(series);
-          const baseline = deltaVsBaseline(history, key);
-          return (
-            <View key={key} style={styles.block}>
-              <TrendChart series={series} pbIndex={pb} testID={`progress-trend-${key}`} />
-              {compareToFirst && baseline ? (
-                <Text
-                  style={[
-                    styles.baseline,
-                    {
-                      color: baseline.comparable
-                        ? baseline.direction === 'improve'
-                          ? semantic.status.improve
-                          : baseline.direction === 'regress'
-                            ? semantic.status.flaw
-                            : semantic.text.muted
-                        : semantic.text.muted,
-                    },
-                  ]}
-                  accessibilityLabel={`baseline-${key}`}
-                >
-                  {baseline.comparable
-                    ? `${baseline.delta > 0 ? '+' : ''}${baseline.delta} ${baseline.unit} vs first upload`
-                    : baseline.reason}
-                </Text>
-              ) : null}
-            </View>
-          );
-        })}
-
-        <View style={styles.retestCard} accessibilityLabel="retest-cta">
-          <RotateCcw size={16} color={semantic.action.primary} />
-          <Text style={styles.body}>
-            {checkpoint.due
-              ? `Re-test your focus flaw — ${retestCaptureHint}`
-              : `Re-test in ${checkpoint.sessionsLeft} more session${checkpoint.sessionsLeft === 1 ? '' : 's'}. ${retestCaptureHint}`}
-          </Text>
+        <View style={styles.header}>
+          <TrendingUp color="#000000" size={24} />
+          <Text style={styles.title}>PROGRESS</Text>
         </View>
+
+        {history.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Video color="#CCCCCC" size={48} />
+            <Text style={styles.emptyTitle}>No analyses yet</Text>
+            <Text style={styles.emptySubtitle}>Upload your first sprint video to start tracking progress</Text>
+          </View>
+        ) : (
+          <View style={styles.list}>
+            {history.map((analysis, index) => {
+              const score = analysis.flaws.length === 0 ? 95 : Math.max(40, 100 - analysis.flaws.length * 10);
+              const date = new Date(analysis.createdAt || Date.now());
+              const improvement = index > 0 ? score - (history[index - 1].flaws.length === 0 ? 95 : Math.max(40, 100 - history[index - 1].flaws.length * 10)) : 0;
+
+              return (
+                <Pressable
+                  key={analysis.id || index}
+                  style={styles.logCard}
+                  onPress={() => router.push({ pathname: '/(tabs)/analysis', params: { analysisId: analysis.id } })}
+                >
+                  <View style={styles.logLeft}>
+                    <Text style={styles.logDate}>
+                      {date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                    </Text>
+                    <Text style={styles.logTime}>
+                      {date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                    </Text>
+                  </View>
+                  <View style={styles.logCenter}>
+                    <Text style={styles.logScore}>{score}</Text>
+                    <Text style={styles.logScoreLabel}>score</Text>
+                  </View>
+                  <View style={styles.logRight}>
+                    {improvement !== 0 && (
+                      <Text style={[styles.logDelta, improvement > 0 ? styles.positive : styles.negative]}>
+                        {improvement > 0 ? '+' : ''}{improvement}
+                      </Text>
+                    )}
+                    <Text style={styles.logIssues}>{analysis.flaws.length} issues</Text>
+                  </View>
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: semantic.surface.base },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl },
-  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl },
-  scroll: { padding: spacing.lg, paddingBottom: spacing.xxxl, gap: spacing.lg },
-  title: { ...(typography.display as object), color: semantic.text.primary, marginTop: spacing.sm },
-  toggle: {
-    alignSelf: 'flex-start',
-    borderWidth: borderWidth.hairline,
-    borderColor: semantic.border,
-    borderRadius: radius.sm,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.lg,
-  },
-  toggleOn: { borderColor: semantic.action.primary, backgroundColor: semantic.surface.raised },
-  toggleText: { ...(typography.caption as object), color: semantic.text.muted, letterSpacing: 1 },
-  toggleTextOn: { color: semantic.action.primary },
-  block: { gap: spacing.xs },
-  baseline: { ...(typography.metricSmall as object), fontSize: 13, paddingHorizontal: spacing.xs },
-  body: { ...(typography.body as object), color: semantic.text.primary, flex: 1 },
-  retestCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    backgroundColor: semantic.surface.raised,
-    borderRadius: radius.sm,
-    borderWidth: borderWidth.hairline,
-    borderColor: semantic.border,
-    padding: spacing.lg,
-    marginTop: spacing.sm,
-  },
+  container: { flex: 1, backgroundColor: '#FFFFFF' },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  scroll: { padding: 24, paddingBottom: 48 },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 24, paddingBottom: 16, borderBottomWidth: 2, borderBottomColor: '#000000' },
+  title: { fontSize: 28, fontWeight: '900', color: '#000000', letterSpacing: -1 },
+  emptyState: { alignItems: 'center', marginTop: 80, gap: 12 },
+  emptyTitle: { fontSize: 18, fontWeight: '700', color: '#333333' },
+  emptySubtitle: { fontSize: 14, color: '#888888', textAlign: 'center' },
+  list: { gap: 8 },
+  logCard: { flexDirection: 'row', alignItems: 'center', padding: 16, borderWidth: 1, borderColor: '#E5E5E5', backgroundColor: '#FAFAFA' },
+  logLeft: { width: 70 },
+  logDate: { fontSize: 14, fontWeight: '700', color: '#000000' },
+  logTime: { fontSize: 11, color: '#888888' },
+  logCenter: { flex: 1, alignItems: 'center' },
+  logScore: { fontSize: 28, fontWeight: '900', color: '#000000' },
+  logScoreLabel: { fontSize: 10, color: '#888888', letterSpacing: 1 },
+  logRight: { alignItems: 'flex-end', width: 70 },
+  logDelta: { fontSize: 14, fontWeight: '800' },
+  positive: { color: '#059669' },
+  negative: { color: '#DC2626' },
+  logIssues: { fontSize: 11, color: '#888888', marginTop: 2 },
 });

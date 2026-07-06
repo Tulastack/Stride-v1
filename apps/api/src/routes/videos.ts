@@ -168,6 +168,8 @@ router.post('/finalize', authenticate, requireConsent, async (req: any, res: Res
           captureManifest,
         );
       }
+      // Still enqueue to SQS so the Docker-based worker picks it up
+      await enqueueAnalysis(analysisId, analysis.s3_key);
       res.json({ ...analysis, status: 'pending' });
       return;
     }
