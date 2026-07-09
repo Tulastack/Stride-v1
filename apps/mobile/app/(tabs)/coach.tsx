@@ -4,12 +4,12 @@ import { CoachChat } from '../../src/components/CoachChat';
 
 export default function CoachScreen() {
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.safe}>
       <CoachChat />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFFFF' },
+  safe: { flex: 1, backgroundColor: '#0E0F12' },
 });

@@ -46,7 +46,7 @@ def _load_body(mode: str | None = None) -> Any:
 _TORSO = [5, 6, 11, 12]
 # Max normalized distance a tracked target may jump between sampled frames before
 # we treat it as "target not in frame" (occluded / left).
-_TRACK_GATE = 0.35
+_TRACK_GATE = 0.20
 
 
 def _person_centroids(kpts: np.ndarray, w: int, h: int) -> list[tuple[float, float]]:
@@ -59,17 +59,21 @@ def _person_centroids(kpts: np.ndarray, w: int, h: int) -> list[tuple[float, flo
 
 def _select_person(kpts, scores, w, h, target, core_idx):
     """Return (index, centroid). Without a target: highest-confidence person.
-    With a target (running normalized x,y): the nearest person within the gate,
-    else (None, target) so the frame is dropped while the target is out of view."""
+    With a target (running normalized x,y): the nearest person within the gate.
+    Uses both distance AND confidence to prefer the tracked person over noise."""
     if len(scores) == 0:
         return None, target
     cents = _person_centroids(kpts, w, h)
     if target is None:
         best = int(np.argmax([np.mean(s[core_idx]) for s in scores]))
         return best, cents[best]
-    dists = [(c[0] - target[0]) ** 2 + (c[1] - target[1]) ** 2 for c in cents]
-    best = int(np.argmin(dists))
-    if dists[best] ** 0.5 > _TRACK_GATE:
+    # Score each detection: lower distance = better, higher confidence = better
+    dists = [((c[0] - target[0]) ** 2 + (c[1] - target[1]) ** 2) ** 0.5 for c in cents]
+    confs = [float(np.mean(s[core_idx])) for s in scores]
+    # Combined score: distance penalty + confidence bonus (distance matters more)
+    combined = [d - 0.1 * conf for d, conf in zip(dists, confs)]
+    best = int(np.argmin(combined))
+    if dists[best] > _TRACK_GATE:
         return None, target  # target not near any detection this frame
     return best, cents[best]
 

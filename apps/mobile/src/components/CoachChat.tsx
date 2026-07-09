@@ -1,217 +1,170 @@
 import React, { useState, useRef } from 'react';
 import {
-  View, Text, StyleSheet, TextInput, TouchableOpacity, ActivityIndicator, ScrollView, Alert,
+  View, Text, Pressable, TextInput, StyleSheet, ScrollView,
+  KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
 } from 'react-native';
-import { Send, Calendar, Dumbbell, Brain, Droplets, Users } from 'lucide-react-native';
+import { MessageCircle, ArrowUp, Zap, Brain, Droplet, Award, CalendarPlus, CalendarCheck } from 'lucide-react-native';
 import { strideApi } from '../services/api';
 import { getAccessToken as getToken } from '../lib/supabase';
 
-interface Msg {
-  role: 'user' | 'assistant';
-  content: string;
-  hasCalendarAction?: boolean;
-}
+const colors = { bg: '#0E0F12', card: '#16181D', cardAlt: '#1E2127', border: '#353A44', text: '#ECE7DC', muted: '#8A8E97', accent: '#CDFF4F', accentText: '#0E0F12', error: '#FF5237', success: '#5BE5A0' };
+const space = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 };
+const radius = { sm: 8, md: 12, pill: 999 };
+
+interface Msg { role: 'user' | 'assistant'; content: string; showCalendarCta?: boolean; }
 
 const SUGGESTIONS = [
-  { icon: Dumbbell, text: 'What should I fix first?' },
-  { icon: Brain, text: 'How do I improve my mental game?' },
-  { icon: Droplets, text: 'How should I hydrate for sprinting?' },
-  { icon: Users, text: 'How can I get recruited?' },
-  { icon: Calendar, text: 'Create a 2-week training plan' },
+  { key: 'fix', text: 'What should I fix first?', Icon: Zap },
+  { key: 'mental', text: 'How do I improve my mental game?', Icon: Brain },
+  { key: 'hydrate', text: 'How should I hydrate?', Icon: Droplet },
+  { key: 'recruit', text: 'How can I get recruited?', Icon: Award },
+  { key: 'plan', text: 'Create a 2-week plan', Icon: CalendarPlus },
 ];
 
 function detectCalendarIntent(text: string): boolean {
-  const keywords = ['calendar', 'schedule', 'plan my week', 'training plan', 'put on my calendar', 'add to calendar', 'spread out', 'workout plan', 'add this to your calendar', 'would you like me to add'];
+  const keywords = ['calendar', 'schedule', 'plan my week', 'training plan', 'put on my calendar', 'add to calendar', 'workout plan', 'add this to your calendar', 'would you like me to add', '2-week'];
   return keywords.some((k) => text.toLowerCase().includes(k));
 }
 
-function formatCoachResponse(raw: string): string {
-  let formatted = raw;
-  // Strip markdown bold/italic
-  formatted = formatted.replace(/\*\*(.+?)\*\*/g, '$1');
-  formatted = formatted.replace(/\*(.+?)\*/g, '$1');
-  formatted = formatted.replace(/__(.+?)__/g, '$1');
-  formatted = formatted.replace(/_(.+?)_/g, '$1');
-  // Strip markdown headers
-  formatted = formatted.replace(/^#{1,3}\s*/gm, '');
-  // Strip backticks
-  formatted = formatted.replace(/`(.+?)`/g, '$1');
-  // Clean up excessive newlines
-  formatted = formatted.replace(/\n{3,}/g, '\n\n');
-  return formatted.trim();
+function cleanResponse(raw: string): string {
+  return raw.replace(/\*\*(.+?)\*\*/g, '$1').replace(/\*(.+?)\*/g, '$1').replace(/#{1,3}\s*/g, '').replace(/`(.+?)`/g, '$1').replace(/\n{3,}/g, '\n\n').trim();
 }
 
 export function CoachChat() {
   const [messages, setMessages] = useState<Msg[]>([]);
-  const [input, setInput] = useState('');
+  const [draft, setDraft] = useState('');
   const [loading, setLoading] = useState(false);
   const sessionId = useRef<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
 
-  async function addToCalendar(messageContent: string) {
+  async function addToCalendar() {
+    if (!sessionId.current) { Alert.alert('Error', 'Ask for a plan first.'); return; }
+    setLoading(true);
     try {
-      if (!sessionId.current) {
-        Alert.alert('Error', 'No active session. Ask the coach for a plan first.');
-        return;
-      }
-      setLoading(true);
-      // Send conversation history so the backend knows what plan to create
+      const token = await getToken();
+      const baseUrl = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://localhost:3000';
       const historyPayload = messages.map((m) => ({ role: m.role, content: m.content }));
-      const resp = await fetch(
-        `${require('../services/api').strideApi ? '' : ''}${process.env.EXPO_PUBLIC_API_BASE_URL || 'http://localhost:3000'}/coach-sessions/${sessionId.current}/add-to-calendar`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${await getToken()}` },
-          body: JSON.stringify({ history: historyPayload }),
-        }
-      );
+      const resp = await fetch(`${baseUrl}/coach-sessions/${sessionId.current}/add-to-calendar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ history: historyPayload }),
+      });
       const result = await resp.json();
       if (!resp.ok) throw new Error(result.error || 'Failed');
-      Alert.alert('Added to Calendar', `${result.created} workouts scheduled! Check the Plan tab.`);
-      setMessages((m) => [...m, { role: 'assistant', content: `✅ ${result.created} workouts added to your calendar! Spread across the next 2 weeks with rest days. Check the Plan tab to see them.` }]);
+      setMessages((m) => [...m, { role: 'assistant', content: `✅ ${result.created} workouts added to your calendar! Check the Plan tab.` }]);
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'Could not add to calendar. Try asking for a specific plan first.');
-    } finally {
-      setLoading(false);
-    }
+      Alert.alert('Error', e.message || 'Could not add to calendar.');
+    } finally { setLoading(false); }
   }
 
   async function send(text: string) {
     const content = text.trim();
     if (!content || loading) return;
-    setInput('');
-
+    setDraft('');
     const isCalendarRequest = detectCalendarIntent(content);
     setMessages((m) => [...m, { role: 'user', content }]);
     setLoading(true);
-
     try {
       if (!sessionId.current) {
         const session = await strideApi.createCoachSession('free_coach');
         sessionId.current = session.id;
       }
-
       const prompt = isCalendarRequest
-        ? `${content}\n\nIMPORTANT: The user wants these workouts on their calendar. After providing the plan, offer to add it to their calendar. Structure the response with clear days and workouts.`
+        ? `${content}\n\nThe user wants workouts scheduled. After providing the plan, offer to add it to their calendar.`
         : content;
-
-      const reply = await strideApi.askCoach(sessionId.current!, prompt, messages);
-      const formatted = formatCoachResponse(reply.content);
-
-      setMessages((m) => [...m, {
-        role: 'assistant',
-        content: formatted,
-        hasCalendarAction: isCalendarRequest || detectCalendarIntent(formatted),
-      }]);
+      const history = messages.map((m) => ({ role: m.role, content: m.content }));
+      const reply = await strideApi.askCoach(sessionId.current!, prompt, history);
+      const formatted = cleanResponse(reply.content);
+      setMessages((m) => [...m, { role: 'assistant', content: formatted, showCalendarCta: isCalendarRequest || detectCalendarIntent(formatted) }]);
     } catch {
-      setMessages((m) => [...m, {
-        role: 'assistant',
-        content: 'Sorry — I couldn\'t reach the coach. Check your connection and try again.',
-      }]);
+      setMessages((m) => [...m, { role: 'assistant', content: 'Sorry — couldn\'t reach the coach. Check connection.' }]);
     } finally {
       setLoading(false);
-      setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 50);
+      requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }));
     }
   }
 
   return (
-    <View style={styles.wrap}>
-      <View style={styles.headerRow}>
-        <Text style={styles.title}>AI COACH</Text>
-        <Text style={styles.sub}>Ask about anything — form, training, nutrition, recovery, recruiting</Text>
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={90}>
+      <View style={styles.header}>
+        <View style={styles.headerTitleRow}>
+          <Text style={styles.h1}>AI COACH</Text>
+          <MessageCircle size={20} color={colors.accent} strokeWidth={1.75} />
+        </View>
+        <Text style={styles.subtitle}>Ask about anything — form, training, nutrition, recovery, recruiting</Text>
       </View>
 
-      {messages.length === 0 && (
-        <View style={styles.chips}>
-          {SUGGESTIONS.map(({ icon: Icon, text }) => (
-            <TouchableOpacity key={text} style={styles.chip} onPress={() => send(text)}>
-              <Icon size={14} color="#4F46E5" />
+      {messages.length === 0 ? (
+        <View style={styles.chipsWrap}>
+          {SUGGESTIONS.map(({ key, text, Icon }) => (
+            <Pressable key={key} style={styles.chip} onPress={() => send(text)}>
+              <Icon size={15} color={colors.accent} strokeWidth={1.75} />
               <Text style={styles.chipText}>{text}</Text>
-            </TouchableOpacity>
+            </Pressable>
           ))}
         </View>
-      )}
-
-      {messages.length > 0 && (
+      ) : (
         <ScrollView ref={scrollRef} style={styles.thread} contentContainerStyle={styles.threadContent}>
           {messages.map((m, i) => (
-            <View key={i}>
-              <View style={[styles.bubble, m.role === 'user' ? styles.user : styles.assistant]}>
-                <Text style={m.role === 'user' ? styles.userText : styles.assistantText}>
-                  {m.content}
-                </Text>
+            <View key={i} style={m.role === 'user' ? styles.rowRight : styles.rowLeft}>
+              <View style={m.role === 'user' ? styles.userBubble : styles.assistantBubble}>
+                <Text style={m.role === 'user' ? styles.userText : styles.assistantText}>{m.content}</Text>
               </View>
-              {m.hasCalendarAction && m.role === 'assistant' && (
-                <TouchableOpacity style={styles.calendarBtn} onPress={() => addToCalendar(m.content)}>
-                  <Calendar size={14} color="#FFFFFF" />
-                  <Text style={styles.calendarBtnText}>Add to My Calendar</Text>
-                </TouchableOpacity>
+              {m.showCalendarCta && m.role === 'assistant' && (
+                <Pressable style={styles.calendarCta} onPress={addToCalendar}>
+                  <CalendarCheck size={15} color={colors.accentText} strokeWidth={2} />
+                  <Text style={styles.calendarCtaText}>Add to My Calendar</Text>
+                </Pressable>
               )}
             </View>
           ))}
-          {loading && (
-            <View style={styles.loadingRow}>
-              <ActivityIndicator color="#4F46E5" size="small" />
-              <Text style={styles.loadingText}>Thinking...</Text>
-            </View>
-          )}
+          {loading && <ActivityIndicator color={colors.accent} style={{ alignSelf: 'flex-start', marginTop: space.sm }} />}
         </ScrollView>
       )}
 
       <View style={styles.inputRow}>
         <TextInput
           style={styles.input}
-          value={input}
-          onChangeText={setInput}
-          placeholder="Ask about form, nutrition, recruiting, anything..."
-          placeholderTextColor="#999999"
-          onSubmitEditing={() => send(input)}
+          placeholder="Ask your coach..."
+          placeholderTextColor={colors.muted}
+          value={draft}
+          onChangeText={setDraft}
+          onSubmitEditing={() => send(draft)}
           returnKeyType="send"
           multiline
           maxLength={500}
         />
-        <TouchableOpacity style={styles.sendBtn} onPress={() => send(input)} disabled={loading}>
-          <Send color="#FFFFFF" size={18} />
-        </TouchableOpacity>
+        <Pressable style={styles.sendBtn} onPress={() => send(draft)}>
+          <ArrowUp size={18} color={colors.accentText} strokeWidth={2.25} />
+        </Pressable>
       </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  wrap: { flex: 1, padding: 16, gap: 12 },
-  headerRow: { gap: 4 },
-  title: { fontSize: 20, fontWeight: '900', color: '#000000', letterSpacing: -0.5 },
-  sub: { fontSize: 12, color: '#888888' },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  header: { paddingHorizontal: space.xl, paddingTop: space.lg, paddingBottom: space.lg },
+  headerTitleRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  h1: { fontSize: 22, fontWeight: '700', color: colors.text, letterSpacing: 0.5 },
+  subtitle: { fontSize: 12, color: colors.muted, marginTop: 6, lineHeight: 17 },
+  chipsWrap: { paddingHorizontal: space.xl, gap: space.sm, marginTop: space.md },
   chip: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    borderWidth: 1, borderColor: '#E5E5E5', borderRadius: 20,
-    paddingHorizontal: 12, paddingVertical: 8, backgroundColor: '#FAFAFA',
+    flexDirection: 'row', alignItems: 'center', gap: space.sm,
+    backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+    borderRadius: radius.pill, paddingVertical: space.md, paddingHorizontal: space.lg,
   },
-  chipText: { fontSize: 13, color: '#333333', fontWeight: '500' },
+  chipText: { fontSize: 15, color: colors.text },
   thread: { flex: 1 },
-  threadContent: { gap: 10, paddingBottom: 8 },
-  bubble: { padding: 12, borderRadius: 12, maxWidth: '88%' },
-  user: { alignSelf: 'flex-end', backgroundColor: '#000000' },
-  assistant: { alignSelf: 'flex-start', backgroundColor: '#F5F5F5', borderWidth: 1, borderColor: '#EEEEEE' },
-  userText: { fontSize: 14, color: '#FFFFFF', lineHeight: 20 },
-  assistantText: { fontSize: 14, color: '#222222', lineHeight: 21 },
-  calendarBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start',
-    backgroundColor: '#4F46E5', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 6, marginTop: 6,
-  },
-  calendarBtnText: { fontSize: 12, fontWeight: '700', color: '#FFFFFF' },
-  loadingRow: { flexDirection: 'row', alignItems: 'center', gap: 8, alignSelf: 'flex-start' },
-  loadingText: { fontSize: 12, color: '#888888' },
-  inputRow: { flexDirection: 'row', gap: 8, alignItems: 'flex-end' },
-  input: {
-    flex: 1, borderWidth: 1, borderColor: '#E5E5E5', borderRadius: 12,
-    paddingHorizontal: 14, paddingVertical: 10, fontSize: 14, color: '#000000',
-    maxHeight: 80, backgroundColor: '#FAFAFA',
-  },
-  sendBtn: {
-    backgroundColor: '#000000', borderRadius: 12, padding: 10,
-    justifyContent: 'center', alignItems: 'center',
-  },
+  threadContent: { paddingHorizontal: space.xl, paddingVertical: space.md, gap: space.md },
+  rowRight: { alignItems: 'flex-end', marginBottom: space.sm },
+  rowLeft: { alignItems: 'flex-start', marginBottom: space.sm },
+  userBubble: { backgroundColor: colors.accent, borderRadius: radius.md, borderBottomRightRadius: 4, paddingVertical: space.md, paddingHorizontal: space.lg, maxWidth: '82%' },
+  userText: { fontSize: 15, color: colors.accentText, fontWeight: '500' },
+  assistantBubble: { backgroundColor: colors.cardAlt, borderRadius: radius.md, borderBottomLeftRadius: 4, paddingVertical: space.md, paddingHorizontal: space.lg, maxWidth: '82%' },
+  assistantText: { fontSize: 15, color: colors.text, lineHeight: 21 },
+  calendarCta: { flexDirection: 'row', alignItems: 'center', gap: space.sm, backgroundColor: colors.accent, borderRadius: radius.sm, paddingVertical: space.sm, paddingHorizontal: space.md, marginTop: space.sm },
+  calendarCtaText: { fontSize: 15, fontWeight: '700', color: colors.accentText },
+  inputRow: { flexDirection: 'row', alignItems: 'flex-end', gap: space.sm, paddingHorizontal: space.lg, paddingVertical: space.md, borderTopWidth: 1, borderTopColor: colors.border },
+  input: { flex: 1, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, color: colors.text, paddingHorizontal: space.lg, paddingVertical: space.md, maxHeight: 100, fontSize: 15 },
+  sendBtn: { width: 40, height: 40, borderRadius: radius.pill, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' },
 });

@@ -30,7 +30,7 @@ FORMATTING RULES (CRITICAL — follow exactly):
 • Separate sections with a blank line
 • Keep each section to 2-3 lines max
 • Bold nothing. Italicize nothing. Just plain text with emoji headers.
-• Total response: 150 words max unless the question demands more.
+• Total response: 250-400 words. Be thorough and helpful. Don't cut short.
 
 CONFIDENCE — metrics marked [experimental] or low-confidence are less certain; hedge on those.
 
@@ -112,7 +112,7 @@ export async function generateCoachReply(params: {
   const resp = await fetch(GROQ_URL, {
     method: 'POST',
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: MODEL, messages, temperature: 0.7, max_tokens: 1200 }),
+    body: JSON.stringify({ model: MODEL, messages, temperature: 0.7, max_tokens: 2000 }),
   });
   if (!resp.ok) {
     const t = await resp.text();

@@ -16,43 +16,48 @@ type CalendarEvent = {
   };
 };
 
-function getWeekDates(offset: number): Date[] {
-  const today = new Date();
-  const start = new Date(today);
-  start.setDate(today.getDate() - today.getDay() + offset * 7);
-  return Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(start);
-    d.setDate(start.getDate() + i);
-    return d;
-  });
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+const EVENT_TYPE_COLORS: Record<string, string> = {
+  drill: '#CDFF4F',
+  workout: '#5BE5A0',
+  competition: '#FF5237',
+  rest: '#353A44',
+};
+
+function getMonthData(year: number, month: number) {
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  return { firstDay, daysInMonth };
 }
 
 function formatDate(date: Date): string {
   return date.toISOString().split('T')[0];
 }
 
-const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-const EVENT_TYPE_COLORS: Record<string, string> = {
-  drill: '#4F46E5',
-  workout: '#059669',
-  competition: '#DC2626',
-  rest: '#9CA3AF',
-};
+function getMonthDateRange(year: number, month: number) {
+  const start = new Date(year, month, 1);
+  const end = new Date(year, month + 1, 0);
+  return { startDate: formatDate(start), endDate: formatDate(end) };
+}
 
 export default function CalendarScreen() {
-  const [weekOffset, setWeekOffset] = useState(0);
+  const [monthOffset, setMonthOffset] = useState(0);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<string>(formatDate(new Date()));
 
-  const weekDates = getWeekDates(weekOffset);
+  const now = new Date();
+  const viewYear = new Date(now.getFullYear(), now.getMonth() + monthOffset, 1).getFullYear();
+  const viewMonth = new Date(now.getFullYear(), now.getMonth() + monthOffset, 1).getMonth();
+  const { firstDay, daysInMonth } = getMonthData(viewYear, viewMonth);
+
+  const monthLabel = new Date(viewYear, viewMonth, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 
   const loadEvents = useCallback(async () => {
     setLoading(true);
     try {
-      const startDate = formatDate(weekDates[0]);
-      const endDate = formatDate(weekDates[6]);
+      const { startDate, endDate } = getMonthDateRange(viewYear, viewMonth);
       const data = await strideApi.listEvents(startDate, endDate);
       setEvents(data || []);
     } catch {
@@ -60,11 +65,24 @@ export default function CalendarScreen() {
     } finally {
       setLoading(false);
     }
-  }, [weekOffset]);
+  }, [monthOffset]);
 
   useEffect(() => {
     loadEvents();
   }, [loadEvents]);
+
+  // Group events by date string
+  const eventsByDate = new Map<string, CalendarEvent[]>();
+  events.forEach((e) => {
+    if (!eventsByDate.has(e.scheduled_date)) eventsByDate.set(e.scheduled_date, []);
+    eventsByDate.get(e.scheduled_date)!.push(e);
+  });
+
+  // Build grid cells
+  const cells: (number | null)[] = [];
+  for (let i = 0; i < firstDay; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+  while (cells.length < 42) cells.push(null);
 
   const dayEvents = events.filter((e) => e.scheduled_date === selectedDate);
 
@@ -80,48 +98,82 @@ export default function CalendarScreen() {
     }
   };
 
+  // Helper: get the date string for a given day number
+  const dateForDay = (day: number): string => {
+    const d = new Date(viewYear, viewMonth, day);
+    return formatDate(d);
+  };
+
+  // Find primary event type for the dot color
+  const getDotColor = (dateStr: string): string | null => {
+    const dayEvts = eventsByDate.get(dateStr);
+    if (!dayEvts || dayEvts.length === 0) return null;
+    // Priority: competition > drill > workout > rest
+    const priority = ['competition', 'drill', 'workout', 'rest'];
+    for (const p of priority) {
+      if (dayEvts.some((e) => e.event_type === p)) return EVENT_TYPE_COLORS[p];
+    }
+    return EVENT_TYPE_COLORS.rest;
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.container}>
+        {/* Header */}
         <View style={styles.header}>
-          <CalendarIcon color="#000000" size={24} />
+          <CalendarIcon color="#CDFF4F" size={24} />
           <Text style={styles.title}>TRAINING PLAN</Text>
         </View>
 
-        {/* Week navigation */}
-        <View style={styles.weekNav}>
-          <Pressable onPress={() => setWeekOffset((w) => w - 1)} hitSlop={12}>
-            <ChevronLeft color="#000000" size={24} />
+        {/* Month navigation */}
+        <View style={styles.monthNav}>
+          <Pressable onPress={() => setMonthOffset((o) => o - 1)} hitSlop={12}>
+            <ChevronLeft color="#ECE7DC" size={22} />
           </Pressable>
-          <Text style={styles.weekLabel}>
-            {weekDates[0].toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} —{' '}
-            {weekDates[6].toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-          </Text>
-          <Pressable onPress={() => setWeekOffset((w) => w + 1)} hitSlop={12}>
-            <ChevronRight color="#000000" size={24} />
+          <Text style={styles.monthLabel}>{monthLabel}</Text>
+          <Pressable onPress={() => setMonthOffset((o) => o + 1)} hitSlop={12}>
+            <ChevronRight color="#ECE7DC" size={22} />
           </Pressable>
         </View>
 
-        {/* Day selector */}
-        <View style={styles.dayRow}>
-          {weekDates.map((date, i) => {
-            const dateStr = formatDate(date);
+        {/* Day-of-week headers */}
+        <View style={styles.dayHeaderRow}>
+          {DAY_NAMES.map((d) => (
+            <View key={d} style={styles.dayHeaderCell}>
+              <Text style={styles.dayHeaderText}>{d}</Text>
+            </View>
+          ))}
+        </View>
+
+        {/* Calendar grid */}
+        <View style={styles.calendarGrid}>
+          {cells.map((day, idx) => {
+            if (day === null) {
+              return <View key={idx} style={styles.dayCell} />;
+            }
+            const dateStr = dateForDay(day);
             const isSelected = dateStr === selectedDate;
             const isToday = dateStr === formatDate(new Date());
-            const hasEvents = events.some((e) => e.scheduled_date === dateStr);
+            const dotColor = getDotColor(dateStr);
+
             return (
               <Pressable
-                key={dateStr}
-                style={[styles.dayCell, isSelected && styles.dayCellSelected]}
+                key={idx}
+                style={styles.dayCell}
                 onPress={() => setSelectedDate(dateStr)}
               >
-                <Text style={[styles.dayName, isSelected && styles.dayTextSelected]}>
-                  {DAY_NAMES[i]}
-                </Text>
-                <Text style={[styles.dayNumber, isSelected && styles.dayTextSelected, isToday && styles.dayToday]}>
-                  {date.getDate()}
-                </Text>
-                {hasEvents && <View style={[styles.dot, isSelected && styles.dotSelected]} />}
+                <View style={[styles.dayCellInner, isSelected && styles.dayCellSelected]}>
+                  <Text
+                    style={[
+                      styles.dayNum,
+                      isToday && styles.dayNumToday,
+                      isSelected && styles.dayNumSelected,
+                    ]}
+                  >
+                    {day}
+                  </Text>
+                  {dotColor && <View style={[styles.dot, { backgroundColor: dotColor }]} />}
+                </View>
               </Pressable>
             );
           })}
@@ -129,7 +181,7 @@ export default function CalendarScreen() {
 
         {/* Events for selected day */}
         {loading ? (
-          <ActivityIndicator size="large" color="#000000" style={styles.loader} />
+          <ActivityIndicator size="large" color="#CDFF4F" style={styles.loader} />
         ) : dayEvents.length === 0 ? (
           <View style={styles.emptyState}>
             <Text style={styles.emptyTitle}>Rest Day</Text>
@@ -145,9 +197,9 @@ export default function CalendarScreen() {
               >
                 <View style={styles.eventLeft}>
                   {event.status === 'completed' ? (
-                    <CheckCircle2 color="#059669" size={22} />
+                    <CheckCircle2 color="#5BE5A0" size={22} />
                   ) : (
-                    <Circle color="#9CA3AF" size={22} />
+                    <Circle color="#8A8E97" size={22} />
                   )}
                   <View style={styles.eventInfo}>
                     <Text style={[styles.eventTitle, event.status === 'completed' && styles.eventDone]}>
@@ -161,46 +213,120 @@ export default function CalendarScreen() {
                     )}
                   </View>
                 </View>
-                <View style={[styles.eventBadge, { backgroundColor: EVENT_TYPE_COLORS[event.event_type] || '#9CA3AF' }]}>
+                <View style={[styles.eventBadge, { backgroundColor: EVENT_TYPE_COLORS[event.event_type] || '#353A44' }]}>
                   <Text style={styles.eventBadgeText}>{event.event_type.toUpperCase()}</Text>
                 </View>
               </Pressable>
             ))}
           </View>
         )}
+
+        {/* Event type legend */}
+        <View style={styles.legendRow}>
+          {Object.entries(EVENT_TYPE_COLORS).map(([type, color]) => (
+            <View key={type} style={styles.legendItem}>
+              <View style={[styles.legendDot, { backgroundColor: color }]} />
+              <Text style={styles.legendText}>{type}</Text>
+            </View>
+          ))}
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#FFFFFF' },
+  safeArea: { flex: 1, backgroundColor: '#0E0F12' },
   container: { padding: 24, paddingBottom: 40 },
-  header: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 24, paddingBottom: 16, borderBottomWidth: 2, borderBottomColor: '#000000' },
-  title: { fontSize: 28, fontWeight: '900', color: '#000000', letterSpacing: -1 },
-  weekNav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
-  weekLabel: { fontSize: 14, fontWeight: '700', color: '#000000' },
-  dayRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 24 },
-  dayCell: { alignItems: 'center', padding: 8, borderRadius: 8, minWidth: 42 },
-  dayCellSelected: { backgroundColor: '#000000' },
-  dayName: { fontSize: 11, fontWeight: '700', color: '#666666', marginBottom: 4 },
-  dayNumber: { fontSize: 16, fontWeight: '800', color: '#000000' },
-  dayTextSelected: { color: '#FFFFFF' },
-  dayToday: { textDecorationLine: 'underline' },
-  dot: { width: 5, height: 5, borderRadius: 3, backgroundColor: '#4F46E5', marginTop: 4 },
-  dotSelected: { backgroundColor: '#FFFFFF' },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 24, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: '#353A44' },
+  title: { fontSize: 28, fontWeight: '900', color: '#ECE7DC', letterSpacing: -1 },
+
+  // Month navigation
+  monthNav: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+    paddingHorizontal: 4,
+  },
+  monthLabel: { fontSize: 16, fontWeight: '800', color: '#ECE7DC', letterSpacing: 0.5 },
+
+  // Day headers
+  dayHeaderRow: { flexDirection: 'row', marginBottom: 8 },
+  dayHeaderCell: { flex: 1, alignItems: 'center' },
+  dayHeaderText: { fontSize: 11, fontWeight: '700', color: '#8A8E97', letterSpacing: 1 },
+
+  // Calendar grid
+  calendarGrid: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 24 },
+  dayCell: {
+    width: '14.28%',
+    aspectRatio: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dayCellInner: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 38,
+    height: 38,
+    borderRadius: 8,
+    gap: 2,
+  },
+  dayCellSelected: {
+    backgroundColor: '#16181D',
+    borderWidth: 1,
+    borderColor: '#CDFF4F',
+  },
+  dayNum: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#8A8E97',
+  },
+  dayNumToday: {
+    color: '#ECE7DC',
+    fontWeight: '900',
+  },
+  dayNumSelected: {
+    color: '#CDFF4F',
+    fontWeight: '800',
+  },
+  dot: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+  },
+
+  // Loader
   loader: { marginTop: 40 },
-  emptyState: { alignItems: 'center', marginTop: 60, gap: 8 },
-  emptyTitle: { fontSize: 20, fontWeight: '800', color: '#000000' },
-  emptySubtitle: { fontSize: 14, color: '#666666' },
+
+  // Empty state
+  emptyState: { alignItems: 'center', marginTop: 40, gap: 8 },
+  emptyTitle: { fontSize: 20, fontWeight: '800', color: '#ECE7DC' },
+  emptySubtitle: { fontSize: 14, color: '#8A8E97' },
+
+  // Event list
   eventList: { gap: 12 },
-  eventCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderWidth: 2, borderColor: '#000000', backgroundColor: '#FFFFFF' },
+  eventCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderWidth: 1, borderColor: '#353A44', backgroundColor: '#16181D', borderRadius: 8 },
   eventLeft: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, flex: 1 },
   eventInfo: { flex: 1, gap: 4 },
-  eventTitle: { fontSize: 15, fontWeight: '800', color: '#000000' },
-  eventDone: { textDecorationLine: 'line-through', color: '#9CA3AF' },
-  eventVolume: { fontSize: 13, fontWeight: '600', color: '#333333' },
-  eventCue: { fontSize: 12, color: '#666666', fontStyle: 'italic' },
+  eventTitle: { fontSize: 15, fontWeight: '800', color: '#ECE7DC' },
+  eventDone: { textDecorationLine: 'line-through', color: '#8A8E97' },
+  eventVolume: { fontSize: 13, fontWeight: '600', color: '#B8B4AB' },
+  eventCue: { fontSize: 12, color: '#8A8E97', fontStyle: 'italic' },
   eventBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 },
   eventBadgeText: { fontSize: 9, fontWeight: '900', color: '#FFFFFF', letterSpacing: 1 },
+
+  // Legend
+  legendRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 16,
+    marginTop: 24,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#353A44',
+  },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  legendDot: { width: 6, height: 6, borderRadius: 3 },
+  legendText: { fontSize: 10, color: '#8A8E97', fontWeight: '600', textTransform: 'capitalize' },
 });

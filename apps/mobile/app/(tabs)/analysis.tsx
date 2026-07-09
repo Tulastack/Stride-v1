@@ -143,7 +143,7 @@ export default function AnalysisScreen() {
             <Text style={styles.sectionTitle}>QUICK FIXES</Text>
             {result.recommendations.slice(0, 3).map((rec) => (
               <View key={rec.drillId} style={styles.drillItem}>
-                <Target size={16} color="#4F46E5" />
+                <Target size={16} color="#CDFF4F" />
                 <View style={styles.drillInfo}>
                   <Text style={styles.drillName}>{rec.drillName}</Text>
                   <Text style={styles.drillVolume}>{rec.sets} sets × {rec.reps} reps</Text>
@@ -162,7 +162,7 @@ export default function AnalysisScreen() {
             <Text style={styles.coachCtaTitle}>Want personalized tips?</Text>
             <Text style={styles.coachCtaSubtitle}>Chat with AI Coach for drills, workout plans, and more</Text>
           </View>
-          <ChevronRight size={20} color="#4F46E5" />
+          <ChevronRight size={20} color="#CDFF4F" />
         </Pressable>
 
         <Text style={styles.disclaimer}>
@@ -174,35 +174,35 @@ export default function AnalysisScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFFFF' },
+  container: { flex: 1, backgroundColor: '#0E0F12' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 12 },
-  loadingText: { fontSize: 14, fontWeight: '600', color: '#666666', marginTop: 8 },
-  failTitle: { fontSize: 20, fontWeight: '800', color: '#DC2626' },
-  failMsg: { fontSize: 14, color: '#666666', textAlign: 'center' },
-  retryBtn: { borderWidth: 2, borderColor: '#000000', paddingVertical: 12, paddingHorizontal: 24, marginTop: 12 },
-  retryText: { fontSize: 14, fontWeight: '800', color: '#000000' },
+  loadingText: { fontSize: 14, fontWeight: '600', color: '#8A8E97', marginTop: 8 },
+  failTitle: { fontSize: 20, fontWeight: '800', color: '#FF5237' },
+  failMsg: { fontSize: 14, color: '#8A8E97', textAlign: 'center' },
+  retryBtn: { borderWidth: 1, borderColor: '#353A44', paddingVertical: 12, paddingHorizontal: 24, marginTop: 12, borderRadius: 8 },
+  retryText: { fontSize: 14, fontWeight: '800', color: '#ECE7DC' },
   scroll: { padding: 24, paddingBottom: 48 },
-  scoreSection: { alignItems: 'center', marginBottom: 20 },
-  scoreNumber: { fontSize: 56, fontWeight: '900', color: '#000000' },
-  scoreLabel: { fontSize: 12, fontWeight: '700', color: '#666666', letterSpacing: 2 },
-  summary: { fontSize: 15, color: '#333333', lineHeight: 22, marginBottom: 24 },
-  sectionTitle: { fontSize: 12, fontWeight: '900', color: '#000000', letterSpacing: 1.5, marginBottom: 12 },
+  scoreSection: { alignItems: 'center', marginBottom: 24 },
+  scoreNumber: { fontSize: 64, fontWeight: '900', color: '#CDFF4F', fontFamily: 'SpaceMono' },
+  scoreLabel: { fontSize: 12, fontWeight: '700', color: '#8A8E97', letterSpacing: 2 },
+  summary: { fontSize: 15, color: '#B8B4AB', lineHeight: 22, marginBottom: 24 },
+  sectionTitle: { fontSize: 12, fontWeight: '900', color: '#ECE7DC', letterSpacing: 1.5, marginBottom: 12 },
   issuesSection: { marginBottom: 24 },
-  issueCard: { backgroundColor: '#F9F9F9', padding: 16, marginBottom: 10, borderLeftWidth: 3, borderLeftColor: '#E5E5E5' },
+  issueCard: { backgroundColor: '#16181D', padding: 16, marginBottom: 10, borderLeftWidth: 3, borderLeftColor: '#353A44', borderRadius: 8 },
   issueHeader: { flexDirection: 'row', marginBottom: 6 },
-  severityBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 3 },
+  severityBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4 },
   severityText: { fontSize: 10, fontWeight: '900', color: '#FFFFFF', letterSpacing: 1 },
-  issueTitle: { fontSize: 16, fontWeight: '700', color: '#000000', textTransform: 'capitalize', marginBottom: 4 },
-  issueDesc: { fontSize: 13, color: '#555555', lineHeight: 19 },
-  issueStat: { fontSize: 12, color: '#888888', marginTop: 4, fontStyle: 'italic' },
+  issueTitle: { fontSize: 16, fontWeight: '700', color: '#ECE7DC', textTransform: 'capitalize', marginBottom: 4 },
+  issueDesc: { fontSize: 13, color: '#B8B4AB', lineHeight: 19 },
+  issueStat: { fontSize: 12, color: '#8A8E97', marginTop: 4, fontStyle: 'italic' },
   drillsSection: { marginBottom: 24 },
-  drillItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
+  drillItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#1E2127' },
   drillInfo: { flex: 1 },
-  drillName: { fontSize: 14, fontWeight: '700', color: '#000000' },
-  drillVolume: { fontSize: 12, color: '#666666', marginTop: 2 },
-  coachCta: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F0F0FF', padding: 16, borderRadius: 8, marginBottom: 24 },
+  drillName: { fontSize: 14, fontWeight: '700', color: '#ECE7DC' },
+  drillVolume: { fontSize: 12, color: '#8A8E97', marginTop: 2 },
+  coachCta: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1E2127', padding: 16, borderRadius: 12, marginBottom: 24, borderWidth: 1, borderColor: '#353A44' },
   coachCtaContent: { flex: 1 },
-  coachCtaTitle: { fontSize: 15, fontWeight: '700', color: '#4F46E5' },
-  coachCtaSubtitle: { fontSize: 12, color: '#666666', marginTop: 2 },
-  disclaimer: { fontSize: 11, color: '#AAAAAA', textAlign: 'center' },
+  coachCtaTitle: { fontSize: 15, fontWeight: '700', color: '#CDFF4F' },
+  coachCtaSubtitle: { fontSize: 12, color: '#8A8E97', marginTop: 2 },
+  disclaimer: { fontSize: 11, color: '#8A8E97', textAlign: 'center' },
 });
