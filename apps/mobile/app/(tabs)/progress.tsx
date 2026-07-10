@@ -120,9 +120,9 @@ export default function ProgressScreen() {
 
                 <Pressable
                   style={[styles.modalViewFull, { backgroundColor: colors.accent }]}
-                  onPress={() => { setSelectedAnalysis(null); router.push({ pathname: '/(tabs)/analysis', params: { analysisId: selectedAnalysis.id } }); }}
+                  onPress={() => setSelectedAnalysis(null)}
                 >
-                  <Text style={[styles.modalViewFullText, { color: colors.accentText }]}>View Full Analysis →</Text>
+                  <Text style={[styles.modalViewFullText, { color: colors.accentText }]}>Close</Text>
                 </Pressable>
               </ScrollView>
             )}
