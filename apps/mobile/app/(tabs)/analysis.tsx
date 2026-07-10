@@ -5,6 +5,8 @@ import { AlertTriangle, ChevronRight, Target } from 'lucide-react-native';
 import { strideApi } from '../../src/services/api';
 import { parseAnalysisResult, waitForAnalysisResult, type AnalysisRow } from '../../src/lib/analysisApi';
 import { PoseVideoPlayer } from '../../src/components/analysis/PoseVideoPlayer';
+import { useTheme } from '../../src/context/ThemeContext';
+import { space, radius, iconStroke } from '../../src/theme';
 import type { AnalysisResult, Flaw } from '../../src/types/analysis';
 
 type Status = 'pending' | 'processing' | 'failed' | 'done';

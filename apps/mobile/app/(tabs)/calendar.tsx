@@ -2,6 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, SafeAreaView, Pressable, ActivityIndicator } from 'react-native';
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, CheckCircle2, Circle } from 'lucide-react-native';
 import { strideApi } from '../../src/services/api';
+import { useTheme } from '../../src/context/ThemeContext';
+import { space, radius, iconStroke } from '../../src/theme';
 
 type CalendarEvent = {
   id: string;
@@ -19,10 +21,10 @@ type CalendarEvent = {
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 const EVENT_TYPE_COLORS: Record<string, string> = {
-  drill: '#CDFF4F',
-  workout: '#5BE5A0',
-  competition: '#FF5237',
-  rest: '#353A44',
+  drill: '#CDA84E',    // gold accent
+  workout: '#2E8F63',  // success green
+  competition: '#C1432B', // error red
+  rest: '#79766A',     // muted
 };
 
 function getMonthData(year: number, month: number) {
@@ -42,6 +44,7 @@ function getMonthDateRange(year: number, month: number) {
 }
 
 export default function CalendarScreen() {
+  const { colors } = useTheme();
   const [monthOffset, setMonthOffset] = useState(0);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -117,22 +120,22 @@ export default function CalendarScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bg }]}>
       <ScrollView contentContainerStyle={styles.container}>
         {/* Header */}
-        <View style={styles.header}>
-          <CalendarIcon color="#CDFF4F" size={24} />
-          <Text style={styles.title}>TRAINING PLAN</Text>
+        <View style={[styles.header, { borderBottomColor: colors.border }]}>
+          <CalendarIcon color={colors.accent} size={24} />
+          <Text style={[styles.title, { color: colors.text }]}>Training{'\n'}Plan</Text>
         </View>
 
         {/* Month navigation */}
         <View style={styles.monthNav}>
           <Pressable onPress={() => setMonthOffset((o) => o - 1)} hitSlop={12}>
-            <ChevronLeft color="#ECE7DC" size={22} />
+            <ChevronLeft color={colors.text} size={22} />
           </Pressable>
-          <Text style={styles.monthLabel}>{monthLabel}</Text>
+          <Text style={[styles.monthLabel, { color: colors.text }]}>{monthLabel}</Text>
           <Pressable onPress={() => setMonthOffset((o) => o + 1)} hitSlop={12}>
-            <ChevronRight color="#ECE7DC" size={22} />
+            <ChevronRight color={colors.text} size={22} />
           </Pressable>
         </View>
 
@@ -140,7 +143,7 @@ export default function CalendarScreen() {
         <View style={styles.dayHeaderRow}>
           {DAY_NAMES.map((d) => (
             <View key={d} style={styles.dayHeaderCell}>
-              <Text style={styles.dayHeaderText}>{d}</Text>
+              <Text style={[styles.dayHeaderText, { color: colors.muted }]}>{d}</Text>
             </View>
           ))}
         </View>
@@ -162,12 +165,13 @@ export default function CalendarScreen() {
                 style={styles.dayCell}
                 onPress={() => setSelectedDate(dateStr)}
               >
-                <View style={[styles.dayCellInner, isSelected && styles.dayCellSelected]}>
+                <View style={[styles.dayCellInner, isSelected && styles.dayCellSelected, isSelected && { borderColor: colors.accent, backgroundColor: colors.cardAlt }]}>
                   <Text
                     style={[
                       styles.dayNum,
-                      isToday && styles.dayNumToday,
-                      isSelected && styles.dayNumSelected,
+                      { color: colors.muted },
+                      isToday && [styles.dayNumToday, { color: colors.text }],
+                      isSelected && [styles.dayNumSelected, { color: colors.accent }],
                     ]}
                   >
                     {day}
@@ -181,35 +185,35 @@ export default function CalendarScreen() {
 
         {/* Events for selected day */}
         {loading ? (
-          <ActivityIndicator size="large" color="#CDFF4F" style={styles.loader} />
+          <ActivityIndicator size="large" color={colors.accent} style={styles.loader} />
         ) : dayEvents.length === 0 ? (
           <View style={styles.emptyState}>
-            <Text style={styles.emptyTitle}>Rest Day</Text>
-            <Text style={styles.emptySubtitle}>No training scheduled. Recovery is progress.</Text>
+            <Text style={[styles.emptyTitle, { color: colors.text }]}>Rest Day</Text>
+            <Text style={[styles.emptySubtitle, { color: colors.muted }]}>No training scheduled. Recovery is progress.</Text>
           </View>
         ) : (
           <View style={styles.eventList}>
             {dayEvents.map((event) => (
               <Pressable
                 key={event.id}
-                style={styles.eventCard}
+                style={[styles.eventCard, { backgroundColor: colors.card, borderColor: colors.border }]}
                 onPress={() => toggleComplete(event)}
               >
                 <View style={styles.eventLeft}>
                   {event.status === 'completed' ? (
-                    <CheckCircle2 color="#5BE5A0" size={22} />
+                    <CheckCircle2 color={colors.success} size={22} />
                   ) : (
-                    <Circle color="#8A8E97" size={22} />
+                    <Circle color={colors.muted} size={22} />
                   )}
                   <View style={styles.eventInfo}>
-                    <Text style={[styles.eventTitle, event.status === 'completed' && styles.eventDone]}>
+                    <Text style={[styles.eventTitle, { color: colors.text }, event.status === 'completed' && [styles.eventDone, { color: colors.muted }]]}>
                       {event.title}
                     </Text>
                     {event.details?.volume && (
-                      <Text style={styles.eventVolume}>{event.details.volume}</Text>
+                      <Text style={[styles.eventVolume, { color: colors.muted }]}>{event.details.volume}</Text>
                     )}
                     {event.details?.cue && (
-                      <Text style={styles.eventCue}>💡 {event.details.cue}</Text>
+                      <Text style={[styles.eventCue, { color: colors.muted }]}>💡 {event.details.cue}</Text>
                     )}
                   </View>
                 </View>
@@ -222,11 +226,11 @@ export default function CalendarScreen() {
         )}
 
         {/* Event type legend */}
-        <View style={styles.legendRow}>
+        <View style={[styles.legendRow, { borderTopColor: colors.border }]}>
           {Object.entries(EVENT_TYPE_COLORS).map(([type, color]) => (
             <View key={type} style={styles.legendItem}>
               <View style={[styles.legendDot, { backgroundColor: color }]} />
-              <Text style={styles.legendText}>{type}</Text>
+              <Text style={[styles.legendText, { color: colors.muted }]}>{type}</Text>
             </View>
           ))}
         </View>
@@ -236,97 +240,39 @@ export default function CalendarScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#0E0F12' },
-  container: { padding: 24, paddingBottom: 40 },
-  header: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 24, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: '#353A44' },
-  title: { fontSize: 28, fontWeight: '900', color: '#ECE7DC', letterSpacing: -1 },
-
-  // Month navigation
-  monthNav: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 20,
-    paddingHorizontal: 4,
-  },
-  monthLabel: { fontSize: 16, fontWeight: '800', color: '#ECE7DC', letterSpacing: 0.5 },
-
-  // Day headers
-  dayHeaderRow: { flexDirection: 'row', marginBottom: 8 },
+  safeArea: { flex: 1 },
+  container: { padding: space.xl, paddingBottom: 40 },
+  header: { flexDirection: 'row', alignItems: 'center', gap: space.md, marginBottom: space.xl, paddingBottom: space.lg, borderBottomWidth: 1 },
+  title: { fontSize: 32, fontWeight: '900', letterSpacing: -1, lineHeight: 38 },
+  monthNav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, paddingHorizontal: 4 },
+  monthLabel: { fontSize: 16, fontWeight: '800', letterSpacing: 0.5 },
+  dayHeaderRow: { flexDirection: 'row', marginBottom: space.sm },
   dayHeaderCell: { flex: 1, alignItems: 'center' },
-  dayHeaderText: { fontSize: 11, fontWeight: '700', color: '#8A8E97', letterSpacing: 1 },
-
-  // Calendar grid
-  calendarGrid: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 24 },
-  dayCell: {
-    width: '14.28%',
-    aspectRatio: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  dayCellInner: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: 38,
-    height: 38,
-    borderRadius: 8,
-    gap: 2,
-  },
-  dayCellSelected: {
-    backgroundColor: '#16181D',
-    borderWidth: 1,
-    borderColor: '#CDFF4F',
-  },
-  dayNum: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#8A8E97',
-  },
-  dayNumToday: {
-    color: '#ECE7DC',
-    fontWeight: '900',
-  },
-  dayNumSelected: {
-    color: '#CDFF4F',
-    fontWeight: '800',
-  },
-  dot: {
-    width: 5,
-    height: 5,
-    borderRadius: 3,
-  },
-
-  // Loader
+  dayHeaderText: { fontSize: 11, fontWeight: '700', letterSpacing: 1 },
+  calendarGrid: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: space.xl },
+  dayCell: { width: '14.28%', aspectRatio: 1, alignItems: 'center', justifyContent: 'center' },
+  dayCellInner: { alignItems: 'center', justifyContent: 'center', width: 38, height: 38, borderRadius: radius.sm, gap: 2 },
+  dayCellSelected: { borderWidth: 1.5 },
+  dayNum: { fontSize: 14, fontWeight: '600' },
+  dayNumToday: { fontWeight: '900' },
+  dayNumSelected: { fontWeight: '800' },
+  dot: { width: 5, height: 5, borderRadius: 3 },
   loader: { marginTop: 40 },
-
-  // Empty state
-  emptyState: { alignItems: 'center', marginTop: 40, gap: 8 },
-  emptyTitle: { fontSize: 20, fontWeight: '800', color: '#ECE7DC' },
-  emptySubtitle: { fontSize: 14, color: '#8A8E97' },
-
-  // Event list
-  eventList: { gap: 12 },
-  eventCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderWidth: 1, borderColor: '#353A44', backgroundColor: '#16181D', borderRadius: 8 },
-  eventLeft: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, flex: 1 },
+  emptyState: { alignItems: 'center', marginTop: 40, gap: space.sm },
+  emptyTitle: { fontSize: 20, fontWeight: '800' },
+  emptySubtitle: { fontSize: 14 },
+  eventList: { gap: space.md },
+  eventCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: space.lg, borderWidth: 1, borderRadius: radius.md },
+  eventLeft: { flexDirection: 'row', alignItems: 'flex-start', gap: space.md, flex: 1 },
   eventInfo: { flex: 1, gap: 4 },
-  eventTitle: { fontSize: 15, fontWeight: '800', color: '#ECE7DC' },
-  eventDone: { textDecorationLine: 'line-through', color: '#8A8E97' },
-  eventVolume: { fontSize: 13, fontWeight: '600', color: '#B8B4AB' },
-  eventCue: { fontSize: 12, color: '#8A8E97', fontStyle: 'italic' },
-  eventBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 },
+  eventTitle: { fontSize: 15, fontWeight: '800' },
+  eventDone: { textDecorationLine: 'line-through' },
+  eventVolume: { fontSize: 13, fontWeight: '600' },
+  eventCue: { fontSize: 12, fontStyle: 'italic' },
+  eventBadge: { paddingHorizontal: space.sm, paddingVertical: 4, borderRadius: 4 },
   eventBadgeText: { fontSize: 9, fontWeight: '900', color: '#FFFFFF', letterSpacing: 1 },
-
-  // Legend
-  legendRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 16,
-    marginTop: 24,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#353A44',
-  },
+  legendRow: { flexDirection: 'row', justifyContent: 'center', gap: space.lg, marginTop: space.xl, paddingTop: space.lg, borderTopWidth: 1 },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   legendDot: { width: 6, height: 6, borderRadius: 3 },
-  legendText: { fontSize: 10, color: '#8A8E97', fontWeight: '600', textTransform: 'capitalize' },
+  legendText: { fontSize: 10, fontWeight: '600', textTransform: 'capitalize' },
 });

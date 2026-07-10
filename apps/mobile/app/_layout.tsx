@@ -5,6 +5,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { supabase } from '../src/lib/supabase';
 import { useStrideStore } from '../src/store/useStrideStore';
+import { ThemeProvider, useTheme } from '../src/context/ThemeContext';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -15,11 +16,10 @@ const queryClient = new QueryClient({
   },
 });
 
-export default function RootLayout() {
+function InnerLayout() {
   const setToken = useStrideStore((s) => s.setToken);
+  const { colors, mode } = useTheme();
 
-  // Restore any persisted Supabase session on launch and keep the stored token
-  // in sync with sign-in / token-refresh / sign-out events.
   useEffect(() => {
     if (!supabase) return;
     supabase.auth.getSession().then(({ data }) => {
@@ -32,21 +32,31 @@ export default function RootLayout() {
   }, [setToken]);
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <SafeAreaProvider>
-        <StatusBar style="light" />
-        <Stack
-          screenOptions={{
-            headerShown: false,
-            contentStyle: { backgroundColor: '#0B0D17' }, // Sleek dark space background
-          }}
-        >
-          <Stack.Screen name="index" />
-          <Stack.Screen name="(auth)" options={{ animation: 'fade' }} />
-          <Stack.Screen name="(onboarding)" options={{ animation: 'slide_from_right' }} />
-          <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
-        </Stack>
-      </SafeAreaProvider>
-    </QueryClientProvider>
+    <>
+      <StatusBar style={mode === 'dark' ? 'light' : 'dark'} />
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: colors.bg },
+        }}
+      >
+        <Stack.Screen name="index" />
+        <Stack.Screen name="(auth)" options={{ animation: 'fade' }} />
+        <Stack.Screen name="(onboarding)" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
+      </Stack>
+    </>
+  );
+}
+
+export default function RootLayout() {
+  return (
+    <ThemeProvider>
+      <QueryClientProvider client={queryClient}>
+        <SafeAreaProvider>
+          <InnerLayout />
+        </SafeAreaProvider>
+      </QueryClientProvider>
+    </ThemeProvider>
   );
 }
