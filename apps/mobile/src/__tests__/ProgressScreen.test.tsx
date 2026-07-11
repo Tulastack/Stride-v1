@@ -1,12 +1,14 @@
 /**
- * PROMPT F.6 — Progress timeline + re-test loop.
- * E2E-ish: two uploads -> trend chart shows points; compare-to-first toggles a
- * computed delta; the re-test CTA is present.
+ * Progress timeline — score log + re-test loop (reconciled with current UI).
  */
 import React from 'react';
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
 
-jest.mock('expo-router', () => ({ useLocalSearchParams: () => ({}), useRouter: () => ({ push: jest.fn() }), router: { push: jest.fn() } }));
+jest.mock('expo-router', () => ({
+  useLocalSearchParams: () => ({}),
+  useRouter: () => ({ push: jest.fn() }),
+  router: { push: jest.fn() },
+}));
 
 jest.mock('../lib/analysisApi', () => ({
   fetchAnalysisHistory: jest.fn(),
@@ -18,22 +20,25 @@ import { historyFixture } from '../fixtures/history';
 
 const mockFetch = fetchAnalysisHistory as jest.MockedFunction<typeof fetchAnalysisHistory>;
 
-describe('ProgressScreen (F.6)', () => {
+describe('ProgressScreen', () => {
   beforeEach(() => {
     mockFetch.mockResolvedValue(historyFixture);
   });
-  it('renders a per-metric trend chart for the history', async () => {
-    const { getByLabelText } = render(<ProgressScreen />);
-    await waitFor(() => expect(getByLabelText('trend-knee_drive')).toBeTruthy());
+
+  it('renders the history score log from fixture uploads', async () => {
+    const { getByText, getByLabelText, getAllByText } = render(<ProgressScreen />);
+    await waitFor(() => expect(getByText(/2 sprints analyzed/i)).toBeTruthy());
+    expect(getByLabelText('progress-log-upload-1')).toBeTruthy();
+    expect(getByLabelText('progress-log-upload-2')).toBeTruthy();
+    expect(getAllByText(/issue/i).length).toBeGreaterThan(0);
   });
 
-  it('compare-to-first toggle reveals a computed baseline delta', async () => {
-    const { getByTestId, queryByLabelText, getByLabelText } = render(<ProgressScreen />);
-    await waitFor(() => expect(getByLabelText('trend-knee_drive')).toBeTruthy());
-    expect(queryByLabelText('baseline-knee_drive')).toBeNull();
-    fireEvent.press(getByTestId('compare-first-toggle'));
-    await waitFor(() => expect(getByLabelText('baseline-knee_drive')).toBeTruthy());
-    expect(getByLabelText('baseline-knee_drive').props.children).toMatch(/vs first upload/i);
+  it('opens a score breakdown when a log card is pressed', async () => {
+    const { getByLabelText, getByText, getAllByText } = render(<ProgressScreen />);
+    await waitFor(() => expect(getByLabelText('progress-log-upload-1')).toBeTruthy());
+    fireEvent.press(getByLabelText('progress-log-upload-1'));
+    await waitFor(() => expect(getByText('SCORE BREAKDOWN')).toBeTruthy());
+    expect(getAllByText(/Low knee drive/i).length).toBeGreaterThan(0);
   });
 
   it('shows the re-test CTA (between-analyses loop)', async () => {

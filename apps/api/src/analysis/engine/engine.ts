@@ -146,6 +146,7 @@ export function assembleAnalysisFromFrames(ctx: AssembleContext): AnalysisResult
       meanKeypointConfidence: ctx.meanKeypointConfidence,
       reconResidual: ctx.meanReconResidual,
       cameraAzimuthDeg,
+      fps,
     })
   );
 
@@ -156,11 +157,9 @@ export function assembleAnalysisFromFrames(ctx: AssembleContext): AnalysisResult
     framing: ctx.framing,
   });
 
-  // Trust is the AND of two gates: (1) the offline per-viewpoint validation
-  // table, and (2) the ACTUAL per-clip confidence. A metric the validation
-  // table trusts for this view is still demoted to 'experimental' if this
-  // specific clip's reconstruction confidence is low — we never stamp a
-  // low-confidence number "trusted".
+  // Trust is the AND of three gates: (1) type-weighted Stage 6 trustHint
+  // (tier + fps + viewpoint), (2) the offline per-viewpoint validation table,
+  // and (3) a confidence floor. Never stamp a low-confidence number "trusted".
   const CONFIDENCE_TRUST_FLOOR = 0.6;
   const outMetrics: Metric[] = withConfidence.map((mc) => {
     const tableTrust = metricTrustStatus(
@@ -168,7 +167,11 @@ export function assembleAnalysisFromFrames(ctx: AssembleContext): AnalysisResult
       view,
     );
     const trustStatus =
-      mc.band.confidence < CONFIDENCE_TRUST_FLOOR ? 'experimental' : tableTrust;
+      mc.trustHint === 'experimental' ||
+      mc.band.confidence < CONFIDENCE_TRUST_FLOOR ||
+      tableTrust === 'experimental'
+        ? 'experimental'
+        : 'trusted';
     return {
       key: mc.metric.key,
       measured: mc.band,

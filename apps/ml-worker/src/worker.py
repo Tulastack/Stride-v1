@@ -138,20 +138,58 @@ def _write_overlay(video_path: str, s3_key: str | None, payload: dict) -> None:
         logger.info("Uploaded overlay sidecar s3://%s/%s", s3_bucket, key)
 
 
+def _image_down_from_capture(capture: dict) -> tuple[float, float] | None:
+    """Project phone gravity into image [y, x] for gravity-anchored 2D angles.
+
+    Prefers an explicit `imageGravity2D` from the capture layer. Otherwise
+    approximates from mean accelerometer (portrait: device y ≈ -image y).
+    Full device→camera extrinsic calibration is Phase 0; this is the honest
+    Phase 1 approximation for pitch/roll tilt of trunk/knee angles.
+    """
+    ig = capture.get("imageGravity2D")
+    if isinstance(ig, (list, tuple)) and len(ig) >= 2:
+        return (float(ig[0]), float(ig[1]))
+    accel = capture.get("accelerometer") or []
+    if not accel:
+        return None
+    xs, ys = [], []
+    for s in accel:
+        if not isinstance(s, dict):
+            continue
+        xs.append(float(s.get("ax", s.get("x", 0.0))))
+        ys.append(float(s.get("ay", s.get("y", 0.0))))
+    if not xs:
+        return None
+    mx, my = sum(xs) / len(xs), sum(ys) / len(ys)
+    # Expo/device: +y is up when phone is upright → image +y is down → negate y.
+    mag = (mx * mx + my * my) ** 0.5
+    if mag < 1e-6:
+        return None
+    return (-my / mag, mx / mag)
+
+
 def _run_2d(analysis_id: str, video_path: str, capture: dict, s3_key: str | None = None) -> None:
     """RTMPose 2D keypoints -> 2D sagittal biomechanics -> AnalysisResult.
 
     Streaming: frames are consumed one at a time and reduced to scalar series, so
     peak memory is bounded regardless of clip length (no full keypoint buffer)."""
-    fps = float(capture.get("fps") or 30)
+    capture_fps = float(capture.get("fps") or capture.get("preferredFps") or 30)
     notify_progress(analysis_id, "pose_extraction", 30, "RTMPose 2D keypoints")
     os.environ.setdefault("POSE2D_BACKEND", "rtmpose")
     azimuth = float(capture["cameraAzimuthDeg"]) if capture.get("cameraAzimuthDeg") is not None else 20.0
 
-    # Speed: sample pose at a lower fps (angles don't need 30/60fps) and pass that
-    # effective rate to the analyzer so gait timing stays consistent.
+    # Speed: sample pose at a lower fps (angles don't need 30/60fps). Keep
+    # capture_fps separate for trust gating / quality nudges.
     pose_fps = int(os.environ.get("POSE_FPS", "15"))
-    eff_fps = float(min(pose_fps, fps))
+    eff_fps = float(min(pose_fps, capture_fps))
+
+    import cv2
+    _cap = cv2.VideoCapture(video_path)
+    source_fps = float(_cap.get(cv2.CAP_PROP_FPS) or capture_fps)
+    if source_fps <= 1e-3:
+        source_fps = capture_fps
+    vw, vh = int(_cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    _cap.release()
 
     # Target lock: if the user selected a runner, crop-track THAT person. Accept
     # either a brush bbox {x0,y0,x1,y1} (preferred) or a point {xNorm,yNorm}.
@@ -165,18 +203,27 @@ def _run_2d(analysis_id: str, video_path: str, capture: dict, s3_key: str | None
             target_xy = (float(tgt["xNorm"]), float(tgt["yNorm"]))
             logger.info("Target lock: point (%.2f, %.2f)", *target_xy)
 
+    image_down = _image_down_from_capture(capture)
+    if image_down:
+        logger.info("Gravity-anchored image_down=%s", image_down)
+
     notify_progress(analysis_id, "biomechanics_calculation", 75, "2D sagittal biomechanics")
     overlay_frames: list = []
     result = analyze_2d_sagittal_stream(
         stream_frames(video_path, target_fps=pose_fps, target=target_xy),
         fps=eff_fps, azimuth_deg=azimuth, clip_id=analysis_id[:8],
         overlay_out=overlay_frames,
+        source_fps=source_fps,
+        capture_fps=capture_fps,
+        image_down=image_down,
     )
-    import cv2
-    _cap = cv2.VideoCapture(video_path)
-    vw, vh = int(_cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    _cap.release()
-    _write_overlay(video_path, s3_key, {"fps": eff_fps, "width": vw, "height": vh, "frames": overlay_frames})
+    _write_overlay(video_path, s3_key, {
+        "fps": eff_fps,
+        "sourceFps": source_fps,
+        "width": vw,
+        "height": vh,
+        "frames": overlay_frames,
+    })
     overall_score = int(round(result["captureQuality"]["overall"] * 100))
 
     notify_progress(analysis_id, "finalizing", 95, "Complete")

@@ -6,15 +6,12 @@ import Svg, { Line, Circle, Rect, Text as SvgText } from 'react-native-svg';
 import { Play, Pause, ChevronLeft, ChevronRight } from 'lucide-react-native';
 import { strideApi } from '../../services/api';
 import { semantic, spacing, radius } from '../../ui/theme';
+import { correctedFrameTimes, pickOverlayFrame, type OverlayData } from '../../lib/overlaySync';
 
-interface OverlayFrame { tMs: number; kp: number[][] }
-interface OverlayData { fps: number; width: number; height: number; frames: OverlayFrame[] }
-
-// COCO-17 skeleton edges (draw a clean stick figure).
 const EDGES: [number, number][] = [
-  [5, 6], [5, 11], [6, 12], [11, 12],       // torso
-  [5, 7], [7, 9], [6, 8], [8, 10],          // arms
-  [11, 13], [13, 15], [12, 14], [14, 16],   // legs
+  [5, 6], [5, 11], [6, 12], [11, 12],
+  [5, 7], [7, 9], [6, 8], [8, 10],
+  [11, 13], [13, 15], [12, 14], [14, 16],
 ];
 const KP_CONF = 0.3;
 const ACCENT = '#FF453A';
@@ -50,7 +47,7 @@ export function PoseVideoPlayer({ analysisId, seekToMs }: { analysisId: string; 
       try {
         const u = await strideApi.videoFileUrl(analysisId);
         if (active) setUri(u);
-      } catch (e) { if (active) setErr('Could not load video'); }
+      } catch { if (active) setErr('Could not load video'); }
       try {
         const o = await strideApi.getOverlay(analysisId);
         if (active) setOverlay(o);
@@ -70,31 +67,49 @@ function Inner({ uri, overlay, seekToMs }: { uri: string; overlay: OverlayData |
   const [tMs, setTMs] = useState(0);
   const [durMs, setDurMs] = useState(0);
   const [playing, setPlaying] = useState(false);
+  const [overlayReady, setOverlayReady] = useState(true);
   const scrubbing = useRef(false);
+  const seekSettle = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const syncFrames = useMemo(
+    () => (overlay ? correctedFrameTimes(overlay) : []),
+    [overlay],
+  );
+
+  // ~16ms poll during playback for tighter AV sync; skip while scrubbing/settling seek.
   useEffect(() => {
     const id = setInterval(() => {
       if (scrubbing.current) return;
-      setTMs((player.currentTime || 0) * 1000);
+      const ct = (player.currentTime || 0) * 1000;
+      setTMs(ct);
       if (player.duration) setDurMs(player.duration * 1000);
       setPlaying(player.playing);
-    }, 40);
+    }, 16);
     return () => clearInterval(id);
   }, [player]);
 
   useEffect(() => {
-    if (seekToMs != null && durMs > 0) { player.currentTime = seekToMs / 1000; player.pause(); }
+    if (seekToMs != null && durMs > 0) {
+      setOverlayReady(false);
+      player.currentTime = seekToMs / 1000;
+      player.pause();
+      if (seekSettle.current) clearTimeout(seekSettle.current);
+      seekSettle.current = setTimeout(() => {
+        setTMs(seekToMs);
+        setOverlayReady(true);
+      }, 80);
+    }
+    return () => { if (seekSettle.current) clearTimeout(seekSettle.current); };
   }, [seekToMs, durMs, player]);
 
   const video = { width: overlay?.width ?? 9, height: overlay?.height ?? 16 };
   const rect = useContentRect(layout, video);
-  const frame = useMemo(() => {
-    if (!overlay?.frames?.length) return null;
-    let best = overlay.frames[0]; let bd = Infinity;
-    for (const f of overlay.frames) { const d = Math.abs(f.tMs - tMs); if (d < bd) { bd = d; best = f; } }
-    return best;
-  }, [overlay, tMs]);
+  const frame = useMemo(
+    () => (overlayReady ? pickOverlayFrame(syncFrames, tMs) : null),
+    [syncFrames, tMs, overlayReady],
+  );
 
+  const stepSec = 1 / (overlay?.sourceFps ?? overlay?.fps ?? 30);
   const toPx = (kp: number[]) => ({ x: rect.ox + kp[1] * rect.cw, y: rect.oy + kp[0] * rect.ch, c: kp[2] });
 
   return (
@@ -109,11 +124,10 @@ function Inner({ uri, overlay, seekToMs }: { uri: string; overlay: OverlayData |
               return <Line key={i} x1={p.x} y1={p.y} x2={q.x} y2={q.y} stroke={ACCENT} strokeWidth={2.5} strokeOpacity={0.85} strokeLinecap="round" />;
             })}
             {frame.kp.map((kp, i) => {
-              if (i < 5 || kp[2] < KP_CONF) return null; // skip face dots for a clean look
+              if (i < 5 || kp[2] < KP_CONF) return null;
               const p = toPx(kp);
               return <Circle key={i} cx={p.x} cy={p.y} r={3.5} fill="#FFFFFF" stroke={ACCENT} strokeWidth={1.5} />;
             })}
-            {/* One clean angle readout: near-side knee. */}
             {(() => {
               const side = frame.kp[13][2] >= frame.kp[14][2] ? [11, 13, 15] : [12, 14, 16];
               const [h, k, a] = side.map((i) => frame.kp[i]);
@@ -131,13 +145,13 @@ function Inner({ uri, overlay, seekToMs }: { uri: string; overlay: OverlayData |
       </View>
 
       <View style={styles.controls}>
-        <TouchableOpacity onPress={() => { player.currentTime = Math.max(0, (player.currentTime || 0) - 1 / (overlay?.fps ?? 15)); }} accessibilityLabel="step-back">
+        <TouchableOpacity onPress={() => { player.currentTime = Math.max(0, (player.currentTime || 0) - stepSec); }} accessibilityLabel="step-back">
           <ChevronLeft color={semantic.text.primary} size={22} />
         </TouchableOpacity>
         <TouchableOpacity onPress={() => (playing ? player.pause() : player.play())} accessibilityLabel="play-pause">
           {playing ? <Pause color={ACCENT} size={26} /> : <Play color={ACCENT} size={26} />}
         </TouchableOpacity>
-        <TouchableOpacity onPress={() => { player.currentTime = Math.min((durMs / 1000) || 0, (player.currentTime || 0) + 1 / (overlay?.fps ?? 15)); }} accessibilityLabel="step-forward">
+        <TouchableOpacity onPress={() => { player.currentTime = Math.min((durMs / 1000) || 0, (player.currentTime || 0) + stepSec); }} accessibilityLabel="step-forward">
           <ChevronRight color={semantic.text.primary} size={22} />
         </TouchableOpacity>
         <Slider
@@ -148,9 +162,17 @@ function Inner({ uri, overlay, seekToMs }: { uri: string; overlay: OverlayData |
           minimumTrackTintColor={ACCENT}
           maximumTrackTintColor={semantic.surface.overlay}
           thumbTintColor="#FFFFFF"
-          onSlidingStart={() => { scrubbing.current = true; player.pause(); }}
+          onSlidingStart={() => { scrubbing.current = true; setOverlayReady(false); player.pause(); }}
           onValueChange={(v: number) => setTMs(v)}
-          onSlidingComplete={(v: number) => { player.currentTime = v / 1000; scrubbing.current = false; }}
+          onSlidingComplete={(v: number) => {
+            player.currentTime = v / 1000;
+            if (seekSettle.current) clearTimeout(seekSettle.current);
+            seekSettle.current = setTimeout(() => {
+              setTMs(v);
+              setOverlayReady(true);
+              scrubbing.current = false;
+            }, 60);
+          }}
         />
         <Text style={styles.time}>{(tMs / 1000).toFixed(1)}s</Text>
       </View>

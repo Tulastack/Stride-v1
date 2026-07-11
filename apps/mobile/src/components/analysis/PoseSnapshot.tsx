@@ -3,6 +3,7 @@ import { View, StyleSheet, LayoutChangeEvent } from 'react-native';
 import Svg, { Line, Circle } from 'react-native-svg';
 import { strideApi, type OverlayData } from '../../services/api';
 import { radius } from '../../ui/theme';
+import { correctedFrameTimes, pickOverlayFrame } from '../../lib/overlaySync';
 
 const EDGES: [number, number][] = [
   [5, 6], [5, 11], [6, 12], [11, 12],
@@ -24,12 +25,8 @@ export function PoseSnapshot({ analysisId, tMs }: { analysisId: string; tMs: num
     return () => { active = false; };
   }, [analysisId]);
 
-  const frame = useMemo(() => {
-    if (!overlay?.frames?.length) return null;
-    let best = overlay.frames[0]; let bd = Infinity;
-    for (const f of overlay.frames) { const d = Math.abs(f.tMs - tMs); if (d < bd) { bd = d; best = f; } }
-    return best;
-  }, [overlay, tMs]);
+  const frames = useMemo(() => (overlay ? correctedFrameTimes(overlay) : []), [overlay]);
+  const frame = useMemo(() => pickOverlayFrame(frames, tMs), [frames, tMs]);
 
   const rect = useMemo(() => {
     const { w, h } = layout;

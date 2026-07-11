@@ -224,7 +224,7 @@ export default function CalendarScreen() {
                       <Text style={[styles.eventVolume, { color: colors.muted }]}>{event.details.volume}</Text>
                     )}
                     {event.details?.cue && (
-                      <Text style={[styles.eventCue, { color: colors.muted }]}>💡 {event.details.cue}</Text>
+                      <Text style={[styles.eventCue, { color: colors.muted }]}>{event.details.cue}</Text>
                     )}
                   </View>
                 </View>

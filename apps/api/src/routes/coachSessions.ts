@@ -212,15 +212,18 @@ router.post('/:id/message', authenticate, async (req: any, res: Response, next: 
     });
 
     let assistantText: string;
+    const progress: string[] = [];
     try {
       assistantText = await runTrackCoach({
         userMessage: content,
         analysisContext,
         history: history ?? [],
         toolset,
+        onProgress: (ev) => { progress.push(ev.label); },
       });
     } catch (agentErr) {
       console.error('Coach agent failed, falling back to single-shot reply:', agentErr);
+      progress.push('Drafting your coaching plan');
       assistantText = await generateCoachReply({
         analysisContext,
         userMessage: content,
@@ -229,7 +232,7 @@ router.post('/:id/message', authenticate, async (req: any, res: Response, next: 
     }
 
     await touchCoachSession(id);
-    res.json({ role: 'assistant', content: assistantText });
+    res.json({ role: 'assistant', content: assistantText, progress });
   } catch (err) {
     next(err);
   }

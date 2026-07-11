@@ -5,7 +5,7 @@ import { CameraView, useCameraPermissions, useMicrophonePermissions } from 'expo
 import * as ImagePicker from 'expo-image-picker';
 import { Camera, Zap, ChevronRight } from 'lucide-react-native';
 import { strideApi } from '../../src/services/api';
-import { GyroRecorder, buildCaptureManifest, uploadCaptureVideo, CAPTURE_PREFS } from '../../src/services/capture';
+import { GyroRecorder, AccelRecorder, buildCaptureManifest, uploadCaptureVideo, CAPTURE_PREFS } from '../../src/services/capture';
 import { useTheme } from '../../src/context/ThemeContext';
 import { useStrideStore } from '../../src/store/useStrideStore';
 import { TargetSelect } from '../../src/components/TargetSelect';
@@ -21,9 +21,10 @@ export default function UploadScreen() {
   const [progressStep, setProgressStep] = useState<string | null>(null);
   const [showCamera, setShowCamera] = useState(false);
   const [slowMo, setSlowMo] = useState(true);
-  const [pending, setPending] = useState<{ uri: string; gyro: any; durationMs: number; width?: number; height?: number } | null>(null);
+  const [pending, setPending] = useState<{ uri: string; gyro: any; accel?: any; durationMs: number; width?: number; height?: number } | null>(null);
   const cameraRef = useRef<CameraView>(null);
   const gyroRef = useRef(new GyroRecorder());
+  const accelRef = useRef(new AccelRecorder());
 
   const firstName = user?.display_name ? user.display_name.split(' ')[0] : null;
 
@@ -32,10 +33,18 @@ export default function UploadScreen() {
     if (!micPermission?.granted) { const m = await requestMicPermission(); if (!m.granted) throw new Error('Microphone permission required.'); }
   }, [cameraPermission, micPermission, requestCameraPermission, requestMicPermission]);
 
-  const processVideo = async (uri: string, gyroSamples: any, durationMs: number, target?: any) => {
+  const processVideo = async (uri: string, gyroSamples: any, durationMs: number, target?: any, accelSamples?: any) => {
     setUploading(true); setProgressStep('UPLOADING');
     try {
-      const manifest = buildCaptureManifest({ videoUri: uri, gyro: gyroSamples, durationMs, fps: slowMo ? CAPTURE_PREFS.preferredFps : 60, preferredFps: CAPTURE_PREFS.preferredFps, sloMoRequested: slowMo });
+      const manifest = buildCaptureManifest({
+        videoUri: uri,
+        gyro: gyroSamples,
+        accelerometer: accelSamples,
+        durationMs,
+        fps: slowMo ? CAPTURE_PREFS.preferredFps : 60,
+        preferredFps: CAPTURE_PREFS.preferredFps,
+        sloMoRequested: slowMo,
+      });
       if (target) manifest.target = target;
       setProgressStep('ANALYZING SPRINT');
       const { analysisId } = await uploadCaptureVideo(uri, manifest, strideApi);
@@ -49,7 +58,7 @@ export default function UploadScreen() {
       const pick = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['videos'], quality: 1 });
       if (pick.canceled || !pick.assets[0]) return;
       const a = pick.assets[0];
-      setPending({ uri: a.uri, gyro: [], durationMs: a.duration ?? 4000, width: a.width, height: a.height });
+      setPending({ uri: a.uri, gyro: [], accel: [], durationMs: a.duration ?? 4000, width: a.width, height: a.height });
     } catch (err: any) { Alert.alert('Import failed', err.message); }
   };
 
@@ -60,12 +69,19 @@ export default function UploadScreen() {
 
   const handleRecord = async () => {
     if (!cameraRef.current || recording) return;
-    setRecording(true); await gyroRef.current.start();
+    setRecording(true);
+    await Promise.all([gyroRef.current.start(), accelRef.current.start()]);
     try {
       const video = await cameraRef.current.recordAsync({ maxDuration: 12 });
-      const gyro = gyroRef.current.stop(); setRecording(false); setShowCamera(false);
-      if (video?.uri) setPending({ uri: video.uri, gyro, durationMs: 12000 });
-    } catch { gyroRef.current.stop(); setRecording(false); setShowCamera(false); }
+      const gyro = gyroRef.current.stop();
+      const accel = accelRef.current.stop();
+      setRecording(false); setShowCamera(false);
+      if (video?.uri) setPending({ uri: video.uri, gyro, accel, durationMs: 12000 });
+    } catch {
+      gyroRef.current.stop();
+      accelRef.current.stop();
+      setRecording(false); setShowCamera(false);
+    }
   };
 
   if (showCamera) {
@@ -90,8 +106,8 @@ export default function UploadScreen() {
     return (
       <SafeAreaView style={[styles.safe, { backgroundColor: colors.bg }]}>
         <TargetSelect uri={pending.uri} videoWidth={pending.width} videoHeight={pending.height}
-          onConfirm={(t) => { const p = pending; setPending(null); processVideo(p.uri, p.gyro, p.durationMs, t); }}
-          onSkip={() => { const p = pending; setPending(null); processVideo(p.uri, p.gyro, p.durationMs); }} />
+          onConfirm={(t) => { const p = pending; setPending(null); processVideo(p.uri, p.gyro, p.durationMs, t, p.accel); }}
+          onSkip={() => { const p = pending; setPending(null); processVideo(p.uri, p.gyro, p.durationMs, undefined, p.accel); }} />
       </SafeAreaView>
     );
   }
@@ -154,9 +170,9 @@ const styles = StyleSheet.create({
   uploadWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: space.xl },
   uploadStep: { fontSize: 12, fontWeight: '600', letterSpacing: 1.1 },
   cameraOverlay: { flex: 1, justifyContent: 'flex-end', alignItems: 'center', paddingBottom: space.xxxl, gap: space.lg },
-  closeBtn: { position: 'absolute', top: space.xl, right: space.xl, width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center' },
+  closeBtn: { position: 'absolute', top: space.xl, right: space.xl, width: 36, height: 36, borderRadius: radius.pill, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center' },
   closeBtnText: { color: '#fff', fontSize: 18, fontWeight: '600' },
   cameraHint: { fontSize: 12, color: '#fff', backgroundColor: 'rgba(0,0,0,0.5)', padding: space.sm, borderRadius: radius.sm },
-  camBtn: { width: 64, height: 64, borderRadius: 32, borderWidth: 2, borderColor: '#fff', alignItems: 'center', justifyContent: 'center' },
-  camInner: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#C1432B' },
+  camBtn: { width: 64, height: 64, borderRadius: radius.pill, borderWidth: 2, borderColor: '#fff', alignItems: 'center', justifyContent: 'center' },
+  camInner: { width: 44, height: 44, borderRadius: radius.pill, backgroundColor: '#C1432B' },
 });

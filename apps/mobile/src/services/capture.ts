@@ -1,15 +1,23 @@
-// Mobile capture pipeline — gyro recording, intrinsics estimate, capture manifest.
+// Mobile capture pipeline — gyro + accelerometer recording, intrinsics, capture manifest.
 // Stage 0 sidecar consumed by the biomechanics engine (PRD v2.2-B addendum).
 
 import { Dimensions, Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
-import { Gyroscope } from 'expo-sensors';
+import { Accelerometer, Gyroscope } from 'expo-sensors';
 
 export interface GyroSample {
   tMs: number;
   yawRateRadS: number;
   pitchRateRadS: number;
   rollRateRadS: number;
+}
+
+export interface AccelSample {
+  tMs: number;
+  /** Linear acceleration incl. gravity, m/s^2 (Expo reports in g; we store ×9.80665). */
+  ax: number;
+  ay: number;
+  az: number;
 }
 
 export interface CameraIntrinsics {
@@ -29,6 +37,9 @@ export interface CaptureManifest {
   framing: 'full' | 'partial';
   handheld: boolean;
   gyro: GyroSample[];
+  accelerometer?: AccelSample[];
+  /** Optional image-plane gravity [dy, dx] in keypoint [y,x] coords. */
+  imageGravity2D?: [number, number];
   intrinsics: CameraIntrinsics;
   sloMoRequested: boolean;
   /** User-selected target runner (normalized 0..1) for multi-person clips —
@@ -41,6 +52,7 @@ export interface CaptureManifest {
 }
 
 const { width: screenW, height: screenH } = Dimensions.get('window');
+const G = 9.80665;
 
 /** Typical phone vertical FOV (~60°) → focal length in px. */
 export function estimateIntrinsics(widthPx = screenW, heightPx = screenH): CameraIntrinsics {
@@ -81,9 +93,49 @@ export class GyroRecorder {
   }
 }
 
+/** Accelerometer for gravity fusion (research Phase 0/1). Expo units are g. */
+export class AccelRecorder {
+  private samples: AccelSample[] = [];
+  private startedAt = 0;
+  private sub: { remove: () => void } | null = null;
+
+  async start(): Promise<void> {
+    this.samples = [];
+    this.startedAt = Date.now();
+    const available = await Accelerometer.isAvailableAsync();
+    if (!available) return;
+    Accelerometer.setUpdateInterval(50);
+    this.sub = Accelerometer.addListener(({ x, y, z }) => {
+      this.samples.push({
+        tMs: Date.now() - this.startedAt,
+        ax: x * G,
+        ay: y * G,
+        az: z * G,
+      });
+    });
+  }
+
+  stop(): AccelSample[] {
+    this.sub?.remove();
+    this.sub = null;
+    return this.samples;
+  }
+}
+
+/** Rough portrait image-plane gravity from mean accel (device y-up → image y-down). */
+export function imageGravityFromAccel(accel: AccelSample[]): [number, number] | undefined {
+  if (!accel.length) return undefined;
+  const mx = accel.reduce((s, a) => s + a.ax, 0) / accel.length;
+  const my = accel.reduce((s, a) => s + a.ay, 0) / accel.length;
+  const mag = Math.hypot(mx, my);
+  if (mag < 1e-6) return undefined;
+  return [-my / mag, mx / mag];
+}
+
 export function buildCaptureManifest(opts: {
   videoUri: string;
   gyro: GyroSample[];
+  accelerometer?: AccelSample[];
   durationMs?: number;
   fps?: number;
   preferredFps?: number;
@@ -97,6 +149,8 @@ export function buildCaptureManifest(opts: {
   const preferredFps = opts.preferredFps ?? 120;
   const motionBlur: CaptureManifest['motionBlur'] =
     fps >= 120 ? 'low' : fps >= 90 ? 'med' : 'high';
+  const accelerometer = opts.accelerometer ?? [];
+  const imageGravity2D = imageGravityFromAccel(accelerometer);
 
   return {
     fps,
@@ -108,6 +162,8 @@ export function buildCaptureManifest(opts: {
     framing: 'full',
     handheld: true,
     gyro: opts.gyro,
+    ...(accelerometer.length ? { accelerometer } : {}),
+    ...(imageGravity2D ? { imageGravity2D } : {}),
     intrinsics: estimateIntrinsics(widthPx, heightPx),
     sloMoRequested: opts.sloMoRequested ?? preferredFps >= 120,
   };

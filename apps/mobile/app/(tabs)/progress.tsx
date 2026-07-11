@@ -47,9 +47,23 @@ export default function ProgressScreen() {
           <View style={styles.emptyState}>
             <Text style={[styles.emptyTitle, { color: colors.text }]}>No analyses yet</Text>
             <Text style={[styles.emptySubtitle, { color: colors.muted }]}>Upload your first sprint to start tracking</Text>
+            <Pressable
+              accessibilityLabel="retest-cta"
+              onPress={() => router.push('/(tabs)/')}
+              style={[styles.retestCta, { backgroundColor: colors.accent }]}
+            >
+              <Text style={[styles.retestCtaText, { color: colors.accentText }]}>Record a sprint</Text>
+            </Pressable>
           </View>
         ) : (
           <View style={styles.list}>
+            <Pressable
+              accessibilityLabel="retest-cta"
+              onPress={() => router.push('/(tabs)/')}
+              style={[styles.retestCta, { backgroundColor: colors.accent }]}
+            >
+              <Text style={[styles.retestCtaText, { color: colors.accentText }]}>Record another sprint</Text>
+            </Pressable>
             {history.map((analysis, index) => {
               const score = analysis.flaws.length === 0 ? 95 : Math.max(40, 100 - analysis.flaws.length * 10);
               const barWidth = `${(score / maxScore) * 100}%`;
@@ -60,6 +74,7 @@ export default function ProgressScreen() {
               return (
                 <Pressable
                   key={analysis.id || index}
+                  accessibilityLabel={`progress-log-${analysis.id || index}`}
                   style={[styles.logCard, { backgroundColor: colors.card, borderColor: colors.border }]}
                   onPress={() => setSelectedAnalysis(analysis)}
                 >
@@ -144,6 +159,8 @@ const styles = StyleSheet.create({
   emptyTitle: { fontSize: 18, fontWeight: '700' },
   emptySubtitle: { fontSize: 14, textAlign: 'center' },
   list: { gap: space.md },
+  retestCta: { paddingVertical: space.md, paddingHorizontal: space.lg, borderRadius: radius.sm, alignItems: 'center', marginBottom: space.sm },
+  retestCtaText: { fontSize: 14, fontWeight: '800' },
   logCard: { padding: space.lg, borderWidth: 1, borderRadius: radius.md, gap: space.sm },
   logTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   logDate: { fontSize: 14, fontWeight: '600' },
@@ -154,7 +171,7 @@ const styles = StyleSheet.create({
   barFill: { height: 6, borderRadius: 3 },
   logIssues: { fontSize: 12 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
-  modalContent: { borderTopLeftRadius: 16, borderTopRightRadius: 16, maxHeight: '75%', padding: space.xl },
+  modalContent: { borderTopLeftRadius: radius.md, borderTopRightRadius: radius.md, maxHeight: '75%', padding: space.xl },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: space.xl },
   modalTitle: { fontSize: 14, fontWeight: '800', letterSpacing: 1 },
   modalScore: { alignItems: 'center', marginBottom: space.xl },

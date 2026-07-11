@@ -46,9 +46,23 @@ export function TargetSelect({
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: (e) => setPath([{ x: e.nativeEvent.locationX, y: e.nativeEvent.locationY }]),
-      onPanResponderMove: (e) =>
-        setPath((p) => [...p, { x: e.nativeEvent.locationX, y: e.nativeEvent.locationY }]),
+      onPanResponderGrant: (e) => {
+        // Capture coords before setState — RN reuses synthetic events and
+        // nulls nativeEvent by the time a functional updater runs.
+        const x = e.nativeEvent.locationX;
+        const y = e.nativeEvent.locationY;
+        setPath([{ x, y }]);
+      },
+      onPanResponderMove: (e) => {
+        const x = e.nativeEvent.locationX;
+        const y = e.nativeEvent.locationY;
+        setPath((p) => {
+          const last = p[p.length - 1];
+          // Throttle near-duplicate points for smoother brush performance.
+          if (last && Math.hypot(x - last.x, y - last.y) < 2) return p;
+          return [...p, { x, y }];
+        });
+      },
     }),
   ).current;
 

@@ -77,7 +77,8 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
         properties: {
           metric_key: {
             type: 'string',
-            description: 'One of: knee_drive_angle, torso_lean, arm_angle, hip_extension, ground_contact_time.',
+            description:
+              'Metric key from analysis (aliases ok): knee_drive / knee_drive_angle, trunk_lean / torso_lean, hip_extension, contact_time_ms / ground_contact_time, arm_angle.',
           },
           weeks: { type: 'number', description: 'How many weeks back (default 4).' },
         },
@@ -123,6 +124,22 @@ function latestCompleted(analyses: any[]): any | null {
   return analyses.find((a) => a.status === 'completed' && a.result_json) ?? null;
 }
 
+/** Map result_json / LLM aliases → metrics_timeline keys. */
+const TREND_KEY_ALIASES: Record<string, string> = {
+  knee_drive: 'knee_drive_angle',
+  knee_drive_angle: 'knee_drive_angle',
+  trunk_lean: 'torso_lean',
+  torso_lean: 'torso_lean',
+  hip_extension: 'hip_extension',
+  contact_time_ms: 'ground_contact_time',
+  ground_contact_time: 'ground_contact_time',
+  arm_angle: 'arm_angle',
+};
+
+function normalizeTrendKey(raw: string): string {
+  return TREND_KEY_ALIASES[raw] ?? TREND_KEY_ALIASES[raw.replace(/\s+/g, '_')] ?? raw;
+}
+
 /**
  * Build the tool executor bound to a specific athlete. `execute` returns a
  * plain string (the tool result the model reads) and never throws — failures
@@ -151,14 +168,27 @@ export function buildCoachTools(ctx: CoachToolContext) {
           const r = latest.result_json ?? {};
           const metrics: any[] = r.metrics ?? [];
           const flaws: any[] = r.flaws ?? [];
+          const usable: Record<string, boolean> = r.captureQuality?.perMetricUsable ?? {};
           const metricLines = metrics.length
             ? metrics
                 .map((m) => {
+                  const key = String(m.key ?? '');
                   const val = m.measured?.value ?? m.measured ?? '—';
+                  const conf = typeof m.measured?.confidence === 'number' ? m.measured.confidence : null;
                   const [lo, hi] = m.normalRange ?? [];
                   const range = lo != null && hi != null ? ` (normal ${lo}-${hi}${m.unit ?? ''})` : '';
-                  const trust = m.trustStatus === 'experimental' ? ' [experimental — hedge]' : '';
-                  return `- ${String(m.key).replace(/_/g, ' ')}: ${val}${m.unit ?? ''}${range}${trust}`;
+                  const trust =
+                    m.trustStatus === 'experimental'
+                      ? ' [experimental — hedge; do not treat as definitive]'
+                      : m.trustStatus === 'trusted'
+                        ? ' [trusted]'
+                        : '';
+                  const confStr = conf != null ? ` conf=${conf.toFixed(2)}` : '';
+                  const gated =
+                    usable[key] === false || (conf != null && conf < 0.35)
+                      ? ' [NOT USABLE — do not cite as fact; ask them to re-film]'
+                      : '';
+                  return `- ${key.replace(/_/g, ' ')}: ${val}${m.unit ?? ''}${range}${confStr}${trust}${gated}`;
                 })
                 .join('\n')
             : '- (no per-metric values)';
@@ -171,14 +201,22 @@ export function buildCoachTools(ctx: CoachToolContext) {
                 .join('\n')
             : '- none flagged';
           const econ = r.economyScore != null ? `Economy score: ${r.economyScore}/100.\n` : '';
-          return `Latest analysis (${latest.completed_at ?? latest.created_at ?? 'recent'}):\n${econ}Metrics:\n${metricLines}\nTop flaws (worst first):\n${flawLines}`;
+          const nudge = r.captureQuality?.primaryNudge
+            ? `Capture note: ${r.captureQuality.primaryNudge}\n`
+            : '';
+          const method = r.reconstructionMethod ? `Method: ${r.reconstructionMethod}.\n` : '';
+          return `Latest analysis (${latest.completed_at ?? latest.created_at ?? 'recent'}):\n${method}${econ}${nudge}Metrics:\n${metricLines}\nTop flaws (worst first):\n${flawLines}`;
         }
 
         case 'get_metric_trend': {
-          const key = String(args.metric_key ?? '');
+          const rawKey = String(args.metric_key ?? '');
+          const key = normalizeTrendKey(rawKey);
           const weeks = Number.isFinite(args.weeks) ? Math.max(1, Math.min(52, Number(args.weeks))) : 4;
           const rows = await ctx.deps.getMetricsTrend(ctx.userId, key, weeks);
-          if (!rows.length) return `No trend data for "${key}" in the last ${weeks} weeks.`;
+          if (!rows.length) {
+            const aliasNote = key !== rawKey ? ` (normalized from "${rawKey}")` : '';
+            return `No trend data for "${key}"${aliasNote} in the last ${weeks} weeks.`;
+          }
           const series = rows.map((r) => `${r.week}: ${Math.round(r.avg_value * 100) / 100}`).join('; ');
           const first = rows[0].avg_value;
           const last = rows[rows.length - 1].avg_value;

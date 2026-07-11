@@ -85,14 +85,14 @@ TIER = {
     "overstride": 3,
 }
 # Sprint ground contact is ~90 ms; below ~120 fps the timing error swamps the signal
-# (30 fps → ±33 ms). Our pose sampling caps effective fps, so temporal metrics are
-# honestly experimental until a high-fps temporal path exists (plan Phase 1/4).
+# (30 fps → ±33 ms). Gate on the KEYPOINT sample rate (pose fps), not capture fps —
+# pose subsampling also limits temporal resolution. Report capture fps separately.
 FPS_TRUST_GATE = 120.0
 # Perspective/scale corrupt vertical CoM off-axis and it is unmeasured on runners
 # (honesty ledger #9) — keep it a candidate, never headline-trusted yet.
 CANDIDATE = {"vertical_oscillation"}
 
-_VERT_DOWN = np.array([1.0, 0.0])  # image y increases downward
+_VERT_DOWN = np.array([1.0, 0.0])  # image coords are [y, x]; y increases downward
 _UP = np.array([-1.0, 0.0])
 
 
@@ -107,7 +107,42 @@ def _smooth(x: np.ndarray, w: int = 3) -> np.ndarray:
     return np.convolve(x, np.ones(w) / w, mode="same")
 
 
-def _frame_scalars(k: np.ndarray) -> dict[str, float]:
+def _unit2(v: np.ndarray) -> np.ndarray:
+    n = float(np.linalg.norm(v))
+    return v / n if n > 1e-8 else v
+
+
+def resolve_image_axes(image_down: tuple[float, float] | None) -> tuple[np.ndarray, np.ndarray]:
+    """Gravity-anchored image vertical in [y, x] coords (research Phase 1).
+
+    When the phone is pitched/rolled, measuring angles against image-Y corrupts
+    trunk/knee metrics. Prefer a capture-provided image-plane gravity projection;
+    fall back to image-Y. Head-on sagittal depth remains unrecoverable.
+    """
+    if image_down is None:
+        return _VERT_DOWN.copy(), _UP.copy()
+    down = _unit2(np.array([float(image_down[0]), float(image_down[1])], dtype=float))
+    if float(np.linalg.norm(down)) < 1e-6:
+        return _VERT_DOWN.copy(), _UP.copy()
+    return down, -down
+
+
+def estimate_azimuth_from_keypoints(k: np.ndarray) -> float | None:
+    """Hip/shoulder width ratio → azimuth (0° = side-on). Same heuristic as pipeline3d."""
+    ls, rs = k[KP["left_shoulder"]], k[KP["right_shoulder"]]
+    lh, rh = k[KP["left_hip"]], k[KP["right_hip"]]
+    if min(ls[2], rs[2], lh[2], rh[2]) < 0.3:
+        return None
+    # keypoints are [y, x, conf] — width is along x (index 1)
+    sw = abs(float(rs[1] - ls[1]))
+    if sw < 1e-4:
+        return None
+    hw = abs(float(rh[1] - lh[1]))
+    r = min(1.0, hw / sw)
+    return round(math.degrees(math.acos(max(0.0, min(1.0, r)))), 1)
+
+
+def _frame_scalars(k: np.ndarray, vert_down: np.ndarray, up: np.ndarray) -> dict[str, float]:
     """Extract per-frame scalars we retain (discarding the 17x3 keypoints)."""
     s = "left" if k[KP["left_hip"], 2] >= k[KP["right_hip"], 2] else "right"
     hip, knee, ank = k[KP[f"{s}_hip"], :2], k[KP[f"{s}_knee"], :2], k[KP[f"{s}_ankle"], :2]
@@ -118,13 +153,15 @@ def _frame_scalars(k: np.ndarray) -> dict[str, float]:
     mid_sh = (k[KP["left_shoulder"], :2] + k[KP["right_shoulder"], :2]) / 2
     mid_hp = (k[KP["left_hip"], :2] + k[KP["right_hip"], :2]) / 2
     leg_len = float(np.linalg.norm(ank - hip)) or 1e-6
+    # Project hip position onto gravity axis for vertical oscillation (candidate).
+    hip_vert = float(np.dot(mid_hp, vert_down))
     return {
-        "knee_drive": _angle_between_vectors(knee - hip, _VERT_DOWN),   # thigh vs vertical, peak
+        "knee_drive": _angle_between_vectors(knee - hip, vert_down),   # thigh vs gravity vertical
         "hip_ext": _angle_at_joint(sh, hip, knee),                     # shoulder-hip-knee, peak
         "knee_flex": _angle_at_joint(hip, knee, ank),                  # knee joint angle, min=peak flexion
         "elbow": _angle_at_joint(a_sh, a_el, a_wr),                    # arm swing
-        "trunk": _angle_between_vectors(mid_sh - mid_hp, _UP),
-        "hip_y": float(mid_hp[1]),                                     # vertical oscillation source
+        "trunk": _angle_between_vectors(mid_sh - mid_hp, up),
+        "hip_y": hip_vert,
         "torso_len": float(np.linalg.norm(mid_sh - mid_hp)) or 1e-6,
         "ank_x_rel": float(ank[0] - mid_hp[0]),                        # foot horizontal vs hip (overstride)
         "ank_y_rel": float(ank[1] - mid_hp[1]),                        # foot vertical vs hip (contact)
@@ -187,9 +224,15 @@ def _band(value: float, conf: float) -> dict[str, float]:
             "high": round(value + half, 1), "confidence": round(conf, 2)}
 
 
-def _assemble(S: dict[str, list[float]], idxs: list[int], fps: float,
-              mean_conf: float, azimuth_deg: float, clip_id: str) -> dict[str, Any]:
+def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
+              mean_conf: float, azimuth_deg: float, clip_id: str,
+              capture_fps: float | None = None, source_fps: float | None = None) -> dict[str, Any]:
+    """Assemble metrics. `pose_fps` = keypoint sample rate (gait timing);
+    `capture_fps` = phone capture rate (reported quality + nudges);
+    `source_fps` = video container fps (flaw evidence timestamps)."""
     a = {k: np.array(v) for k, v in S.items()}
+    cap_fps = float(capture_fps if capture_fps is not None else pose_fps)
+    src_fps = float(source_fps if source_fps is not None else pose_fps)
     # near-side foot contact frames (for overstride)
     contacts = _contact_positions(a["ank_y_rel"])
     overstride_pct = 0.0
@@ -197,11 +240,6 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], fps: float,
         os_vals = [abs(a["ank_x_rel"][i]) / max(a["leg_len"][i], 1e-6) for i in contacts]
         overstride_pct = min(float(np.median(os_vals)) * 100.0, 40.0)  # clamp implausible off-axis values
     vo_pct = min(float((a["hip_y"].max() - a["hip_y"].min()) / max(np.median(a["torso_len"]), 1e-6)) * 100.0, 25.0)
-
-    # Spatial metrics are harder from a single 2D view (perspective/scale corrupt
-    # them off-axis), so down-weight their confidence — they read 'experimental'
-    # unless the capture is clean side-on.
-    HARDER = {"overstride", "vertical_oscillation"}
 
     values = {
         "trunk_lean": (float(np.mean(a["trunk"])), int(np.argmin(np.abs(a["trunk"] - np.mean(a["trunk"]))))),
@@ -212,9 +250,12 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], fps: float,
         "overstride": (round(overstride_pct, 1), contacts[0] if contacts else 0),
         "vertical_oscillation": (round(vo_pct, 1), 0),
     }
-    contact_ms, cadence = _gait(a["l_rel"], a["r_rel"], fps)
+    contact_ms, cadence = _gait(a["l_rel"], a["r_rel"], pose_fps)
     values["contact_time_ms"] = (contact_ms, 0)
     values["cadence_spm"] = (cadence, 0)
+
+    # Temporal trust needs BOTH high capture rate and dense keypoints.
+    temporal_fps = min(cap_fps, pose_fps)
 
     metrics, flaws, recs, per_usable = [], [], [], {}
     phase = "acceleration" if azimuth_deg < 45 else "max_velocity"
@@ -224,7 +265,7 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], fps: float,
             # angle-robust → NO viewpoint penalty; trust gated on frame rate.
             vp = 0.0
             conf = mean_conf
-            trust = "trusted" if (conf >= 0.6 and fps >= FPS_TRUST_GATE and key not in CANDIDATE) else "experimental"
+            trust = "trusted" if (conf >= 0.6 and temporal_fps >= FPS_TRUST_GATE and key not in CANDIDATE) else "experimental"
         elif tier == 3:
             # rebinned / translation-dependent → descriptive, never "trusted".
             vp = _viewpoint_penalty(azimuth_deg, "sagittal")
@@ -241,14 +282,16 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], fps: float,
         per_usable[key] = usable
         metrics.append({"key": key, "measured": band, "unit": UNIT[key],
                         "normalRange": list(NORMAL_RANGE[key]), "comparableAcrossViews": True,
-                        "trustStatus": trust})
+                        "trustStatus": trust, "tier": tier})
         lo, hi = NORMAL_RANGE[key]
         if usable and (val < lo or val > hi):
             dev = (lo - val if val < lo else val - hi) / max(hi - lo, 1)
             sev = 3 if dev > 0.5 else 2 if dev > 0.2 else 1
             fid = f"flaw-{key.replace('_', '-')}"
             direction = "below" if val < lo else "above"
-            ts = int((idxs[evi] if evi < len(idxs) else 0) / fps * 1000)
+            # Map source frame_index → video wall-clock ms (NOT pose sample rate).
+            frame_i = idxs[evi] if evi < len(idxs) else 0
+            ts = int(frame_i / max(src_fps, 1e-6) * 1000)
             flaws.append({
                 "id": fid, "name": NAMES[key], "phase": phase, "severity": sev,
                 "plainExplanation": f"Your {key.replace('_', ' ')} ({val:.0f}{UNIT[key]}) is {direction} the typical {lo:.0f}-{hi:.0f}{UNIT[key]}. {WHY[key]}",
@@ -273,7 +316,7 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], fps: float,
     nudge = None
     if azimuth_deg > 45:
         nudge = "Film from the side (perpendicular to running direction) for trustworthy joint angles."
-    elif fps < 60:
+    elif cap_fps < 60:
         nudge = "Record at 120fps+ for accurate ground-contact and cadence."
 
     return {
@@ -281,8 +324,10 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], fps: float,
         "summary": (f"Clean mechanics — nothing flagged. Economy {economy}/100." if not flaws
                     else f"{len(flaws)} thing{'s' if len(flaws) > 1 else ''} to work on. Economy {economy}/100."),
         "flaws": flaws, "recommendations": recs, "metrics": metrics,
-        "captureQuality": {"overall": round(overall, 2), "fps": fps, "motionBlur": "low",
+        "captureQuality": {"overall": round(overall, 2), "fps": round(cap_fps, 1),
+                           "poseFps": round(pose_fps, 1), "motionBlur": "low",
                            "framing": "full", "perMetricUsable": per_usable,
+                           "cameraAzimuthDeg": round(azimuth_deg, 1),
                            **({"primaryNudge": nudge} if nudge else {})},
         "reconstructionMethod": "2d", "createdAt": datetime.now(timezone.utc).isoformat(),
     }
@@ -295,16 +340,31 @@ _KEYS = ["knee_drive", "hip_ext", "knee_flex", "elbow", "trunk", "hip_y",
 def analyze_2d_sagittal_stream(frame_iter: Iterable[dict], fps: float,
                                azimuth_deg: float, clip_id: str = "clip",
                                min_frames: int = 8, max_frames: int = 450,
-                               overlay_out: list | None = None) -> dict[str, Any]:
+                               overlay_out: list | None = None,
+                               source_fps: float | None = None,
+                               capture_fps: float | None = None,
+                               image_down: tuple[float, float] | None = None,
+                               estimate_azimuth: bool = True) -> dict[str, Any]:
     """Memory-lean: consume a frame generator in ONE pass, retaining only scalar
     series. Raises low_confidence_video if too few usable frames survive. Stops
     after max_frames to bound worst-case latency.
 
+    fps          — pose sample rate (gait timing between retained frames)
+    source_fps   — video container fps (overlay / evidence wall-clock timestamps)
+    capture_fps  — phone capture rate (quality reporting + temporal trust gate)
+    image_down   — optional gravity projection in image [y, x] coords
+
     If `overlay_out` is provided, it is filled with one record per included frame
-    {tMs, kp:[[y,x,conf]x17]} for the mobile skeleton overlay (normalized coords)."""
+    {tMs, frameIndex, kp:[[y,x,conf]x17]} for the mobile skeleton overlay."""
+    pose_fps = float(fps)
+    src_fps = float(source_fps if source_fps is not None else pose_fps)
+    cap_fps = float(capture_fps if capture_fps is not None else pose_fps)
+    vert_down, up = resolve_image_axes(image_down)
+
     S: dict[str, list[float]] = {k: [] for k in _KEYS}
     S["l_rel"] = []; S["r_rel"] = []
     idxs: list[int] = []
+    az_samples: list[float] = []
     total = 0
     for f in frame_iter:
         total += 1
@@ -313,17 +373,25 @@ def analyze_2d_sagittal_stream(frame_iter: Iterable[dict], fps: float,
         if f.get("excluded"):
             continue
         k = _kp(f)
-        sc = _frame_scalars(k)
+        sc = _frame_scalars(k, vert_down, up)
         for kk in _KEYS:
             S[kk].append(sc[kk])
         # per-side ankle-rel for gait (independent of which side was "better")
         hy = (k[KP["left_hip"], 1] + k[KP["right_hip"], 1]) / 2
         S["l_rel"].append(float(k[KP["left_ankle"], 1] - hy))
         S["r_rel"].append(float(k[KP["right_ankle"], 1] - hy))
-        idxs.append(int(f["frame_index"]))
+        fi = int(f["frame_index"])
+        idxs.append(fi)
+        if estimate_azimuth:
+            az = estimate_azimuth_from_keypoints(k)
+            if az is not None:
+                az_samples.append(az)
         if overlay_out is not None:
+            # CRITICAL: frame_index is the SOURCE video frame number → divide by
+            # source_fps, not pose sample rate (that inflated tMs by source/pose).
             overlay_out.append({
-                "tMs": round(int(f["frame_index"]) / fps * 1000, 1),
+                "tMs": round(fi / max(src_fps, 1e-6) * 1000, 1),
+                "frameIndex": fi,
                 "kp": [[round(float(k[i, 0]), 4), round(float(k[i, 1]), 4), round(float(k[i, 2]), 3)] for i in range(17)],
             })
     included = len(idxs)
@@ -331,10 +399,21 @@ def analyze_2d_sagittal_stream(frame_iter: Iterable[dict], fps: float,
     if included < min_frames or excluded_pct > 0.60:
         raise ValueError("low_confidence_video")
     mean_conf = float(np.mean(S["conf"]))
-    return _assemble(S, idxs, fps, mean_conf, azimuth_deg, clip_id)
+    # Prefer keypoint-estimated azimuth over the static default when available.
+    use_az = float(azimuth_deg)
+    if estimate_azimuth and az_samples:
+        use_az = float(np.median(az_samples))
+    return _assemble(S, idxs, pose_fps, mean_conf, use_az, clip_id,
+                     capture_fps=cap_fps, source_fps=src_fps)
 
 
 def analyze_2d_sagittal(frames: list[dict], fps: float, mean_conf: float,
-                        azimuth_deg: float, clip_id: str = "clip") -> dict[str, Any]:
+                        azimuth_deg: float, clip_id: str = "clip",
+                        source_fps: float | None = None,
+                        capture_fps: float | None = None,
+                        image_down: tuple[float, float] | None = None) -> dict[str, Any]:
     """List-based variant (kept for callers/tests that already hold frames)."""
-    return analyze_2d_sagittal_stream(iter(frames), fps, azimuth_deg, clip_id)
+    return analyze_2d_sagittal_stream(
+        iter(frames), fps, azimuth_deg, clip_id,
+        source_fps=source_fps, capture_fps=capture_fps, image_down=image_down,
+    )

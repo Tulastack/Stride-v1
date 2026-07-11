@@ -1,6 +1,6 @@
 /**
- * PROMPT F.5 — Coach Briefing screen (structured, no chat).
- * Vision retention: NO input box, NO message bubbles; data-driven sections only.
+ * Coach screen — AI chat coach (reconciled with current UI).
+ * Product moved from structured briefing to grounded chat; assert chat affordances.
  */
 import React from 'react';
 import { render, waitFor } from '@testing-library/react-native';
@@ -14,44 +14,38 @@ jest.mock('../lib/analysisApi', () => ({
   fetchAnalysisHistory: jest.fn(),
 }));
 
+jest.mock('../services/api', () => ({
+  strideApi: {
+    createCoachSession: jest.fn(),
+    askCoach: jest.fn(),
+  },
+}));
+
+jest.mock('../lib/supabase', () => ({
+  getAccessToken: jest.fn(async () => 'test-token'),
+}));
+
 import CoachScreen from '../../app/(tabs)/coach';
-import { fetchAnalysisHistory } from '../lib/analysisApi';
-import { historyFixture } from '../fixtures/history';
 
-const mockFetch = fetchAnalysisHistory as jest.MockedFunction<typeof fetchAnalysisHistory>;
-
-describe('CoachScreen = Coach Briefing (F.5)', () => {
-  beforeEach(() => {
-    mockFetch.mockResolvedValue(historyFixture);
-  });
-  it('renders the structured briefing sections', async () => {
-    const { getByText, getByLabelText } = render(<CoachScreen />);
-    await waitFor(() => expect(getByText('Coach Briefing')).toBeTruthy());
-    expect(getByText('SINCE LAST UPLOAD')).toBeTruthy();
-    expect(getByText("THIS WEEK'S FOCUS")).toBeTruthy();
-    expect(getByText('YOUR TREND')).toBeTruthy();
-    expect(getByText('NEXT CHECKPOINT')).toBeTruthy();
-    expect(getByLabelText('briefing-focus')).toBeTruthy();
+describe('CoachScreen = AI Coach chat', () => {
+  it('renders the coach header and suggestion chips', async () => {
+    const { getByText } = render(<CoachScreen />);
+    await waitFor(() => expect(getByText('AI COACH')).toBeTruthy());
+    expect(getByText('What should I fix first?')).toBeTruthy();
+    expect(getByText('Create a 2-week plan')).toBeTruthy();
   });
 
-  it('shows a real "since last" delta and a gated (low-confidence) delta', async () => {
-    const { getByLabelText } = render(<CoachScreen />);
-    await waitFor(() => expect(getByLabelText('delta-knee_drive')).toBeTruthy());
-    // hip delta is gated because upload-2 hip confidence is low
-    expect(getByLabelText('delta-hip_extension-gated')).toBeTruthy();
-  });
-
-  it('renders a trend chart for tracked metrics', async () => {
-    const { getByLabelText } = render(<CoachScreen />);
-    await waitFor(() => expect(getByLabelText('trend-knee_drive')).toBeTruthy());
-  });
-
-  it('has NO chat input or message affordance (vision retention)', () => {
-    const { queryByPlaceholderText, queryByText, UNSAFE_queryAllByType } = render(<CoachScreen />);
-    expect(queryByPlaceholderText(/message/i)).toBeNull();
-    expect(queryByText(/message coach/i)).toBeNull();
-    // No TextInput anywhere on the screen
+  it('exposes a chat input for free-form questions', () => {
+    const { getByPlaceholderText, UNSAFE_queryAllByType } = render(<CoachScreen />);
+    expect(getByPlaceholderText(/ask your coach/i)).toBeTruthy();
     const { TextInput } = require('react-native');
-    expect(UNSAFE_queryAllByType(TextInput).length).toBe(0);
+    expect(UNSAFE_queryAllByType(TextInput).length).toBeGreaterThan(0);
+  });
+
+  it('has no structured briefing sections (chat replaced briefing)', () => {
+    const { queryByText } = render(<CoachScreen />);
+    expect(queryByText('Coach Briefing')).toBeNull();
+    expect(queryByText('SINCE LAST UPLOAD')).toBeNull();
+    expect(queryByText("THIS WEEK'S FOCUS")).toBeNull();
   });
 });
