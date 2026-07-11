@@ -2,7 +2,14 @@ import pg from 'pg';
 import type { User, Analysis, CalendarEvent, CoachSession, DrillSuggestion, ReferenceDrill, MetricsTimelineRow } from '../types.js';
 import { dbConnectionConfig } from './dsql.js';
 
-const { Pool } = pg;
+const { Pool, types } = pg;
+
+// Return DATE columns (OID 1082) as the raw 'YYYY-MM-DD' string instead of a JS
+// Date. Our types declare these as strings (scheduled_date, suggested_date,
+// date_of_birth), and the mobile calendar matches days by exact 'YYYY-MM-DD'
+// string — a Date would serialize to a full ISO timestamp and never match, so
+// no events would render. (Age calc uses new Date(...), which accepts the string.)
+types.setTypeParser(types.builtins.DATE, (v) => v);
 
 export const pool = new Pool({
   ...dbConnectionConfig(), // DATABASE_URL by default; Aurora DSQL (token+TLS) when DSQL_ENDPOINT is set
