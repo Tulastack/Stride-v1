@@ -94,8 +94,8 @@ export interface Stage5Output {
   stances: Stance[];
 }
 
-export function computeMetrics(frames: Frame3D[], fps: number): Stage5Output {
-  const canonical = frames.map((f) => canonicalize(f.pose));
+export function computeMetrics(frames: Frame3D[], fps: number, worldUp?: Vec3): Stage5Output {
+  const canonical = frames.map((f) => canonicalize(f.pose, worldUp));
 
   // ─ trunk lean (mean over the clip) ─
   const trunkSeries = canonical.map(trunkLeanDeg);
