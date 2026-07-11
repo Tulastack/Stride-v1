@@ -153,12 +153,17 @@ def _run_2d(analysis_id: str, video_path: str, capture: dict, s3_key: str | None
     pose_fps = int(os.environ.get("POSE_FPS", "15"))
     eff_fps = float(min(pose_fps, fps))
 
-    # Target lock: if the user circled a runner, track THAT person across frames.
+    # Target lock: if the user selected a runner, crop-track THAT person. Accept
+    # either a brush bbox {x0,y0,x1,y1} (preferred) or a point {xNorm,yNorm}.
     tgt = capture.get("target")
     target_xy = None
-    if isinstance(tgt, dict) and tgt.get("xNorm") is not None and tgt.get("yNorm") is not None:
-        target_xy = (float(tgt["xNorm"]), float(tgt["yNorm"]))
-        logger.info("Target lock: tracking person at (%.2f, %.2f)", *target_xy)
+    if isinstance(tgt, dict):
+        if all(tgt.get(k) is not None for k in ("x0", "y0", "x1", "y1")):
+            target_xy = (float(tgt["x0"]), float(tgt["y0"]), float(tgt["x1"]), float(tgt["y1"]))
+            logger.info("Target lock: brush bbox %s", target_xy)
+        elif tgt.get("xNorm") is not None and tgt.get("yNorm") is not None:
+            target_xy = (float(tgt["xNorm"]), float(tgt["yNorm"]))
+            logger.info("Target lock: point (%.2f, %.2f)", *target_xy)
 
     notify_progress(analysis_id, "biomechanics_calculation", 75, "2D sagittal biomechanics")
     overlay_frames: list = []

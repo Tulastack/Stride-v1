@@ -78,15 +78,33 @@ def _select_person(kpts, scores, w, h, target, core_idx):
     return best, cents[best]
 
 
-def iter_frames(video_path: str, target_fps: int = 30, target: tuple[float, float] | None = None):
-    """Streaming generator: yields ONE lean per-frame dict at a time
-    (frame_index, keypoints, avg_confidence, excluded) — no keypoint_dict, and
-    only the current frame is ever held in memory. Use this for the 2D path.
+def _norm_bbox_from_kp(kp: np.ndarray) -> tuple[float, float, float, float] | None:
+    """Normalized (x0,y0,x1,y1) enclosing the confident keypoints of a person."""
+    good = kp[:, 2] > 0.3
+    if int(good.sum()) < 3:
+        return None
+    xs = kp[good, 1]; ys = kp[good, 0]
+    return (float(xs.min()), float(ys.min()), float(xs.max()), float(ys.max()))
 
-    `target` = the user-selected normalized (x, y) of the athlete to analyze.
-    When set, the SAME person is tracked across frames (nearest-centroid, gated),
-    so a multi-person clip focuses on the intended runner instead of whoever has
-    the cleanest keypoints."""
+
+def _seed_bbox(target) -> tuple[float, float, float, float]:
+    """Seed a normalized bbox from a point (x,y) OR an explicit brush bbox
+    (x0,y0,x1,y1)."""
+    if len(target) == 4:
+        x0, y0, x1, y1 = target
+        return (min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1))
+    cx, cy = target
+    return (cx - 0.12, cy - 0.30, cx + 0.12, cy + 0.30)  # rough standing-person box
+
+
+def iter_frames(video_path: str, target_fps: int = 30, target=None):
+    """Streaming generator yielding one lean per-frame dict at a time.
+
+    `target` = the athlete to analyze, as a normalized point (x, y) OR a
+    brush-traced bbox (x0, y0, x1, y1). When set, each frame is CROPPED to the
+    tracked person's region and pose is run only on that crop — so other people
+    are not even in the model's input. This is what stops keypoints jumping to
+    bystanders in a multi-person clip. No target → full-frame lock-and-follow."""
     body = _load_body()
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
@@ -101,9 +119,11 @@ def iter_frames(video_path: str, target_fps: int = 30, target: tuple[float, floa
     effective_fps = min(target_fps, source_fps)
     interval = source_fps / effective_fps
     core_idx = [KEYPOINT_INDEX[j] for j in CORE_JOINTS]
-    tgt = tuple(target) if target is not None else None
+    tbox = _seed_bbox(target) if target is not None else None  # crop-track box (normalized)
+    tgt = None  # centroid for the no-target lock-and-follow path
     frame_idx = 0
     next_sample = 0.0
+    miss = 0  # consecutive frames the target was lost in the crop
     try:
         while True:
             ret, frame = cap.read()
@@ -111,28 +131,56 @@ def iter_frames(video_path: str, target_fps: int = 30, target: tuple[float, floa
                 break
             if frame_idx >= next_sample:
                 h, w = frame.shape[:2]
-                kpts, scores = body(frame)  # kpts (N,17,2) pixel xy, scores (N,17)
-                best, cent = _select_person(kpts, scores, w, h, tgt, core_idx)
-                if best is None:
-                    kp = np.zeros((17, 3), dtype=float)  # excluded (target absent this frame)
+                kp = np.zeros((17, 3), dtype=float)
+                excluded = True
+
+                if tbox is not None:
+                    # ── crop-to-target: run pose ONLY on the tracked region ──
+                    x0, y0, x1, y1 = tbox
+                    mx = (x1 - x0) * (0.4 + 0.25 * miss) + 0.04  # widen search if recently lost
+                    my = (y1 - y0) * (0.25 + 0.2 * miss) + 0.04
+                    cx0 = max(0, int((x0 - mx) * w)); cy0 = max(0, int((y0 - my) * h))
+                    cx1 = min(w, int((x1 + mx) * w)); cy1 = min(h, int((y1 + my) * h))
+                    if cx1 - cx0 >= 24 and cy1 - cy0 >= 24:
+                        crop = frame[cy0:cy1, cx0:cx1]
+                        cw, ch = cx1 - cx0, cy1 - cy0
+                        kpts_c, scores_c = body(crop)
+                        if len(scores_c) > 0:
+                            # prefer the person nearest the crop centre (the target
+                            # sits centred because we re-centre the crop each frame)
+                            cens = [((np.mean(xy[_TORSO, 0]) / cw - 0.5) ** 2 + (np.mean(xy[_TORSO, 1]) / ch - 0.5) ** 2) for xy in kpts_c]
+                            b = int(np.argmin(cens))
+                            xy, sc = kpts_c[b], scores_c[b]
+                            kp[:, 0] = np.clip((cy0 + xy[:, 1]) / h, 0, 1)  # y (full-frame)
+                            kp[:, 1] = np.clip((cx0 + xy[:, 0]) / w, 0, 1)  # x
+                            kp[:, 2] = sc
+                            nb = _norm_bbox_from_kp(kp)
+                            if nb is not None:
+                                # EMA the tracked box toward the new detection
+                                tbox = tuple(0.5 * o + 0.5 * n for o, n in zip(tbox, nb))
+                            miss = 0
+                            excluded = float(np.mean(kp[core_idx, 2])) < CONFIDENCE_THRESHOLD
+                        else:
+                            miss += 1
+                    else:
+                        miss += 1
                 else:
-                    # Lock-and-follow: the FIRST accepted person becomes the tracked
-                    # target (user-selected, or the clearest one in auto mode); every
-                    # later frame follows THAT person's centroid — never re-picks a
-                    # different person by confidence. This is what keeps a multi-person
-                    # clip focused on a single athlete instead of flickering between them.
-                    tgt = cent
-                    xy, sc = kpts[best], scores[best]
-                    kp = np.zeros((17, 3), dtype=float)
-                    kp[:, 0] = np.clip(xy[:, 1] / h, 0, 1)
-                    kp[:, 1] = np.clip(xy[:, 0] / w, 0, 1)
-                    kp[:, 2] = sc
-                core_conf = float(np.mean(kp[core_idx, 2]))
+                    # ── no target: full-frame lock-and-follow (auto) ──
+                    kpts, scores = body(frame)
+                    best, cent = _select_person(kpts, scores, w, h, tgt, core_idx)
+                    if best is not None:
+                        tgt = cent
+                        xy, sc = kpts[best], scores[best]
+                        kp[:, 0] = np.clip(xy[:, 1] / h, 0, 1)
+                        kp[:, 1] = np.clip(xy[:, 0] / w, 0, 1)
+                        kp[:, 2] = sc
+                        excluded = float(np.mean(kp[core_idx, 2])) < CONFIDENCE_THRESHOLD
+
                 yield {
                     "frame_index": frame_idx,
                     "keypoints": kp,
                     "avg_confidence": round(float(np.mean(kp[:, 2])), 4),
-                    "excluded": best is None or core_conf < CONFIDENCE_THRESHOLD,
+                    "excluded": excluded,
                 }
                 next_sample += interval
             frame_idx += 1

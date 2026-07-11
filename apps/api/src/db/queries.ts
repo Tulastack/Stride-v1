@@ -4,6 +4,12 @@ import { dbConnectionConfig } from './dsql.js';
 
 const { Pool } = pg;
 
+// Return DATE columns (OID 1082) as raw 'YYYY-MM-DD' strings, NOT JS Date objects.
+// node-pg's default Date parsing serializes to a full ISO timestamp and can shift
+// the day across timezones — which silently broke calendar grouping (scheduled_date
+// compared against 'YYYY-MM-DD') and drill-suggestion date validation.
+pg.types.setTypeParser(1082, (v) => v);
+
 export const pool = new Pool({
   ...dbConnectionConfig(), // DATABASE_URL by default; Aurora DSQL (token+TLS) when DSQL_ENDPOINT is set
   max: 20,

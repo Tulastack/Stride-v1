@@ -1,17 +1,19 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, Pressable, TouchableOpacity, LayoutChangeEvent, GestureResponderEvent,
+  View, Text, StyleSheet, Pressable, LayoutChangeEvent, PanResponder,
 } from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
-import Svg, { Circle } from 'react-native-svg';
-import { semantic, spacing, radius, typography } from '../ui/theme';
+import Svg, { Polyline, Rect } from 'react-native-svg';
+import { Check } from 'lucide-react-native';
+import { useTheme } from '../context/ThemeContext';
+import { space, radius, type as typo, iconStroke } from '../theme';
 
-const ACCENT = '#FF453A';
+type Pt = { x: number; y: number };
 
 /**
- * Lets the user circle the runner to analyze on the first frame, so multi-person
- * clips lock onto the intended athlete. Returns normalized (x,y) in the FULL
- * video frame. If they skip, the pipeline auto-picks the clearest person.
+ * Trace the runner to analyze. The brushed silhouette becomes a bounding box the
+ * worker crop-tracks, so multi-person clips lock onto the intended athlete.
+ * Skipping lets the model auto-pick the clearest person.
  */
 export function TargetSelect({
   uri,
@@ -23,72 +25,106 @@ export function TargetSelect({
   uri: string;
   videoWidth?: number;
   videoHeight?: number;
-  onConfirm: (target: { xNorm: number; yNorm: number; tMs: number }) => void;
+  onConfirm: (target: { x0: number; y0: number; x1: number; y1: number; tMs: number }) => void;
   onSkip: () => void;
 }) {
+  const { colors } = useTheme();
   const player = useVideoPlayer(uri, (p) => { p.loop = false; p.muted = true; p.pause(); });
   const [layout, setLayout] = useState({ w: 0, h: 0 });
-  const [mark, setMark] = useState<{ x: number; y: number } | null>(null); // pixels within box
+  const [path, setPath] = useState<Pt[]>([]);
 
   // Letterboxed content rect (contentFit="contain").
   const rect = useMemo(() => {
     const { w, h } = layout;
-    if (!w || !h) return { ox: 0, oy: 0, cw: w, ch: h };
-    if (!videoWidth || !videoHeight) return { ox: 0, oy: 0, cw: w, ch: h };
-    const va = videoWidth / videoHeight;
-    const wa = w / h;
+    if (!w || !h || !videoWidth || !videoHeight) return { ox: 0, oy: 0, cw: w || 1, ch: h || 1 };
+    const va = videoWidth / videoHeight, wa = w / h;
     if (va > wa) { const ch = w / va; return { ox: 0, oy: (h - ch) / 2, cw: w, ch }; }
     const cw = h * va; return { ox: (w - cw) / 2, oy: 0, cw, ch: h };
   }, [layout, videoWidth, videoHeight]);
 
-  const onTap = (e: GestureResponderEvent) => {
-    const { locationX, locationY } = e.nativeEvent;
-    setMark({ x: locationX, y: locationY });
-  };
+  const pan = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: (e) => setPath([{ x: e.nativeEvent.locationX, y: e.nativeEvent.locationY }]),
+      onPanResponderMove: (e) =>
+        setPath((p) => [...p, { x: e.nativeEvent.locationX, y: e.nativeEvent.locationY }]),
+    }),
+  ).current;
+
+  const bbox = useMemo(() => {
+    if (path.length < 3) return null;
+    const xs = path.map((p) => p.x), ys = path.map((p) => p.y);
+    return { minx: Math.min(...xs), maxx: Math.max(...xs), miny: Math.min(...ys), maxy: Math.max(...ys) };
+  }, [path]);
 
   const confirm = () => {
-    if (!mark) return;
-    const xNorm = Math.max(0, Math.min(1, (mark.x - rect.ox) / (rect.cw || 1)));
-    const yNorm = Math.max(0, Math.min(1, (mark.y - rect.oy) / (rect.ch || 1)));
-    onConfirm({ xNorm, yNorm, tMs: 0 });
+    if (!bbox) return;
+    const c01 = (v: number) => Math.max(0, Math.min(1, v));
+    onConfirm({
+      x0: c01((bbox.minx - rect.ox) / rect.cw),
+      y0: c01((bbox.miny - rect.oy) / rect.ch),
+      x1: c01((bbox.maxx - rect.ox) / rect.cw),
+      y1: c01((bbox.maxy - rect.oy) / rect.ch),
+      tMs: 0,
+    });
   };
 
-  return (
-    <View style={styles.overlay}>
-      <Text style={styles.title}>TAP THE RUNNER TO ANALYZE</Text>
-      <Text style={styles.sub}>If there are several people, circle the one you want. We'll track them through the clip.</Text>
+  const pointsStr = path.map((p) => `${p.x},${p.y}`).join(' ');
 
-      <Pressable style={styles.frame} onPress={onTap} onLayout={(e: LayoutChangeEvent) => setLayout({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}>
-        <VideoView player={player} style={StyleSheet.absoluteFill} contentFit="contain" nativeControls={false} />
-        {mark && (
+  return (
+    <View style={[styles.wrap, { backgroundColor: colors.bg }]}>
+      <Text style={[styles.title, { color: colors.text }]}>Trace the runner</Text>
+
+      <View
+        style={[styles.frame, { backgroundColor: '#000', borderColor: colors.border }]}
+        onLayout={(e: LayoutChangeEvent) => setLayout({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}
+        {...pan.panHandlers}
+      >
+        <VideoView player={player} style={StyleSheet.absoluteFill} contentFit="contain" nativeControls={false} pointerEvents="none" />
+        {layout.w > 0 && (
           <Svg style={StyleSheet.absoluteFill} pointerEvents="none">
-            <Circle cx={mark.x} cy={mark.y} r={34} stroke={ACCENT} strokeWidth={3} fill={ACCENT} fillOpacity={0.15} />
-            <Circle cx={mark.x} cy={mark.y} r={4} fill={ACCENT} />
+            {path.length > 1 && (
+              <Polyline points={pointsStr} fill={colors.accent} fillOpacity={0.12} stroke={colors.accent} strokeWidth={3} strokeOpacity={0.9} strokeLinejoin="round" strokeLinecap="round" />
+            )}
+            {bbox && (
+              <Rect x={bbox.minx} y={bbox.miny} width={bbox.maxx - bbox.minx} height={bbox.maxy - bbox.miny} rx={6} stroke={colors.accent} strokeWidth={1.5} strokeDasharray="6 5" fill="none" />
+            )}
           </Svg>
         )}
-      </Pressable>
+        {path.length === 0 && (
+          <View style={styles.hintWrap} pointerEvents="none">
+            <Text style={[styles.hint, { color: colors.muted, backgroundColor: colors.card }]}>Drag around the runner</Text>
+          </View>
+        )}
+      </View>
 
       <View style={styles.actions}>
-        <TouchableOpacity style={styles.skip} onPress={onSkip} accessibilityLabel="target-skip">
-          <Text style={styles.skipText}>Analyze automatically</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={[styles.confirm, !mark && styles.confirmDisabled]} onPress={confirm} disabled={!mark} accessibilityLabel="target-confirm">
-          <Text style={styles.confirmText}>Analyze this runner</Text>
-        </TouchableOpacity>
+        <Pressable onPress={onSkip} hitSlop={10} accessibilityLabel="target-skip">
+          <Text style={[styles.skip, { color: colors.muted }]}>Skip</Text>
+        </Pressable>
+        <Pressable
+          onPress={confirm}
+          disabled={!bbox}
+          style={[styles.analyze, { backgroundColor: colors.accent, opacity: bbox ? 1 : 0.35 }]}
+          accessibilityLabel="target-confirm"
+        >
+          <Check size={18} color={colors.accentText} strokeWidth={iconStroke + 0.5} />
+          <Text style={[styles.analyzeText, { color: colors.accentText }]}>Analyze</Text>
+        </Pressable>
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: '#050508', padding: spacing.lg, gap: spacing.md, justifyContent: 'center', zIndex: 10 },
-  title: { ...(typography.bodyStrong as object), color: semantic.text.primary, letterSpacing: 1, textAlign: 'center' },
-  sub: { ...(typography.caption as object), color: semantic.text.muted, textAlign: 'center' },
-  frame: { width: '100%', aspectRatio: 9 / 16, maxHeight: 520, alignSelf: 'center', backgroundColor: '#000', borderRadius: radius.md, overflow: 'hidden' },
-  actions: { flexDirection: 'row', gap: spacing.sm },
-  skip: { flex: 1, paddingVertical: spacing.md, borderRadius: radius.md, alignItems: 'center', backgroundColor: semantic.surface.raised },
-  skipText: { ...(typography.caption as object), color: semantic.text.secondary },
-  confirm: { flex: 2, paddingVertical: spacing.md, borderRadius: radius.md, alignItems: 'center', backgroundColor: ACCENT },
-  confirmDisabled: { opacity: 0.4 },
-  confirmText: { ...(typography.bodyStrong as object), color: '#FFFFFF' },
+  wrap: { ...StyleSheet.absoluteFillObject, padding: space.lg, gap: space.md, justifyContent: 'center', zIndex: 10 },
+  title: { ...typo.h2, textAlign: 'center' },
+  frame: { width: '100%', aspectRatio: 9 / 16, maxHeight: 540, alignSelf: 'center', borderRadius: radius.md, borderWidth: 1, overflow: 'hidden' },
+  hintWrap: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'flex-end', paddingBottom: space.lg },
+  hint: { ...typo.caption, paddingHorizontal: space.md, paddingVertical: space.sm, borderRadius: radius.pill, overflow: 'hidden' },
+  actions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: space.sm },
+  skip: { ...typo.body },
+  analyze: { flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingHorizontal: space.xl, paddingVertical: space.md, borderRadius: radius.pill },
+  analyzeText: { ...typo.body, fontWeight: '700' },
 });

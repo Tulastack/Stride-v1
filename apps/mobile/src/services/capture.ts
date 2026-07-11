@@ -31,8 +31,13 @@ export interface CaptureManifest {
   gyro: GyroSample[];
   intrinsics: CameraIntrinsics;
   sloMoRequested: boolean;
-  /** User-selected target runner to analyze (normalized 0..1), for multi-person clips. */
-  target?: { xNorm: number; yNorm: number; tMs: number };
+  /** User-selected target runner (normalized 0..1) for multi-person clips —
+   * a brush-traced bbox {x0,y0,x1,y1} (preferred) or a point {xNorm,yNorm}. */
+  target?: {
+    xNorm?: number; yNorm?: number;
+    x0?: number; y0?: number; x1?: number; y1?: number;
+    tMs: number;
+  };
 }
 
 const { width: screenW, height: screenH } = Dimensions.get('window');
