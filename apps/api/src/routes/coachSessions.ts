@@ -18,7 +18,7 @@ const createSessionSchema = z.object({
   analysis_id: z.string().uuid().optional().nullable(),
 });
 
-import { generateCoachReply, buildAnalysisContext } from '../lib/coach.js';
+import { generateCoachReply, buildAnalysisContext, runTrackCoach, buildCoachTools } from '../lib/coach.js';
 
 const messageSchema = z.object({
   content: z.string().min(1).max(5000),
@@ -186,9 +186,16 @@ router.post('/:id/message', authenticate, async (req: any, res: Response, next: 
       }
     }
 
-    // ── free_coach or ask_coach chip: Groq coach, GROUNDED in the athlete's
-    //    latest analysis and scoped to form / training / nutrition / recovery ──
-    const { getAnalysesByUser } = await import('../db/queries.js');
+    // ── free_coach or ask_coach chip: the AGENTIC track coach. It is grounded
+    //    in the athlete's latest analysis and can call tools (knowledge base,
+    //    metrics, trends, reference drills, current plan) before answering. If
+    //    the agent path fails, degrade to the single-shot grounded reply. ──
+    const {
+      getAnalysesByUser,
+      getMetricsTrend,
+      getReferenceDrill,
+      getCalendarEvents,
+    } = await import('../db/queries.js');
     const analyses = await getAnalysesByUser(req.userId);
     const grounding = session.analysis_id
       ? analyses.find((a: any) => a.id === session.analysis_id)
@@ -198,11 +205,28 @@ router.post('/:id/message', authenticate, async (req: any, res: Response, next: 
       req.user,
     );
 
-    const assistantText = await generateCoachReply({
-      analysisContext,
-      userMessage: content,
-      history: history ?? [],
+    const toolset = buildCoachTools({
+      userId: req.userId,
+      profile: req.user ?? null,
+      deps: { getAnalysesByUser, getMetricsTrend, getReferenceDrill, getCalendarEvents },
     });
+
+    let assistantText: string;
+    try {
+      assistantText = await runTrackCoach({
+        userMessage: content,
+        analysisContext,
+        history: history ?? [],
+        toolset,
+      });
+    } catch (agentErr) {
+      console.error('Coach agent failed, falling back to single-shot reply:', agentErr);
+      assistantText = await generateCoachReply({
+        analysisContext,
+        userMessage: content,
+        history: history ?? [],
+      });
+    }
 
     await touchCoachSession(id);
     res.json({ role: 'assistant', content: assistantText });
@@ -230,9 +254,14 @@ router.post('/:id/add-to-calendar', authenticate, async (req: any, res: Response
       .map((m: any) => `${m.role}: ${m.content}`)
       .join('\n');
 
+    const now = new Date();
+    const tomorrow = new Date(now);
+    tomorrow.setDate(now.getDate() + 1);
+    const tomorrowStr = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
+
     const planPrompt = `Based on this conversation:\n${conversationSummary}\n\nGenerate a JSON array of workout/drill events for the next 2 weeks.
 Each event: {"title": "string", "eventType": "drill" or "workout" or "rest", "scheduledDate": "YYYY-MM-DD", "details": {"volume": "string", "cue": "string"}}
-Rules: max 2 hard days in a row, include rest days, start from tomorrow (use realistic dates starting from 2026-07-07).
+Rules: max 2 hard days in a row, include rest days, start from tomorrow (use realistic dates starting from ${tomorrowStr}).
 Output ONLY the raw JSON array. No markdown. No explanation. Just [ ... ]`;
 
     const { getAnalysesByUser } = await import('../db/queries.js');

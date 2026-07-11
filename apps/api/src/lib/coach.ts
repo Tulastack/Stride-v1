@@ -124,3 +124,11 @@ export async function generateCoachReply(params: {
   if (!text) throw new Error('No content returned from Groq');
   return text.trim();
 }
+
+// ─── Agentic coach (grounded, tool-using, track-focused) ───────────
+// generateCoachReply above is the simple single-shot fallback. The agentic path
+// below is the primary coach: it searches a vetted track knowledge base and the
+// athlete's real data via tools before answering. See ./coach/*.
+export { runTrackCoach } from './coach/agent.js';
+export { buildCoachTools, type CoachDeps, type CoachProfile, type CoachToolContext, type CoachToolset } from './coach/tools.js';
+export { retrieveKnowledge, KNOWLEDGE } from './coach/knowledge.js';
