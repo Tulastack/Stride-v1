@@ -226,6 +226,21 @@ def _run_2d(analysis_id: str, video_path: str, capture: dict, s3_key: str | None
     })
     overall_score = int(round(result["captureQuality"]["overall"] * 100))
 
+    # Backend-derived model identity (bug B3): the persisted model version must
+    # reflect the backend that ACTUALLY ran, not a hardcoded MoveNet string. This
+    # rides inside result_json so both the API callback and the DB fallback use it.
+    pose_backend = os.environ.get("POSE2D_BACKEND", "rtmpose")
+    rtmpose_mode = os.environ.get("RTMPOSE_MODE", "balanced")
+    model_version = f"rtmpose-{rtmpose_mode}" if pose_backend == "rtmpose" else pose_backend
+    result["model_meta"] = {
+        "backend": pose_backend,
+        "model_version": model_version,
+        "detector": "yolox" if pose_backend == "rtmpose" else "none",
+        "device": "cpu",
+        "poseFps": pose_fps,
+        "pipeline": "2d-sagittal",
+    }
+
     notify_progress(analysis_id, "finalizing", 95, "Complete")
     ok = notify_analysis_completed(analysis_id, overall_score, result)
     if not ok:
@@ -233,7 +248,7 @@ def _run_2d(analysis_id: str, video_path: str, capture: dict, s3_key: str | None
             with conn.cursor() as cursor:
                 cursor.execute(
                     "UPDATE analyses SET status='completed', overall_score=%s, result_json=%s, movenet_version=%s, completed_at=now() WHERE id=%s",
-                    (overall_score, json.dumps(result), "rtmpose+2d-sagittal", analysis_id),
+                    (overall_score, json.dumps(result), model_version, analysis_id),
                 )
 
 

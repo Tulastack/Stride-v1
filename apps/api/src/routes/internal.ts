@@ -47,13 +47,19 @@ router.post('/analysis-completed', verifyInternalSecret, async (req: any, res: R
 
     console.log(`[Internal Callback] Received completion for analysis ${analysisId} (status: ${status})`);
 
+    // Persist the model identity the worker ACTUALLY ran (bug B3): the worker
+    // threads a backend-derived model_meta into result_json. Fall back to a
+    // 2D-pipeline label rather than the old hardcoded MoveNet "Thunder".
+    const modelVersion =
+      ((resultJson as any)?.model_meta?.model_version as string | undefined) ?? 'rtmpose-2d';
+
     // Update database status and metrics
     const updatedAnalysis = await updateAnalysisStatus(analysisId, {
       status,
       overall_score: overallScore,
       result_json: resultJson,
       error_message: errorMessage,
-      movenet_version: 'Thunder', // default used by worker
+      movenet_version: modelVersion,
     });
 
     if (!updatedAnalysis) {

@@ -1,9 +1,11 @@
-"""RTMPose 2D pose backend (RTMDet person detector + RTMPose keypoints).
+"""RTMPose 2D pose backend (YOLOX person detector + RTMPose keypoints).
 
 Open-source, ONNX/CPU-deployable via `rtmlib`. Top-down: detect the athlete,
 crop, then estimate keypoints — which is why it survives small/off-centre
-subjects that MoveNet SinglePose (no detector) cannot. Emits the SAME per-frame
-contract as movenet.process_video so the rest of the pipeline is unchanged:
+subjects that MoveNet SinglePose (no detector) cannot. (The rtmlib `Body`
+wrapper ships a YOLOX detector, not RTMDet, for all modes.) Emits the SAME
+per-frame contract as movenet.process_video so the rest of the pipeline is
+unchanged:
 
     { frame_index, keypoints (17,3 [y,x,conf] normalized), keypoint_dict,
       avg_confidence, excluded }
@@ -12,31 +14,39 @@ contract as movenet.process_video so the rest of the pipeline is unchanged:
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any
 
 import cv2
 import numpy as np
 
-from src.movenet import CONFIDENCE_THRESHOLD, CORE_JOINTS, KEYPOINT_INDEX, KEYPOINT_NAMES
+from src.crop_tracker import CropTracker
+from src.movenet import CORE_JOINTS, KEYPOINT_INDEX, KEYPOINT_NAMES
 
 logger = logging.getLogger(__name__)
+
+# RTMPose uses SimCC (coordinate-classification) keypoint scores, whose
+# distribution is NOT the same shape as MoveNet's heatmap-argmax confidences —
+# so it must NOT borrow MoveNet's threshold (that was bug B4). 0.3 is kept as a
+# behaviour-preserving starting point; calibrate on running-crop data.
+# Override via env RTMPOSE_CONFIDENCE_THRESHOLD.
+_CONF_THRESHOLD = float(os.environ.get("RTMPOSE_CONFIDENCE_THRESHOLD", "0.3"))
 
 _body: Any | None = None
 
 
 def _load_body(mode: str | None = None) -> Any:
-    """Load the rtmlib Body wrapper (RTMDet + RTMPose), cached.
+    """Load the rtmlib Body wrapper (YOLOX detector + RTMPose), cached.
 
     Mode via RTMPOSE_MODE env: 'lightweight' (fastest, RTMPose-t), 'balanced'
     (default), 'performance' (most accurate, GPU-ish). On CPU, 'lightweight' is
     ~2-3x faster."""
     global _body  # noqa: PLW0603
     if _body is None:
-        import os
         from rtmlib import Body  # imported lazily so movenet-only deploys don't need rtmlib
 
         mode = mode or os.environ.get("RTMPOSE_MODE", "balanced")
-        logger.info("Loading RTMDet+RTMPose (mode=%s) via rtmlib/onnxruntime …", mode)
+        logger.info("Loading YOLOX+RTMPose (mode=%s) via rtmlib/onnxruntime …", mode)
         _body = Body(mode=mode, backend="onnxruntime", device="cpu")
         logger.info("RTMPose backend loaded.")
     return _body
@@ -119,11 +129,11 @@ def iter_frames(video_path: str, target_fps: int = 30, target=None):
     effective_fps = min(target_fps, source_fps)
     interval = source_fps / effective_fps
     core_idx = [KEYPOINT_INDEX[j] for j in CORE_JOINTS]
-    tbox = _seed_bbox(target) if target is not None else None  # crop-track box (normalized)
+    seed = _seed_bbox(target) if target is not None else None  # normalized seed box
+    tracker: CropTracker | None = None  # created on the first sampled frame (needs w,h)
     tgt = None  # centroid for the no-target lock-and-follow path
     frame_idx = 0
     next_sample = 0.0
-    miss = 0  # consecutive frames the target was lost in the crop
     try:
         while True:
             ret, frame = cap.read()
@@ -134,36 +144,31 @@ def iter_frames(video_path: str, target_fps: int = 30, target=None):
                 kp = np.zeros((17, 3), dtype=float)
                 excluded = True
 
-                if tbox is not None:
-                    # ── crop-to-target: run pose ONLY on the tracked region ──
-                    x0, y0, x1, y1 = tbox
-                    mx = (x1 - x0) * (0.4 + 0.25 * miss) + 0.04  # widen search if recently lost
-                    my = (y1 - y0) * (0.25 + 0.2 * miss) + 0.04
-                    cx0 = max(0, int((x0 - mx) * w)); cy0 = max(0, int((y0 - my) * h))
-                    cx1 = min(w, int((x1 + mx) * w)); cy1 = min(h, int((y1 + my) * h))
+                if seed is not None:
+                    # ── crop-to-target: a Kalman + appearance tracker OWNS the
+                    #    athlete's identity; pose runs only on the predicted crop ──
+                    if tracker is None:
+                        tracker = CropTracker(seed, w, h)
+                    tracker.predict()
+                    sx0, sy0, sx1, sy1 = tracker.search_box()
+                    cx0 = max(0, int(sx0 * w)); cy0 = max(0, int(sy0 * h))
+                    cx1 = min(w, int(sx1 * w)); cy1 = min(h, int(sy1 * h))
                     if cx1 - cx0 >= 24 and cy1 - cy0 >= 24:
                         crop = frame[cy0:cy1, cx0:cx1]
                         cw, ch = cx1 - cx0, cy1 - cy0
                         kpts_c, scores_c = body(crop)
-                        if len(scores_c) > 0:
-                            # prefer the person nearest the crop centre (the target
-                            # sits centred because we re-centre the crop each frame)
-                            cens = [((np.mean(xy[_TORSO, 0]) / cw - 0.5) ** 2 + (np.mean(xy[_TORSO, 1]) / ch - 0.5) ** 2) for xy in kpts_c]
-                            b = int(np.argmin(cens))
-                            xy, sc = kpts_c[b], scores_c[b]
+                        idx = tracker.select(kpts_c, scores_c, crop, (cx0, cy0), (cw, ch)) if len(scores_c) > 0 else None
+                        if idx is not None:
+                            xy, sc = kpts_c[idx], scores_c[idx]
                             kp[:, 0] = np.clip((cy0 + xy[:, 1]) / h, 0, 1)  # y (full-frame)
                             kp[:, 1] = np.clip((cx0 + xy[:, 0]) / w, 0, 1)  # x
                             kp[:, 2] = sc
-                            nb = _norm_bbox_from_kp(kp)
-                            if nb is not None:
-                                # EMA the tracked box toward the new detection
-                                tbox = tuple(0.5 * o + 0.5 * n for o, n in zip(tbox, nb))
-                            miss = 0
-                            excluded = float(np.mean(kp[core_idx, 2])) < CONFIDENCE_THRESHOLD
+                            tracker.update(xy, sc, crop, (cx0, cy0), (cw, ch))
+                            excluded = float(np.mean(kp[core_idx, 2])) < _CONF_THRESHOLD
                         else:
-                            miss += 1
+                            tracker.miss += 1
                     else:
-                        miss += 1
+                        tracker.miss += 1
                 else:
                     # ── no target: full-frame lock-and-follow (auto) ──
                     kpts, scores = body(frame)
@@ -174,7 +179,7 @@ def iter_frames(video_path: str, target_fps: int = 30, target=None):
                         kp[:, 0] = np.clip(xy[:, 1] / h, 0, 1)
                         kp[:, 1] = np.clip(xy[:, 0] / w, 0, 1)
                         kp[:, 2] = sc
-                        excluded = float(np.mean(kp[core_idx, 2])) < CONFIDENCE_THRESHOLD
+                        excluded = float(np.mean(kp[core_idx, 2])) < _CONF_THRESHOLD
 
                 yield {
                     "frame_index": frame_idx,
