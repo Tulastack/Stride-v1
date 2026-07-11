@@ -23,6 +23,7 @@ import { computeMetrics, trunkLeanDeg, thighElevationDeg, type ComputedMetric } 
 import { metricConfidence, type MetricConfidence } from './stage6_confidence.js';
 import { assessCapture } from './stage7_capture.js';
 import type { Frame3D, PrecomputedClip } from './types.js';
+import type { Vec3 } from './math.js';
 import { metricTrustStatus } from '../validation/trust.js';
 import { PipelineInputError } from '../errors.js';
 
@@ -73,6 +74,8 @@ export interface AssembleContext {
   meanKeypointConfidence: number;
   meanReconResidual: number;
   reconstructionMethod?: ReconstructionMethod;
+  /** Measured world-up (pose frame) for gravity-anchored canonicalization. */
+  worldUp?: Vec3;
 }
 
 export class BiomechanicsEngineImpl implements BiomechanicsEngine {
@@ -93,6 +96,7 @@ export class BiomechanicsEngineImpl implements BiomechanicsEngine {
         meanKeypointConfidence: sidecar.meanKeypointConfidence,
         meanReconResidual: sidecar.meanReconResidual,
         reconstructionMethod: sidecar.reconstructionMethod,
+        worldUp: manifest.gravityWorld,
       });
     }
 
@@ -126,6 +130,7 @@ export class BiomechanicsEngineImpl implements BiomechanicsEngine {
       meanKeypointConfidence: stage1.meanKeypointConfidence,
       meanReconResidual: lift.meanReconResidual,
       reconstructionMethod: lift.reconstructionMethod,
+      worldUp: manifest.gravityWorld,
     });
   }
 }
@@ -133,7 +138,7 @@ export class BiomechanicsEngineImpl implements BiomechanicsEngine {
 /** Stages 4–7: canonical metrics, flaws, capture quality from WHAM/OpenCap frames. */
 export function assembleAnalysisFromFrames(ctx: AssembleContext): AnalysisResult {
   const { frames, fps, cameraAzimuthDeg } = ctx;
-  const { canonical, metrics } = computeMetrics(frames, fps);
+  const { canonical, metrics } = computeMetrics(frames, fps, ctx.worldUp);
   const view = viewpointBucket(cameraAzimuthDeg);
 
   const withConfidence: MetricConfidence[] = metrics.map((m) =>
