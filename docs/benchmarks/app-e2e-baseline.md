@@ -284,3 +284,31 @@ Note: the log prints `native=coco17` (rtmpose's native format); it does not prin
 an explicit `→ canonical=coco17` suffix, but since native and canonical are both
 COCO-17 the mapping is identity — consistent with the byte-identical regression
 gate. The refactored registry/canonicalizer seam works end-to-end; app stays green.
+
+---
+---
+
+# Re-run 5 — sprint-start phase awareness (2026-07-11)
+
+Worker restarted: biomech2d now infers PHASE from posture (moving + trunk lean)
+— acceleration / max_velocity / static — and applies phase-appropriate norms
+(acceleration trunk_lean 35–55°) instead of azimuth-based upright norms. One clip:
+**IMG_0274.MOV** (block-start, side-on), coach skipped.
+
+| Check | Result |
+|---|---|
+| Completes, no worker error/traceback | 🟢 completed |
+| Latency (finalize→completed) | **8.5 s** |
+| `result_json.phase == "acceleration"` | 🟢 (DB + result_json) |
+| trunk_lean now trusted, range [35,55], value 40.5° in-range → NOT flagged | 🟢 trustStatus=`trusted`, normalRange `[35,55]`, 40.5° |
+| Other flaws still present | 🟢 `["Low knee drive","Limited hip extension"]` |
+| Suggestions count | 🟢 **2** |
+| B3 movenet_version / model_meta.keypointFormat | 🟢 `rtmpose-lightweight` / `coco17` |
+| Worker log ERROR/traceback | 🟢 none |
+
+**Phase-awareness works:** the ~45° drive lean is now judged GOOD (trusted,
+in-range [35,55]) instead of being flagged against the upright 8–22° norm — the
+false "excessive trunk lean" flaw is gone, while the two legitimate flaws (low
+knee drive, limited hip extension) and their 2 suggestions remain. Note trunk_lean
+also flipped from `experimental` (Re-run 4) to `trusted` here, since the phase
+model now trusts a drive-phase lean. B3/model_meta/keypointFormat unchanged.

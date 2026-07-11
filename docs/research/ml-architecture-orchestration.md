@@ -585,3 +585,23 @@ same metrics/flaws/economy on real clips before vs after the refactor (COCO-17 c
 what the backbones already emit). Unit checks confirm the non-COCO maps (blazepose33
 `left_hip` correctly sourced from native index 23), loud failure on unknown formats, and the
 registry. This unblocks **P7 BodyWithFeet** (Halpe-26 real heel/toe) — now a safe swap.
+
+### Sprint-start awareness — ✅ IMPLEMENTED & VERIFIED
+
+The test footage is sprint-start practice, and the metric norms were tuned for upright
+max-velocity running — so a correct ~45° drive lean was being judged against the upright
+8–22° range. Fixed in `biomech2d.py`:
+- **Posture-based phase detection** replaces the old azimuth-based misnomer: a *moving*
+  athlete with a high median trunk lean (≥ `ACCEL_LEAN_THRESH` = 28°) → `acceleration`; a low
+  lean → `max_velocity`; a non-moving subject → `static`. (`result.phase` now means the
+  running phase, not the camera angle.)
+- **Phase-specific norms** (`PHASE_NORMAL_RANGE` / `PHASE_PLAUSIBLE`): in `acceleration`,
+  trunk_lean is judged against 35–55° (plausible 12–75°) instead of the upright 8–22°.
+  Applied consistently to the metric band, flaw test, evidence, and economy.
+
+**Verified:** on the side-on block-start clip, phase is detected as `acceleration` and the
+40.5° drive lean is now `trusted` and **in-range (no false flaw)** — previously it was
+demoted to `experimental` as "implausible." Upright/static clips keep the upright norms
+(no regression). Scoped to `trunk_lean` (the clearly phase-sensitive metric); knee_drive /
+hip_extension acceleration-phase norms are a future refinement (need sprint-accel reference
+values rather than guesses).

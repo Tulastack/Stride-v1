@@ -61,6 +61,31 @@ PLAUSIBLE: dict[str, tuple[float, float]] = {
     "contact_time_ms": (60.0, 400.0),
     "cadence_spm": (140.0, 360.0),
 }
+
+# ── Sprint-phase-specific norms ───────────────────────────────────────────────
+# Running mechanics differ by PHASE. The drive/acceleration out of blocks has a
+# large, correct forward trunk lean (~40-50°) that would be wrongly flagged
+# against the upright max-velocity range (8-22°). We detect the phase from the
+# athlete's posture (see _assemble) and, for phase-sensitive metrics, override
+# the "healthy" band + plausibility envelope. Metrics not listed for a phase fall
+# back to the upright/global values above.
+ACCEL_LEAN_THRESH = 28.0  # median trunk lean (deg) above which a moving athlete is in drive/accel
+PHASE_NORMAL_RANGE: dict[str, dict[str, tuple[float, float]]] = {
+    "acceleration": {"trunk_lean": (35.0, 55.0)},
+}
+PHASE_PLAUSIBLE: dict[str, dict[str, tuple[float, float]]] = {
+    "acceleration": {"trunk_lean": (12.0, 75.0)},
+}
+
+
+def _norm_range(key: str, phase: str) -> tuple[float, float]:
+    return PHASE_NORMAL_RANGE.get(phase, {}).get(key, NORMAL_RANGE[key])
+
+
+def _plausible_range(key: str, phase: str) -> tuple[float, float]:
+    return PHASE_PLAUSIBLE.get(phase, {}).get(key, PLAUSIBLE.get(key, (float("-inf"), float("inf"))))
+
+
 UNIT = {"trunk_lean": "deg", "knee_drive": "deg", "hip_extension": "deg",
         "knee_flexion": "deg", "arm_swing": "deg", "overstride": "%",
         "vertical_oscillation": "%", "contact_time_ms": "ms", "cadence_spm": "spm"}
@@ -322,7 +347,16 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
     temporal_fps = min(cap_fps, pose_fps)
 
     metrics, flaws, recs, per_usable = [], [], [], {}
-    phase = "acceleration" if azimuth_deg < 45 else "max_velocity"
+    # Sprint PHASE from the athlete's posture, not the camera azimuth: a moving
+    # athlete with a large forward trunk lean is driving/accelerating; a low lean
+    # is upright max-velocity; a non-moving subject is in no running phase.
+    trunk_val = values["trunk_lean"][0]
+    if not moving_subject:
+        phase = "static"
+    elif trunk_val >= ACCEL_LEAN_THRESH:
+        phase = "acceleration"
+    else:
+        phase = "max_velocity"
     for key, (val, evi) in values.items():
         tier = TIER.get(key, 2)
         if tier == 1:
@@ -344,7 +378,7 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
         # Plausibility backstop: a value outside the physical envelope is a failed
         # measurement (off-axis perspective, static-bystander lock, sub-Nyquist
         # timing) — demote it to experimental so it is never shown as trusted.
-        plo, phi = PLAUSIBLE.get(key, (float("-inf"), float("inf")))
+        plo, phi = _plausible_range(key, phase)
         plausible = (val > 0) and (plo <= val <= phi)
         if not plausible:
             trust = "experimental"
@@ -352,9 +386,9 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
         usable = conf >= 0.35 and plausible
         per_usable[key] = usable
         metrics.append({"key": key, "measured": band, "unit": UNIT[key],
-                        "normalRange": list(NORMAL_RANGE[key]), "comparableAcrossViews": True,
+                        "normalRange": list(_norm_range(key, phase)), "comparableAcrossViews": True,
                         "trustStatus": trust, "tier": tier})
-        lo, hi = NORMAL_RANGE[key]
+        lo, hi = _norm_range(key, phase)
         # Only a TRUSTED, plausible metric may raise an authoritative flaw + drill.
         # Experimental/descriptive metrics (temporal below the fps gate, tier-3
         # spatial, off-axis angles) are reported with their value but never flagged
@@ -374,7 +408,7 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
                 "plainExplanation": f"Your {key.replace('_', ' ')} ({val:.0f}{UNIT[key]}) is {direction} the typical {lo:.0f}-{hi:.0f}{UNIT[key]}. {WHY[key]}",
                 "evidence": {"frameTimestampMs": ts,
                              "jointAngles3D": {"knee_drive": round(values['knee_drive'][0], 1), "hip_extension": round(values['hip_extension'][0], 1), "trunk_lean": round(values['trunk_lean'][0], 1)},
-                             "measured": band, "normalRange": list(NORMAL_RANGE[key]), "viewpointPenalty": round(vp, 2)},
+                             "measured": band, "normalRange": list(_norm_range(key, phase)), "viewpointPenalty": round(vp, 2)},
             })
             recs.append({"flawId": fid, **DRILLS[key]})
 
@@ -384,7 +418,7 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
         k = m["key"]; v = m["measured"]["value"]
         if not per_usable[k] or v <= 0:
             continue
-        lo, hi = NORMAL_RANGE[k]
+        lo, hi = _norm_range(k, phase)
         mid = (lo + hi) / 2; half = max((hi - lo) / 2, 1e-6)
         econ_terms.append(max(0.0, 1.0 - abs(v - mid) / (half * 2)))
     economy = int(round(100 * (sum(econ_terms) / len(econ_terms)))) if econ_terms else 0
