@@ -6,7 +6,7 @@
 import React from 'react';
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
 
-jest.mock('expo-router', () => ({ useLocalSearchParams: () => ({}), router: { push: jest.fn() } }));
+jest.mock('expo-router', () => ({ useLocalSearchParams: () => ({}), useRouter: () => ({ push: jest.fn() }), router: { push: jest.fn() } }));
 
 jest.mock('../lib/analysisApi', () => ({
   fetchAnalysisHistory: jest.fn(),

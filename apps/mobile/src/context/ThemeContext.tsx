@@ -8,7 +8,17 @@ interface ThemeContextValue {
   toggleMode: () => void;
 }
 
-const ThemeContext = createContext<ThemeContextValue | null>(null);
+// Safe default so a screen rendered outside the provider (e.g. in isolation
+// under a unit test, or during an early mount) falls back to the light palette
+// instead of hard-crashing. The real app always mounts <ThemeProvider>.
+const DEFAULT_THEME: ThemeContextValue = {
+  mode: 'light',
+  colors: palettes.light,
+  setMode: () => {},
+  toggleMode: () => {},
+};
+
+const ThemeContext = createContext<ThemeContextValue>(DEFAULT_THEME);
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [mode, setMode] = useState<Mode>('light');
@@ -24,7 +34,5 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 }
 
 export function useTheme(): ThemeContextValue {
-  const ctx = useContext(ThemeContext);
-  if (!ctx) throw new Error('useTheme must be used inside <ThemeProvider>');
-  return ctx;
+  return useContext(ThemeContext);
 }

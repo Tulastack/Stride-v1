@@ -18,9 +18,15 @@ jest.mock('../components/analysis/PoseVideoPlayer', () => ({
 }));
 
 const mockGetAnalysis = jest.fn();
+const mockGetSuggestions = jest.fn();
+const mockApprove = jest.fn();
+const mockSkip = jest.fn();
 jest.mock('../services/api', () => ({
   strideApi: {
     getAnalysis: (...args: unknown[]) => mockGetAnalysis(...args),
+    getSuggestions: (...args: unknown[]) => mockGetSuggestions(...args),
+    approveSuggestion: (...args: unknown[]) => mockApprove(...args),
+    skipSuggestion: (...args: unknown[]) => mockSkip(...args),
     videoFileUrl: async () => 'http://test/video.mp4',
   },
 }));
@@ -30,11 +36,13 @@ jest.mock('../lib/analysisApi', () => ({
   waitForAnalysisResult: jest.fn(),
 }));
 
+import { fireEvent } from '@testing-library/react-native';
 import AnalysisScreen from '../../app/(tabs)/analysis';
 
 describe('AnalysisScreen', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockGetSuggestions.mockResolvedValue([]);
   });
 
   it('shows loading state initially', () => {
@@ -85,5 +93,32 @@ describe('AnalysisScreen', () => {
     expect(getByText('low knee drive')).toBeTruthy();
     expect(getByText('A-Skips')).toBeTruthy();
     expect(getByText('Want personalized tips?')).toBeTruthy();
+  });
+
+  it('renders the drill suggestion approval gate and approves on tap', async () => {
+    mockGetAnalysis.mockResolvedValue({
+      id: 'test-1',
+      status: 'completed',
+      result_json: {
+        id: 'test-1',
+        summary: 'Solid run.',
+        flaws: [],
+        recommendations: [],
+        metrics: [],
+        captureQuality: { overall: 80, fps: 30, motionBlur: 'low', framing: 'full', perMetricUsable: {} },
+      },
+    });
+    mockGetSuggestions.mockResolvedValue([
+      { id: 's1', drill_key: 'drill-wickets', drill_name: 'Wicket runs', suggested_date: '2026-07-15', status: 'pending' },
+    ]);
+    mockApprove.mockResolvedValue({ ok: true });
+
+    const { getByText, getByLabelText } = render(<AnalysisScreen />);
+    await waitFor(() => expect(getByText('ADD TO YOUR PLAN')).toBeTruthy());
+    // The approval gate is explicit — nothing is auto-scheduled.
+    expect(getByText('Wicket runs')).toBeTruthy();
+    const addBtn = getByLabelText('add-to-plan-drill-wickets');
+    fireEvent.press(addBtn);
+    await waitFor(() => expect(mockApprove).toHaveBeenCalledWith('s1'));
   });
 });

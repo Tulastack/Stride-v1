@@ -28,7 +28,10 @@ export const palettes = {
   },
 } as const;
 
-export type Palette = typeof palettes.light;
+// Structural palette type: every mode shares the same keys mapping to color
+// strings. Using `string` (not the `as const` hex literals) lets both the light
+// and dark palettes satisfy `Palette`, so `palettes[mode]` is assignable to it.
+export type Palette = { [K in keyof typeof palettes.light]: string };
 export type Mode = 'light' | 'dark';
 
 export const space = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32, xxxl: 48 } as const;
