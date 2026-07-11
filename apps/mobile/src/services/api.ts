@@ -24,22 +24,28 @@ const CHIP_LABELS: Record<CoachActionChip, string> = {
 
 async function request<T>(path: string, options: FetchOptions = {}): Promise<T> {
   const state = useStrideStore.getState();
-  // Prefer an explicit token, else a FRESH Supabase token (auto-refreshed),
-  // else the stored token (demo/mock mode). This prevents stale-JWT 401s on
-  // long-lived screens.
-  const token = options.token ?? (await getAccessToken()) ?? state.token;
   const baseUrl = state.apiBaseUrl;
 
-  const headers = new Headers(options.headers);
-  headers.set('Content-Type', 'application/json');
-  if (token) {
-    headers.set('Authorization', `Bearer ${token}`);
-  }
+  const doFetch = async (token?: string | null) => {
+    const headers = new Headers(options.headers);
+    headers.set('Content-Type', 'application/json');
+    if (token) headers.set('Authorization', `Bearer ${token}`);
+    return fetch(`${baseUrl}${path}`, { ...options, headers });
+  };
 
-  const response = await fetch(`${baseUrl}${path}`, {
-    ...options,
-    headers,
-  });
+  // Fast path: the stored token is kept fresh by Supabase autoRefresh +
+  // onAuthStateChange (see app/_layout.tsx), so we skip a per-request getSession().
+  let token = options.token ?? state.token;
+  let response = await doFetch(token);
+
+  // If it 401s, the token may be stale — force a fresh session token and retry once.
+  if (response.status === 401 && !options.token) {
+    const fresh = await getAccessToken();
+    if (fresh && fresh !== token) {
+      token = fresh;
+      response = await doFetch(fresh);
+    }
+  }
 
   if (!response.ok) {
     const errorJson = await response.json().catch(() => ({}));

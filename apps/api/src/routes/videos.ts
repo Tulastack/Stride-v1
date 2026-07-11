@@ -111,12 +111,17 @@ router.post('/upload-url', authenticate, requireConsent, async (req: any, res: R
       const bearer = req.headers.authorization?.startsWith('Bearer ')
         ? req.headers.authorization.slice(7)
         : '';
+      // Build the upload URL from the SAME host the client reached us on (the
+      // phone's Metro-derived LAN IP), not a hardcoded env — otherwise a changed
+      // DHCP IP makes the upload target unreachable. Falls back to PUBLIC_API_URL.
+      const host = req.headers.host;
+      const base = host ? `${req.protocol}://${host}` : PUBLIC_API_URL;
       res.json({
         analysisId,
         uploadId: 'local',
         parts: [{
           partNumber: 1,
-          url: `${PUBLIC_API_URL}/videos/${analysisId}/blob?token=${encodeURIComponent(bearer)}`,
+          url: `${base}/videos/${analysisId}/blob?token=${encodeURIComponent(bearer)}`,
         }],
       });
       return;

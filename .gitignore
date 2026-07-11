@@ -89,4 +89,5 @@ yarn-error.log*
 *.tgz
 .cache
 
-test-videos/apps/mobile/.env
+test-videos/
+apps/mobile/.env

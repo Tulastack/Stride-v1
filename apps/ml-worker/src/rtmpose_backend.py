@@ -114,10 +114,14 @@ def iter_frames(video_path: str, target_fps: int = 30, target: tuple[float, floa
                 kpts, scores = body(frame)  # kpts (N,17,2) pixel xy, scores (N,17)
                 best, cent = _select_person(kpts, scores, w, h, tgt, core_idx)
                 if best is None:
-                    kp = np.zeros((17, 3), dtype=float)  # excluded (no/absent target)
+                    kp = np.zeros((17, 3), dtype=float)  # excluded (target absent this frame)
                 else:
-                    if tgt is not None:
-                        tgt = cent  # follow the target as it moves
+                    # Lock-and-follow: the FIRST accepted person becomes the tracked
+                    # target (user-selected, or the clearest one in auto mode); every
+                    # later frame follows THAT person's centroid — never re-picks a
+                    # different person by confidence. This is what keeps a multi-person
+                    # clip focused on a single athlete instead of flickering between them.
+                    tgt = cent
                     xy, sc = kpts[best], scores[best]
                     kp = np.zeros((17, 3), dtype=float)
                     kp[:, 0] = np.clip(xy[:, 1] / h, 0, 1)

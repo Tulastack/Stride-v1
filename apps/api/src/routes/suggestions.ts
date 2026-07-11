@@ -68,8 +68,15 @@ router.post('/:id/approve', authenticate, async (req: any, res: Response, next: 
       return;
     }
 
-    // Validate date format
-    const dateResult = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).safeParse(suggestion.suggested_date);
+    // suggested_date comes back from a DATE column as a JS Date (node-pg), so
+    // coerce to YYYY-MM-DD using LOCAL parts (pg parses to local midnight —
+    // toISOString() would shift the day in negative-UTC timezones) before validating.
+    const rawDate: unknown = suggestion.suggested_date;
+    const dateStr =
+      rawDate instanceof Date
+        ? `${rawDate.getFullYear()}-${String(rawDate.getMonth() + 1).padStart(2, '0')}-${String(rawDate.getDate()).padStart(2, '0')}`
+        : String(rawDate).slice(0, 10);
+    const dateResult = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).safeParse(dateStr);
     if (!dateResult.success) {
       res.status(400).json({ error: 'Invalid suggested_date format in suggestion' });
       return;

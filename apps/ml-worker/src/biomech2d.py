@@ -75,6 +75,23 @@ WHY = {
     "cadence_spm": "Quicker, lighter steps usually cut overstriding and braking (needs high-fps video to measure well).",
 }
 
+# ── Trust tiers (docs/research/angle-agnostic-kinematics.md) ──────────────────
+# Trust by variable TYPE, not by azimuth. Tier 1 = angle-robust but frame-rate-
+# gated; Tier 2 = sagittal (best side-on, degraded off-axis); Tier 3 = rebinned /
+# translation-dependent → descriptive only, never "trusted".
+TIER = {
+    "cadence_spm": 1, "contact_time_ms": 1, "vertical_oscillation": 1,
+    "trunk_lean": 2, "knee_drive": 2, "hip_extension": 2, "knee_flexion": 2, "arm_swing": 2,
+    "overstride": 3,
+}
+# Sprint ground contact is ~90 ms; below ~120 fps the timing error swamps the signal
+# (30 fps → ±33 ms). Our pose sampling caps effective fps, so temporal metrics are
+# honestly experimental until a high-fps temporal path exists (plan Phase 1/4).
+FPS_TRUST_GATE = 120.0
+# Perspective/scale corrupt vertical CoM off-axis and it is unmeasured on runners
+# (honesty ledger #9) — keep it a candidate, never headline-trusted yet.
+CANDIDATE = {"vertical_oscillation"}
+
 _VERT_DOWN = np.array([1.0, 0.0])  # image y increases downward
 _UP = np.array([-1.0, 0.0])
 
@@ -202,12 +219,26 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], fps: float,
     metrics, flaws, recs, per_usable = [], [], [], {}
     phase = "acceleration" if azimuth_deg < 45 else "max_velocity"
     for key, (val, evi) in values.items():
-        vp = _viewpoint_penalty(azimuth_deg, PLANE[key])
-        conf = max(0.0, min(1.0, mean_conf * (1 - vp) * (0.7 if key in HARDER else 1.0)))
+        tier = TIER.get(key, 2)
+        if tier == 1:
+            # angle-robust → NO viewpoint penalty; trust gated on frame rate.
+            vp = 0.0
+            conf = mean_conf
+            trust = "trusted" if (conf >= 0.6 and fps >= FPS_TRUST_GATE and key not in CANDIDATE) else "experimental"
+        elif tier == 3:
+            # rebinned / translation-dependent → descriptive, never "trusted".
+            vp = _viewpoint_penalty(azimuth_deg, "sagittal")
+            conf = mean_conf * (1 - vp) * 0.6
+            trust = "experimental"
+        else:
+            # Tier 2 sagittal → best side-on, degraded (not zeroed) off-axis.
+            vp = _viewpoint_penalty(azimuth_deg, "sagittal")
+            conf = mean_conf * (1 - vp)
+            trust = "trusted" if (conf >= 0.6 and vp <= 0.5) else "experimental"
+        conf = max(0.0, min(1.0, conf))
         band = _band(val, conf)
         usable = conf >= 0.35 and val > 0
         per_usable[key] = usable
-        trust = "experimental" if (conf < 0.6 or vp > 0.5) else "trusted"
         metrics.append({"key": key, "measured": band, "unit": UNIT[key],
                         "normalRange": list(NORMAL_RANGE[key]), "comparableAcrossViews": True,
                         "trustStatus": trust})

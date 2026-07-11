@@ -11,8 +11,9 @@ from typing import Any
 
 import cv2
 import numpy as np
-import tensorflow as tf
-import tensorflow_hub as hub
+# TensorFlow is imported lazily inside the functions that need it, so modules
+# that only use MoveNet's constants (e.g. the RTMPose backend) — or RTMPose-only
+# deploys — don't pay the heavy TF import.
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +67,7 @@ def _load_model() -> Any:
     """Load the MoveNet model from TF Hub (cached after first call)."""
     global _model  # noqa: PLW0603
     if _model is None:
+        import tensorflow_hub as hub  # lazy: only when MoveNet is actually used
         logger.info("Loading MoveNet SinglePose Thunder v4 from TF Hub …")
         module = hub.load("https://tfhub.dev/google/movenet/singlepose/thunder/4")
         _model = module.signatures["serving_default"]
@@ -76,6 +78,7 @@ def _load_model() -> Any:
 def _infer_square(model: Any, square_rgb: np.ndarray) -> np.ndarray:
     """Run MoveNet on an already-square RGB image. Returns (17,3) [y,x,conf]
     in the square image's normalized coordinates."""
+    import tensorflow as tf  # lazy: only when MoveNet inference actually runs
     resized = cv2.resize(square_rgb, (256, 256))
     input_tensor = tf.cast(tf.expand_dims(resized, axis=0), dtype=tf.int32)
     outputs = model(input_tensor)

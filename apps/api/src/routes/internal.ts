@@ -99,23 +99,33 @@ router.post('/analysis-completed', verifyInternalSecret, async (req: any, res: R
 
         const today = new Date();
         let dayOffset = 1;
+        const pushSuggestion = (drillKey: string, drillName: string) => {
+          const suggestedDate = new Date(today);
+          suggestedDate.setDate(today.getDate() + dayOffset);
+          suggestions.push({
+            analysis_id: analysisId,
+            user_id: updatedAnalysis.user_id,
+            drill_key: drillKey,
+            drill_name: drillName,
+            suggested_date: suggestedDate.toISOString().split('T')[0]!,
+          });
+          dayOffset++;
+        };
 
+        // 2D sagittal pipeline shape: result.recommendations (DrillRec[]).
+        for (const rec of (result.recommendations ?? []) as any[]) {
+          pushSuggestion(
+            rec.drillId ?? rec.drillName?.toLowerCase().replace(/\s+/g, '_') ?? `drill_${dayOffset}`,
+            rec.drillName ?? 'Drill',
+          );
+        }
+        // Legacy 3D shape: result.primary_issues[].drills.
         for (const issue of (result.primary_issues ?? []) as any[]) {
           for (const drill of (issue.drills ?? []) as any[]) {
-            const drillKey: string = drill.key ?? drill.name?.toLowerCase().replace(/\s+/g, '_') ?? `drill_${dayOffset}`;
-            const drillName: string = drill.name ?? 'Drill';
-            const suggestedDate = new Date(today);
-            suggestedDate.setDate(today.getDate() + dayOffset);
-            const dateStr = suggestedDate.toISOString().split('T')[0]!;
-
-            suggestions.push({
-              analysis_id: analysisId,
-              user_id: updatedAnalysis.user_id,
-              drill_key: drillKey,
-              drill_name: drillName,
-              suggested_date: dateStr,
-            });
-            dayOffset++;
+            pushSuggestion(
+              drill.key ?? drill.name?.toLowerCase().replace(/\s+/g, '_') ?? `drill_${dayOffset}`,
+              drill.name ?? 'Drill',
+            );
           }
         }
 
