@@ -256,3 +256,31 @@ hip_extension 143.5° / knee_flexion 37.1°; 2 trusted-angle flaws → 2 suggest
 (Slightly different trusted-angle values vs Re-run 2 — expected, since the new
 tracker changes which per-frame crops feed the angle estimates — but the
 trust/honesty framework and B3 identity are unchanged.)
+
+---
+---
+
+# Re-run 4 — P2 registry + COCO-17 canonicalizer seam (2026-07-11)
+
+Worker restarted after the P2 refactor (pose2d.py → pose_backend.py registry →
+canonical_2d.py COCO-17 canonicalization before biomech2d). Process-level
+confirmation only (biomech2d output already proven byte-identical by the
+coordinator's regression gate). One clip: **IMG_0274.MOV** (single), coach skipped.
+
+| Check | Result |
+|---|---|
+| Completes, no worker error/traceback | 🟢 completed |
+| Latency (finalize→completed) | **8.3 s** |
+| overall_score / economy | 64 / 23 |
+| model_meta.keypointFormat | 🟢 `coco17` (+ backend=rtmpose, detector=yolox, model_version=rtmpose-lightweight) |
+| B3 movenet_version (DB) | 🟢 `rtmpose-lightweight` |
+| Metrics/flaws unchanged vs Re-run 3 | 🟢 identical (knee_drive 23.4° trusted, hip_extension 143.5° trusted, knee_flexion 37.1° trusted; trunk_lean/arm_swing/temporal/overstride experimental) |
+| Flaws / suggestions | 🟢 2 / 2 (Low knee drive, Limited hip extension) |
+| pose2d backend log line | 🟢 `Pose2D backend (stream): rtmpose +target (native=coco17)` |
+
+**Worker log: zero ERROR/traceback.** Clean seam: Claimed → Target lock → pose2d
+`native=coco17` → RTMPose loaded → overlay (82 frames) → completion reported.
+Note: the log prints `native=coco17` (rtmpose's native format); it does not print
+an explicit `→ canonical=coco17` suffix, but since native and canonical are both
+COCO-17 the mapping is identity — consistent with the byte-identical regression
+gate. The refactored registry/canonicalizer seam works end-to-end; app stays green.

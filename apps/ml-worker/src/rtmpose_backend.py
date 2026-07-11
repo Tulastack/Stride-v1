@@ -25,6 +25,10 @@ from src.movenet import CORE_JOINTS, KEYPOINT_INDEX, KEYPOINT_NAMES
 
 logger = logging.getLogger(__name__)
 
+# Native keypoint layout this backend emits (rtmlib Body = COCO-17). Declared so
+# the pose2d seam can canonicalize it (see canonical_2d / pose_backend).
+KEYPOINT_FORMAT = "coco17"
+
 # RTMPose uses SimCC (coordinate-classification) keypoint scores, whose
 # distribution is NOT the same shape as MoveNet's heatmap-argmax confidences —
 # so it must NOT borrow MoveNet's threshold (that was bug B4). 0.3 is kept as a

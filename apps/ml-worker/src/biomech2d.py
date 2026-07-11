@@ -26,7 +26,12 @@ from typing import Any, Iterable
 import numpy as np
 from scipy.signal import savgol_filter
 
-from src.biomechanics import KP, _angle_at_joint, _angle_between_vectors
+# Index joints by CANONICAL name, never by a backbone's raw indices — the pose2d
+# seam guarantees every frame is in this canonical (COCO-17) layout, so a backbone
+# swap can't silently feed the wrong joint (bug B2). CANON_KP == the old COCO-17
+# map for the current backbones, so this is behaviour-preserving.
+from src.canonical_2d import CANON_KP as KP
+from src.biomechanics import _angle_at_joint, _angle_between_vectors
 
 # lo/hi "healthy" bands (peak-based for angles). Sources: sprint biomech literature.
 NORMAL_RANGE: dict[str, tuple[float, float]] = {

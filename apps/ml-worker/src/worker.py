@@ -239,6 +239,7 @@ def _run_2d(analysis_id: str, video_path: str, capture: dict, s3_key: str | None
         "device": "cpu",
         "poseFps": pose_fps,
         "pipeline": "2d-sagittal",
+        "keypointFormat": "coco17",  # canonical layout metrics were computed on
     }
 
     notify_progress(analysis_id, "finalizing", 95, "Complete")

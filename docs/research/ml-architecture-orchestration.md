@@ -562,3 +562,26 @@ clip still yields trusted angles + 2 suggestions.
 "no-switch" is inferred from the clean single-skeleton overlay rather than logged — a debug
 counter (gate rejections / appearance tie-breaks / re-acquisitions) would make it directly
 observable.
+
+### Phase 2 — ✅ IMPLEMENTED & VERIFIED (model-agnostic seam)
+
+The 2D pipeline is now genuinely backbone-agnostic, fixing bug **B2** (biomech2d used to
+index a hardcoded COCO-17 map, so a backbone swap would silently read the wrong joint):
+
+- **`canonical_2d.py` (NEW)** — a fixed canonical joint schema (COCO-17) accessed BY NAME,
+  plus `to_canonical(kpts, keypoint_format)` mapping any native layout onto it. Ships maps
+  for `coco17` (identity), `halpe26` (first-17), and `blazepose33`; unknown formats **raise
+  loudly** instead of mis-indexing.
+- **`pose_backend.py` (NEW)** — a name→module **registry** replacing `pose2d.py`'s if/elif;
+  each backend declares `KEYPOINT_FORMAT`. Adding ViTPose/BlazePose/BodyWithFeet is now
+  "register a module."
+- **`pose2d.py`** canonicalizes every frame at the seam (attaching `keypoint_format`), so
+  biomech + the tracker always receive canonical joints regardless of backbone.
+- **`biomech2d.py`** now imports `CANON_KP` from the canonical schema instead of the
+  backbone's raw indices. `model_meta.keypointFormat` records the canonical layout.
+
+**Verified:** the **regression gate is byte-identical** — biomech2d produces exactly the
+same metrics/flaws/economy on real clips before vs after the refactor (COCO-17 canonical =
+what the backbones already emit). Unit checks confirm the non-COCO maps (blazepose33
+`left_hip` correctly sourced from native index 23), loud failure on unknown formats, and the
+registry. This unblocks **P7 BodyWithFeet** (Halpe-26 real heel/toe) — now a safe swap.
