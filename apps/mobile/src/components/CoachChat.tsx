@@ -13,6 +13,8 @@ import { useTheme } from '../context/ThemeContext';
 import { space, radius, iconStroke, type as typo } from '../theme';
 import { parseCoachReply, detectMetricForDiagram, type CoachSection } from '../lib/parseCoachReply';
 import { CoachMetricDiagram } from './CoachMetricDiagram';
+import { PoseLoop } from './analysis/PoseLoop';
+import { fetchAnalysisHistory } from '../lib/analysisApi';
 
 interface Msg {
   role: 'user' | 'assistant';
@@ -48,11 +50,6 @@ const SECTION_ICON: Record<string, typeof Crosshair> = {
   metric: Sparkles,
 };
 
-function detectCalendarIntent(text: string): boolean {
-  const keywords = ['calendar', 'schedule', 'training plan', 'add to calendar', 'workout plan', '2-week', 'would you like me to add', 'want me to add'];
-  return keywords.some((k) => text.toLowerCase().includes(k));
-}
-
 function SectionCard({ section, colors }: { section: CoachSection; colors: any }) {
   if (section.type === 'metric' && !section.body && !section.bullets.length) return null;
   const Icon = SECTION_ICON[section.type] ?? Sparkles;
@@ -78,17 +75,39 @@ function SectionCard({ section, colors }: { section: CoachSection; colors: any }
   );
 }
 
-export function CoachChat() {
+export function CoachChat({ analysisId }: { analysisId?: string } = {}) {
   const { colors } = useTheme();
   const [messages, setMessages] = useState<Msg[]>([]);
   const [draft, setDraft] = useState('');
   const [loading, setLoading] = useState(false);
   const [thinkingLabel, setThinkingLabel] = useState<string | null>(null);
+  const [latestAnalysisId, setLatestAnalysisId] = useState<string | null>(null);
   const sessionId = useRef<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
   const thinkTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const kickedOff = useRef(false);
+
+  const effectiveAnalysisId = analysisId ?? latestAnalysisId ?? undefined;
 
   useEffect(() => () => { if (thinkTimer.current) clearInterval(thinkTimer.current); }, []);
+
+  // Fallback analysis id for the pose animation when the chat wasn't opened
+  // from a specific analysis — use the athlete's most recent completed one.
+  useEffect(() => {
+    if (analysisId) return;
+    fetchAnalysisHistory()
+      .then((history) => { if (history.length) setLatestAnalysisId(history[history.length - 1].id); })
+      .catch(() => {});
+  }, [analysisId]);
+
+  // Opened from "Want personalized tips?" on a specific analysis — ground the
+  // session in it and have the coach open with advice instead of waiting.
+  useEffect(() => {
+    if (!analysisId || kickedOff.current) return;
+    kickedOff.current = true;
+    send('Give me your insights on this analysis.');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [analysisId]);
 
   function startThinking() {
     let i = 0;
@@ -127,23 +146,26 @@ export function CoachChat() {
     const content = text.trim();
     if (!content || loading) return;
     setDraft('');
-    const isCal = detectCalendarIntent(content);
     setMessages((m) => [...m, { role: 'user', content }]);
     setLoading(true);
     startThinking();
     try {
-      if (!sessionId.current) { const s = await strideApi.createCoachSession('free_coach'); sessionId.current = s.id; }
-      const prompt = isCal ? `${content}\n\nOffer to add workouts to their calendar.` : content;
+      if (!sessionId.current) {
+        const s = analysisId
+          ? await strideApi.createCoachSession('analysis_workflow', analysisId)
+          : await strideApi.createCoachSession('free_coach');
+        sessionId.current = s.id;
+      }
       const history = messages.filter((m) => !m.thinking).map((m) => ({ role: m.role, content: m.content }));
-      const reply = await strideApi.askCoach(sessionId.current!, prompt, history);
-      const progress = (reply as any).progress as string[] | undefined;
+      const reply = await strideApi.askCoach(sessionId.current!, content, history);
+      const progress = reply.progress;
       if (progress?.length) setThinkingLabel(progress[progress.length - 1]);
       const sections = parseCoachReply(reply.content);
       setMessages((m) => [...m, {
         role: 'assistant',
         content: reply.content,
         sections,
-        showCalendarCta: isCal || detectCalendarIntent(reply.content),
+        showCalendarCta: reply.calendarRelevant === true,
       }]);
     } catch {
       setMessages((m) => [...m, { role: 'assistant', content: "Couldn't reach the coach. Check connection." }]);
@@ -191,6 +213,9 @@ export function CoachChat() {
                     if (!metricKey) return null;
                     return <CoachMetricDiagram metricKey={metricKey} />;
                   })()}
+                  {m.sections!.some((s) => s.type === 'form') && effectiveAnalysisId && (
+                    <PoseLoop analysisId={effectiveAnalysisId} />
+                  )}
                 </View>
               ) : (
                 <View style={[styles.assistantBubble, { backgroundColor: colors.cardAlt }]}>

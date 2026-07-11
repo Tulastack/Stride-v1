@@ -194,7 +194,7 @@ export const strideApi = {
 
   // Free-form question to the grounded Groq coach (free_coach sessions).
   askCoach: async (sessionId: string, content: string, history?: { role: string; content: string }[]) => {
-    return request<{ role: string; content: string; progress?: string[] }>(`/coach-sessions/${sessionId}/message`, {
+    return request<{ role: string; content: string; progress?: string[]; calendarRelevant?: boolean }>(`/coach-sessions/${sessionId}/message`, {
       method: 'POST',
       body: JSON.stringify({ content, history: history?.slice(-10) }),
     });

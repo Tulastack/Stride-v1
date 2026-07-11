@@ -1,11 +1,38 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, SafeAreaView, ActivityIndicator, Pressable, Modal, Animated } from 'react-native';
 import { useRouter } from 'expo-router';
-import { TrendingUp, X } from 'lucide-react-native';
+import { TrendingUp, X, Users } from 'lucide-react-native';
 import { fetchAnalysisHistory } from '../../src/lib/analysisApi';
+import { strideApi } from '../../src/services/api';
 import { useTheme } from '../../src/context/ThemeContext';
 import { space, radius, iconStroke } from '../../src/theme';
 import type { AnalysisResult } from '../../src/types/analysis';
+import { TrendChart } from '../../src/components/progress/TrendChart';
+import { EXAMPLE_RUNNERS } from '../../src/data/exampleRunners';
+
+/** Real score for an analysis — the computed running-economy index when
+ * available, falling back to a flaw-count heuristic (same formula as the
+ * Analysis screen, see app/(tabs)/analysis.tsx). */
+function scoreFor(analysis: AnalysisResult): number {
+  return analysis.economyScore ?? (analysis.flaws.length === 0 ? 95 : Math.max(40, 100 - analysis.flaws.length * 10));
+}
+
+const TRACKED_METRICS = ['knee_drive', 'cadence_spm'];
+const METRIC_LABELS: Record<string, string> = { knee_drive: 'Knee drive', cadence_spm: 'Cadence' };
+
+/** Short trend sentence derived from the already-loaded history — compares
+ * the average score of the most recent sprints against the earliest ones. */
+function improvementSummary(history: AnalysisResult[]): string {
+  if (history.length < 2) return 'Log a couple more sprints to start seeing a trend.';
+  const scores = history.map(scoreFor);
+  const windowSize = Math.min(3, Math.floor(scores.length / 2)) || 1;
+  const earlierAvg = scores.slice(0, windowSize).reduce((a, b) => a + b, 0) / windowSize;
+  const recentAvg = scores.slice(-windowSize).reduce((a, b) => a + b, 0) / windowSize;
+  const delta = Math.round(recentAvg - earlierAvg);
+  if (delta > 2) return `Trending up — your form score is averaging ${delta} points higher than when you started.`;
+  if (delta < -2) return `Your form score has dipped ${Math.abs(delta)} points recently — worth a look at what changed.`;
+  return `Your form score has stayed steady over your last ${scores.length} sprints.`;
+}
 
 export default function ProgressScreen() {
   const router = useRouter();
@@ -13,6 +40,8 @@ export default function ProgressScreen() {
   const [history, setHistory] = useState<AnalysisResult[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedAnalysis, setSelectedAnalysis] = useState<AnalysisResult | null>(null);
+  const [view, setView] = useState<'history' | 'insights'>('history');
+  const [metrics, setMetrics] = useState<Record<string, { value: number }[]> | null>(null);
 
   useEffect(() => {
     fetchAnalysisHistory()
@@ -20,6 +49,12 @@ export default function ProgressScreen() {
       .catch(() => setHistory([]))
       .finally(() => setLoading(false));
   }, []);
+
+  // Lazy-load metric trend data the first time Insights is opened.
+  useEffect(() => {
+    if (view !== 'insights' || metrics) return;
+    strideApi.getMetrics(90).then(setMetrics).catch(() => setMetrics({}));
+  }, [view, metrics]);
 
   if (loading) {
     return (
@@ -43,7 +78,72 @@ export default function ProgressScreen() {
           <Text style={[styles.subtitle, { color: colors.muted }]}>{history.length} sprint{history.length !== 1 ? 's' : ''} analyzed</Text>
         </View>
 
-        {history.length === 0 ? (
+        {/* Top segmented view — History (default) vs. Insights, Progress tab only */}
+        <View style={styles.segmentRow}>
+          <Pressable
+            accessibilityLabel="progress-view-history"
+            onPress={() => setView('history')}
+            style={[styles.segmentChip, { borderColor: view === 'history' ? colors.accent : colors.border, backgroundColor: view === 'history' ? colors.accent : 'transparent' }]}
+          >
+            <Text style={[styles.segmentText, { color: view === 'history' ? colors.accentText : colors.text }]}>History</Text>
+          </Pressable>
+          <Pressable
+            accessibilityLabel="progress-view-insights"
+            onPress={() => setView('insights')}
+            style={[styles.segmentChip, { borderColor: view === 'insights' ? colors.accent : colors.border, backgroundColor: view === 'insights' ? colors.accent : 'transparent' }]}
+          >
+            <Text style={[styles.segmentText, { color: view === 'insights' ? colors.accentText : colors.text }]}>Insights</Text>
+          </Pressable>
+        </View>
+
+        {view === 'insights' ? (
+          <View style={styles.list}>
+            <View style={[styles.summaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Text style={[styles.summaryText, { color: colors.text }]}>{improvementSummary(history)}</Text>
+            </View>
+
+            {history.length >= 2 && (
+              <TrendChart
+                title="Form score over time"
+                points={history.map(scoreFor)}
+                color={colors.accent}
+                mutedColor={colors.muted}
+                cardColor={colors.card}
+                borderColor={colors.border}
+                textColor={colors.text}
+              />
+            )}
+
+            {TRACKED_METRICS.map((key) => {
+              const rows = metrics?.[key];
+              if (!rows || rows.length < 2) return null;
+              const points = [...rows].reverse().map((r) => r.value);
+              return (
+                <TrendChart
+                  key={key}
+                  title={METRIC_LABELS[key] ?? key}
+                  points={points}
+                  color={colors.accent}
+                  mutedColor={colors.muted}
+                  cardColor={colors.card}
+                  borderColor={colors.border}
+                  textColor={colors.text}
+                />
+              );
+            })}
+
+            <View style={styles.runnersHeader}>
+              <Users size={16} color={colors.accent} strokeWidth={iconStroke} />
+              <Text style={[styles.runnersTitle, { color: colors.text }]}>RUNNERS TO WATCH</Text>
+            </View>
+            {EXAMPLE_RUNNERS.map((runner) => (
+              <View key={runner.id} style={[styles.runnerCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <Text style={[styles.runnerName, { color: colors.text }]}>{runner.name} · {runner.specialty}</Text>
+                <Text style={[styles.runnerNote, { color: colors.muted }]}>{runner.formNote}</Text>
+              </View>
+            ))}
+          </View>
+        ) : history.length === 0 ? (
           <View style={styles.emptyState}>
             <Text style={[styles.emptyTitle, { color: colors.text }]}>No analyses yet</Text>
             <Text style={[styles.emptySubtitle, { color: colors.muted }]}>Upload your first sprint to start tracking</Text>
@@ -65,10 +165,10 @@ export default function ProgressScreen() {
               <Text style={[styles.retestCtaText, { color: colors.accentText }]}>Record another sprint</Text>
             </Pressable>
             {history.map((analysis, index) => {
-              const score = analysis.flaws.length === 0 ? 95 : Math.max(40, 100 - analysis.flaws.length * 10);
+              const score = scoreFor(analysis);
               const barWidth = `${(score / maxScore) * 100}%`;
               const date = new Date(analysis.createdAt || Date.now());
-              const prev = index > 0 ? (history[index - 1].flaws.length === 0 ? 95 : Math.max(40, 100 - history[index - 1].flaws.length * 10)) : score;
+              const prev = index > 0 ? scoreFor(history[index - 1]) : score;
               const delta = score - prev;
 
               return (
@@ -117,7 +217,7 @@ export default function ProgressScreen() {
               <ScrollView>
                 <View style={styles.modalScore}>
                   <Text style={[styles.modalScoreNum, { color: colors.accent }]}>
-                    {selectedAnalysis.flaws.length === 0 ? 95 : Math.max(40, 100 - selectedAnalysis.flaws.length * 10)}
+                    {scoreFor(selectedAnalysis)}
                   </Text>
                   <Text style={[styles.modalScoreLabel, { color: colors.muted }]}>FORM SCORE</Text>
                 </View>
@@ -154,6 +254,16 @@ const styles = StyleSheet.create({
   scroll: { padding: space.xl, paddingBottom: space.xxxl },
   titleBlock: { marginBottom: space.xxl, gap: space.xs },
   title: { fontSize: 36, fontWeight: '900', letterSpacing: -1, lineHeight: 42 },
+  segmentRow: { flexDirection: 'row', gap: space.sm, marginBottom: space.xl },
+  segmentChip: { flex: 1, alignItems: 'center', paddingVertical: space.sm, borderWidth: 1, borderRadius: radius.pill },
+  segmentText: { fontSize: 13, fontWeight: '800' },
+  summaryCard: { padding: space.lg, borderWidth: 1, borderRadius: radius.md, marginBottom: space.md },
+  summaryText: { fontSize: 14, lineHeight: 20, fontWeight: '600' },
+  runnersHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: space.sm, marginBottom: space.sm },
+  runnersTitle: { fontSize: 12, fontWeight: '900', letterSpacing: 1.5 },
+  runnerCard: { padding: space.lg, borderWidth: 1, borderRadius: radius.md, marginBottom: space.sm, gap: 4 },
+  runnerName: { fontSize: 14, fontWeight: '800' },
+  runnerNote: { fontSize: 13, lineHeight: 18 },
   subtitle: { fontSize: 14, marginTop: space.xs },
   emptyState: { alignItems: 'center', marginTop: 80, gap: space.sm },
   emptyTitle: { fontSize: 18, fontWeight: '700' },

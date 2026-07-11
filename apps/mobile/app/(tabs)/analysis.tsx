@@ -267,7 +267,7 @@ export default function AnalysisScreen() {
         )}
 
         {/* CTA to AI Coach */}
-        <Pressable style={[styles.coachCta, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={() => router.push('/(tabs)/coach')}>
+        <Pressable style={[styles.coachCta, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={() => router.push({ pathname: '/(tabs)/coach', params: { analysisId } })}>
           <View style={styles.coachCtaContent}>
             <Text style={[styles.coachCtaTitle, { color: colors.accent }]}>Want personalized tips?</Text>
             <Text style={[styles.coachCtaSubtitle, { color: colors.muted }]}>Chat with your AI coach for drills, plans, and more</Text>

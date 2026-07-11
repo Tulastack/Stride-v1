@@ -13,6 +13,8 @@ type CalendarEvent = {
   scheduled_date: string;
   status: 'scheduled' | 'completed' | 'skipped';
   details?: {
+    sets?: number;
+    reps?: number;
     volume?: string;
     cue?: string;
     drill_key?: string;
@@ -98,7 +100,7 @@ export default function CalendarScreen() {
   for (let d = 1; d <= daysInMonth; d++) cells.push(d);
   while (cells.length < 42) cells.push(null);
 
-  const dayEvents = events.filter((e) => e.scheduled_date === selectedDate);
+  const dayEvents = events.filter((e) => e.scheduled_date === selectedDate && e.status !== 'completed');
 
   const toggleComplete = async (event: CalendarEvent) => {
     const newStatus = event.status === 'completed' ? 'scheduled' : 'completed';
@@ -220,9 +222,13 @@ export default function CalendarScreen() {
                     <Text style={[styles.eventTitle, { color: colors.text }, event.status === 'completed' && [styles.eventDone, { color: colors.muted }]]}>
                       {event.title}
                     </Text>
-                    {event.details?.volume && (
+                    {event.details?.sets && event.details?.reps ? (
+                      <Text style={[styles.eventVolume, { color: colors.muted }]}>
+                        {event.details.sets} sets × {event.details.reps} reps
+                      </Text>
+                    ) : event.details?.volume ? (
                       <Text style={[styles.eventVolume, { color: colors.muted }]}>{event.details.volume}</Text>
-                    )}
+                    ) : null}
                     {event.details?.cue && (
                       <Text style={[styles.eventCue, { color: colors.muted }]}>{event.details.cue}</Text>
                     )}
@@ -235,16 +241,6 @@ export default function CalendarScreen() {
             ))}
           </View>
         )}
-
-        {/* Event type legend */}
-        <View style={[styles.legendRow, { borderTopColor: colors.border }]}>
-          {Object.entries(EVENT_TYPE_COLORS).map(([type, color]) => (
-            <View key={type} style={styles.legendItem}>
-              <View style={[styles.legendDot, { backgroundColor: color }]} />
-              <Text style={[styles.legendText, { color: colors.muted }]}>{type}</Text>
-            </View>
-          ))}
-        </View>
       </ScrollView>
     </SafeAreaView>
   );

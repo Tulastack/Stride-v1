@@ -74,7 +74,7 @@ resource "aws_ecs_task_definition" "api" {
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
   cpu                      = "256"
-  memory                   = "512"
+  memory                   = "1024" # 512 wasn't enough headroom once the coach's local embedding model (onnxruntime + weights) loads alongside Node/Express/pg
   execution_role_arn       = aws_iam_role.ecs_execution_role.arn
   task_role_arn            = aws_iam_role.api_task_role.arn
 

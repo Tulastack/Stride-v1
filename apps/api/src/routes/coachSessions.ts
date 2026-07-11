@@ -19,6 +19,7 @@ const createSessionSchema = z.object({
 });
 
 import { generateCoachReply, buildAnalysisContext, runTrackCoach, buildCoachTools } from '../lib/coach.js';
+import { isCalendarRelevant } from '../lib/coach/calendarRelevance.js';
 
 const messageSchema = z.object({
   content: z.string().min(1).max(5000),
@@ -232,7 +233,8 @@ router.post('/:id/message', authenticate, async (req: any, res: Response, next: 
     }
 
     await touchCoachSession(id);
-    res.json({ role: 'assistant', content: assistantText, progress });
+    const calendarRelevant = await isCalendarRelevant(assistantText);
+    res.json({ role: 'assistant', content: assistantText, progress, calendarRelevant });
   } catch (err) {
     next(err);
   }
@@ -263,8 +265,13 @@ router.post('/:id/add-to-calendar', authenticate, async (req: any, res: Response
     const tomorrowStr = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
 
     const planPrompt = `Based on this conversation:\n${conversationSummary}\n\nGenerate a JSON array of workout/drill events for the next 2 weeks.
-Each event: {"title": "string", "eventType": "drill" or "workout" or "rest", "scheduledDate": "YYYY-MM-DD", "details": {"volume": "string", "cue": "string"}}
-Rules: max 2 hard days in a row, include rest days, start from tomorrow (use realistic dates starting from ${tomorrowStr}).
+Each event: {"title": "string", "eventType": "drill" or "workout" or "rest", "scheduledDate": "YYYY-MM-DD", "details": {"sets": number (optional), "reps": number (optional), "volume": "string", "cue": "string"}}
+Include numeric "sets" and "reps" whenever the event is a countable drill/exercise (e.g. high knee switches). Use "volume" for anything better described as a duration/distance (e.g. "20min tempo run", "400m x 4") instead of sets/reps.
+Rules:
+- Keep each day manageable — typically 1 main workout and a couple of form drills.
+- Include rest days. Athletes need recovery.
+- No more than 2 hard days in a row.
+- Start from tomorrow (${tomorrowStr}).
 Output ONLY the raw JSON array. No markdown. No explanation. Just [ ... ]`;
 
     const { getAnalysesByUser } = await import('../db/queries.js');

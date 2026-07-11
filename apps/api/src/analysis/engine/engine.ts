@@ -26,6 +26,7 @@ import type { Frame3D, PrecomputedClip } from './types.js';
 import type { Vec3 } from './math.js';
 import { metricTrustStatus } from '../validation/trust.js';
 import { PipelineInputError } from '../errors.js';
+import { explainMetric } from './metricExplanations.js';
 
 export interface BiomechanicsEngine {
   analyze(videoPath: string, gyroPath?: string, intrinsics?: CameraIntrinsics): AnalysisResult;
@@ -244,6 +245,8 @@ export class ReducedBiomechanicsEngine extends BiomechanicsEngineImpl {
 }
 
 function explain(m: ComputedMetric): string {
+  const readable = explainMetric(m.key, m.value, m.unit, m.normalRange);
+  if (readable) return readable;
   const dir = m.value < m.normalRange[0] ? 'below' : 'above';
   return `Your ${m.key.replace(/_/g, ' ')} (${m.value}${m.unit}) is ${dir} the typical range of ${m.normalRange[0]}–${m.normalRange[1]}${m.unit}.`;
 }
