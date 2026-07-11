@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, SafeAreaView, Pressable, ActivityIndicator } from 'react-native';
+import { useFocusEffect } from 'expo-router';
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, CheckCircle2, Circle } from 'lucide-react-native';
 import { strideApi } from '../../src/services/api';
 import { useTheme } from '../../src/context/ThemeContext';
@@ -34,7 +35,13 @@ function getMonthData(year: number, month: number) {
 }
 
 function formatDate(date: Date): string {
-  return date.toISOString().split('T')[0];
+  // Build from LOCAL calendar fields. Using toISOString() here would convert to
+  // UTC and shift the date across midnight for non-UTC timezones (an off-by-one
+  // day that misaligns dots, "today", and event lookups with the DB date).
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 function getMonthDateRange(year: number, month: number) {
@@ -70,9 +77,13 @@ export default function CalendarScreen() {
     }
   }, [monthOffset]);
 
-  useEffect(() => {
-    loadEvents();
-  }, [loadEvents]);
+  // Reload whenever the tab regains focus (so drills approved on the Analysis
+  // screen show up here immediately) and whenever the month changes.
+  useFocusEffect(
+    useCallback(() => {
+      loadEvents();
+    }, [loadEvents])
+  );
 
   // Group events by date string
   const eventsByDate = new Map<string, CalendarEvent[]>();

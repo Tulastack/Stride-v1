@@ -1,28 +1,31 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, SafeAreaView, Pressable } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { AlertTriangle, ChevronRight, Target } from 'lucide-react-native';
+import { CalendarPlus, Check, X, ChevronRight, Target, ArrowRight } from 'lucide-react-native';
 import { strideApi } from '../../src/services/api';
 import { parseAnalysisResult, waitForAnalysisResult, type AnalysisRow } from '../../src/lib/analysisApi';
 import { PoseVideoPlayer } from '../../src/components/analysis/PoseVideoPlayer';
 import { useTheme } from '../../src/context/ThemeContext';
 import { space, radius, iconStroke } from '../../src/theme';
-import type { AnalysisResult, Flaw } from '../../src/types/analysis';
+import type { AnalysisResult } from '../../src/types/analysis';
 
 type Status = 'pending' | 'processing' | 'failed' | 'done';
 
-const SEVERITY_LABELS: Record<number, { label: string; color: string }> = {
-  5: { label: 'MAJOR', color: '#DC2626' },
-  4: { label: 'SIGNIFICANT', color: '#EA580C' },
-  3: { label: 'MODERATE', color: '#D97706' },
-  2: { label: 'MINOR', color: '#CA8A04' },
-  1: { label: 'MINOR', color: '#65A30D' },
-};
+// A pending drill suggestion (the approval gate — nothing is auto-added to the plan).
+interface DrillSuggestion {
+  id: string;
+  drill_key: string;
+  drill_name: string;
+  suggested_date: string; // YYYY-MM-DD
+  status: 'pending' | 'approved' | 'skipped';
+}
 
-function getSeverityInfo(index: number, total: number): { label: string; color: string } {
+// Severity index → label + a semantic weight (color comes from the theme).
+const SEVERITY_LABELS: Record<number, string> = { 5: 'MAJOR', 4: 'SIGNIFICANT', 3: 'MODERATE', 2: 'MINOR', 1: 'MINOR' };
+
+function severityLabel(index: number, total: number): string {
   if (total <= 1) return SEVERITY_LABELS[3];
-  const severity = Math.max(1, 5 - index);
-  return SEVERITY_LABELS[severity] || SEVERITY_LABELS[3];
+  return SEVERITY_LABELS[Math.max(1, 5 - index)] ?? SEVERITY_LABELS[3];
 }
 
 function friendlyError(err?: string | null): string {
@@ -36,12 +39,33 @@ function friendlyError(err?: string | null): string {
   return err;
 }
 
+function formatDay(iso: string): string {
+  // Parse as a plain local date (no UTC shift) for display.
+  const [y, m, d] = iso.split('-').map(Number);
+  if (!y || !m || !d) return iso;
+  return new Date(y, m - 1, d).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
 export default function AnalysisScreen() {
   const { analysisId } = useLocalSearchParams<{ analysisId?: string }>();
   const router = useRouter();
+  const { colors } = useTheme();
   const [status, setStatus] = useState<Status>('pending');
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Approval-gate state
+  const [suggestions, setSuggestions] = useState<DrillSuggestion[]>([]);
+  const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
+
+  const loadSuggestions = useCallback(async (id: string) => {
+    try {
+      const rows = (await strideApi.getSuggestions(id)) as DrillSuggestion[];
+      setSuggestions(rows ?? []);
+    } catch {
+      setSuggestions([]);
+    }
+  }, []);
 
   const load = useCallback(async (id?: string) => {
     if (!id) { setStatus('failed'); setError('No analysis ID provided.'); return; }
@@ -55,32 +79,57 @@ export default function AnalysisScreen() {
       if (row.status === 'completed') {
         const parsed = parseAnalysisResult(row);
         if (!parsed) { setStatus('failed'); setError('Result is missing or invalid.'); return; }
-        setResult(parsed); setStatus('done'); return;
+        setResult(parsed); setStatus('done'); loadSuggestions(id); return;
       }
       setStatus('processing');
       const outcome = await waitForAnalysisResult(id, { intervalMs: 2000, timeoutMs: 180_000 });
-      if (outcome.status === 'completed' && outcome.result) { setResult(outcome.result); setStatus('done'); }
+      if (outcome.status === 'completed' && outcome.result) { setResult(outcome.result); setStatus('done'); loadSuggestions(id); }
       else { setStatus('failed'); setError(outcome.error ?? 'Analysis did not complete.'); }
     } catch (e: unknown) {
       setStatus('failed');
       setError(e instanceof Error ? e.message : 'Could not load analysis.');
     }
-  }, []);
+  }, [loadSuggestions]);
 
   useEffect(() => { load(analysisId); }, [analysisId, load]);
 
-  // Limit to top 5 flaws sorted by severity
+  const setBusy = (id: string, on: boolean) =>
+    setBusyIds((prev) => { const next = new Set(prev); on ? next.add(id) : next.delete(id); return next; });
+
+  const approve = useCallback(async (s: DrillSuggestion) => {
+    setBusy(s.id, true);
+    try {
+      await strideApi.approveSuggestion(s.id);
+      setSuggestions((prev) => prev.map((x) => (x.id === s.id ? { ...x, status: 'approved' } : x)));
+    } catch {
+      // leave as pending so the user can retry
+    } finally { setBusy(s.id, false); }
+  }, []);
+
+  const skip = useCallback(async (s: DrillSuggestion) => {
+    setBusy(s.id, true);
+    try {
+      await strideApi.skipSuggestion(s.id);
+      setSuggestions((prev) => prev.map((x) => (x.id === s.id ? { ...x, status: 'skipped' } : x)));
+    } catch {
+      // no-op
+    } finally { setBusy(s.id, false); }
+  }, []);
+
   const topFlaws = useMemo(() => {
     if (!result) return [];
     return [...result.flaws].sort((a, b) => b.severity - a.severity).slice(0, 5);
   }, [result]);
 
+  const pending = suggestions.filter((s) => s.status === 'pending');
+  const approved = suggestions.filter((s) => s.status === 'approved');
+
   if (status === 'pending' || status === 'processing') {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.bg }]}>
         <View style={styles.center}>
-          <ActivityIndicator size="large" color="#000000" />
-          <Text style={styles.loadingText}>
+          <ActivityIndicator size="large" color={colors.accent} />
+          <Text style={[styles.loadingText, { color: colors.muted }]}>
             {status === 'processing' ? 'Analyzing your sprint...' : 'Loading...'}
           </Text>
         </View>
@@ -90,20 +139,22 @@ export default function AnalysisScreen() {
 
   if (status === 'failed' || !result) {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.bg }]}>
         <View style={styles.center}>
-          <Text style={styles.failTitle}>Analysis Failed</Text>
-          <Text style={styles.failMsg}>{friendlyError(error)}</Text>
-          <Pressable style={styles.retryBtn} onPress={() => load(analysisId)}>
-            <Text style={styles.retryText}>Try Again</Text>
+          <Text style={[styles.failTitle, { color: colors.error }]}>Analysis Failed</Text>
+          <Text style={[styles.failMsg, { color: colors.muted }]}>{friendlyError(error)}</Text>
+          <Pressable style={[styles.retryBtn, { borderColor: colors.border }]} onPress={() => load(analysisId)}>
+            <Text style={[styles.retryText, { color: colors.text }]}>Try Again</Text>
           </Pressable>
         </View>
       </SafeAreaView>
     );
   }
 
+  const formScore = result.economyScore ?? (result.flaws.length === 0 ? 95 : Math.max(40, 100 - result.flaws.length * 10));
+
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.bg }]}>
       <ScrollView contentContainerStyle={styles.scroll}>
         {/* Skeleton overlay video */}
         {analysisId ? (
@@ -112,43 +163,103 @@ export default function AnalysisScreen() {
 
         {/* Score */}
         <View style={styles.scoreSection}>
-          <Text style={styles.scoreNumber}>{result.flaws.length === 0 ? 95 : Math.max(40, 100 - result.flaws.length * 10)}</Text>
-          <Text style={styles.scoreLabel}>FORM SCORE</Text>
+          <Text style={[styles.scoreNumber, { color: colors.accent }]}>{formScore}</Text>
+          <Text style={[styles.scoreLabel, { color: colors.muted }]}>FORM SCORE</Text>
         </View>
 
-        <Text style={styles.summary}>{result.summary}</Text>
+        <Text style={[styles.summary, { color: colors.text }]}>{result.summary}</Text>
 
         {/* Issues */}
         {topFlaws.length > 0 && (
-          <View style={styles.issuesSection}>
-            <Text style={styles.sectionTitle}>AREAS TO IMPROVE</Text>
-            {topFlaws.map((flaw, index) => {
-              const severity = getSeverityInfo(index, topFlaws.length);
-              return (
-                <View key={flaw.id} style={styles.issueCard}>
-                  <View style={styles.issueHeader}>
-                    <View style={[styles.severityBadge, { backgroundColor: severity.color }]}>
-                      <Text style={styles.severityText}>{severity.label}</Text>
-                    </View>
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>AREAS TO IMPROVE</Text>
+            {topFlaws.map((flaw, index) => (
+              <View key={flaw.id} style={[styles.issueCard, { backgroundColor: colors.card, borderLeftColor: colors.accent }]}>
+                <View style={styles.issueHeader}>
+                  <View style={[styles.severityBadge, { backgroundColor: colors.cardAlt }]}>
+                    <Text style={[styles.severityText, { color: colors.muted }]}>{severityLabel(index, topFlaws.length)}</Text>
                   </View>
-                  <Text style={styles.issueTitle}>{flaw.name.replace(/_/g, ' ')}</Text>
-                  <Text style={styles.issueDesc}>{flaw.plainExplanation}</Text>
                 </View>
-              );
-            })}
+                <Text style={[styles.issueTitle, { color: colors.text }]}>{flaw.name.replace(/_/g, ' ')}</Text>
+                <Text style={[styles.issueDesc, { color: colors.muted }]}>{flaw.plainExplanation}</Text>
+              </View>
+            ))}
           </View>
         )}
 
-        {/* Drills - minimal */}
-        {result.recommendations && result.recommendations.length > 0 && (
-          <View style={styles.drillsSection}>
-            <Text style={styles.sectionTitle}>QUICK FIXES</Text>
+        {/* Approval gate — Add to your plan / Skip. Nothing is auto-scheduled. */}
+        {(pending.length > 0 || approved.length > 0) && (
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>ADD TO YOUR PLAN</Text>
+            <Text style={[styles.sectionHint, { color: colors.muted }]}>
+              You choose what gets scheduled — nothing is added automatically.
+            </Text>
+
+            {pending.map((s) => {
+              const busy = busyIds.has(s.id);
+              return (
+                <View key={s.id} style={[styles.suggCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                  <View style={styles.suggInfo}>
+                    <Text style={[styles.suggName, { color: colors.text }]}>{s.drill_name}</Text>
+                    <Text style={[styles.suggDate, { color: colors.muted }]}>Suggested for {formatDay(s.suggested_date)}</Text>
+                  </View>
+                  <View style={styles.suggActions}>
+                    <Pressable
+                      accessibilityLabel={`skip-${s.drill_key}`}
+                      disabled={busy}
+                      style={[styles.iconBtn, { borderColor: colors.border }]}
+                      onPress={() => skip(s)}
+                    >
+                      <X size={18} color={colors.muted} strokeWidth={2.25} />
+                    </Pressable>
+                    <Pressable
+                      accessibilityLabel={`add-to-plan-${s.drill_key}`}
+                      disabled={busy}
+                      style={[styles.addBtn, { backgroundColor: colors.accent }]}
+                      onPress={() => approve(s)}
+                    >
+                      {busy ? (
+                        <ActivityIndicator size="small" color={colors.accentText} />
+                      ) : (
+                        <>
+                          <CalendarPlus size={16} color={colors.accentText} strokeWidth={2.25} />
+                          <Text style={[styles.addBtnText, { color: colors.accentText }]}>Add</Text>
+                        </>
+                      )}
+                    </Pressable>
+                  </View>
+                </View>
+              );
+            })}
+
+            {approved.map((s) => (
+              <View key={s.id} style={[styles.approvedRow]}>
+                <Check size={16} color={colors.success} strokeWidth={2.5} />
+                <Text style={[styles.approvedText, { color: colors.muted }]}>
+                  {s.drill_name} — added for {formatDay(s.suggested_date)}
+                </Text>
+              </View>
+            ))}
+
+            {approved.length > 0 && (
+              <Pressable style={[styles.viewPlanBtn, { borderColor: colors.accent }]} onPress={() => router.push('/(tabs)/calendar')}>
+                <Text style={[styles.viewPlanText, { color: colors.accent }]}>View in Plan</Text>
+                <ArrowRight size={16} color={colors.accent} strokeWidth={2.25} />
+              </Pressable>
+            )}
+          </View>
+        )}
+
+        {/* Fallback quick fixes when no structured suggestions were generated */}
+        {suggestions.length === 0 && result.recommendations && result.recommendations.length > 0 && (
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>QUICK FIXES</Text>
             {result.recommendations.slice(0, 3).map((rec) => (
-              <View key={rec.drillId} style={styles.drillItem}>
-                <Target size={16} color="#CDFF4F" />
+              <View key={rec.drillId} style={[styles.drillItem, { borderBottomColor: colors.border }]}>
+                <Target size={16} color={colors.accent} strokeWidth={iconStroke} />
                 <View style={styles.drillInfo}>
-                  <Text style={styles.drillName}>{rec.drillName}</Text>
-                  <Text style={styles.drillVolume}>{rec.sets} sets × {rec.reps} reps</Text>
+                  <Text style={[styles.drillName, { color: colors.text }]}>{rec.drillName}</Text>
+                  <Text style={[styles.drillVolume, { color: colors.muted }]}>{rec.sets} sets × {rec.reps} reps</Text>
                 </View>
               </View>
             ))}
@@ -156,19 +267,16 @@ export default function AnalysisScreen() {
         )}
 
         {/* CTA to AI Coach */}
-        <Pressable
-          style={styles.coachCta}
-          onPress={() => router.push('/(tabs)/coach')}
-        >
+        <Pressable style={[styles.coachCta, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={() => router.push('/(tabs)/coach')}>
           <View style={styles.coachCtaContent}>
-            <Text style={styles.coachCtaTitle}>Want personalized tips?</Text>
-            <Text style={styles.coachCtaSubtitle}>Chat with AI Coach for drills, workout plans, and more</Text>
+            <Text style={[styles.coachCtaTitle, { color: colors.accent }]}>Want personalized tips?</Text>
+            <Text style={[styles.coachCtaSubtitle, { color: colors.muted }]}>Chat with your AI coach for drills, plans, and more</Text>
           </View>
-          <ChevronRight size={20} color="#CDFF4F" />
+          <ChevronRight size={20} color={colors.accent} strokeWidth={iconStroke} />
         </Pressable>
 
-        <Text style={styles.disclaimer}>
-          Results are based on 2D video analysis. For best accuracy, film from the side in good lighting.
+        <Text accessibilityLabel="analysis-disclaimer" style={[styles.disclaimer, { color: colors.muted }]}>
+          Results are based on video analysis. For best accuracy, film your full body from the side in good lighting.
         </Text>
       </ScrollView>
     </SafeAreaView>
@@ -176,35 +284,48 @@ export default function AnalysisScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0E0F12' },
+  container: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 12 },
-  loadingText: { fontSize: 14, fontWeight: '600', color: '#8A8E97', marginTop: 8 },
-  failTitle: { fontSize: 20, fontWeight: '800', color: '#FF5237' },
-  failMsg: { fontSize: 14, color: '#8A8E97', textAlign: 'center' },
-  retryBtn: { borderWidth: 1, borderColor: '#353A44', paddingVertical: 12, paddingHorizontal: 24, marginTop: 12, borderRadius: 8 },
-  retryText: { fontSize: 14, fontWeight: '800', color: '#ECE7DC' },
-  scroll: { padding: 24, paddingBottom: 48 },
-  scoreSection: { alignItems: 'center', marginBottom: 24 },
-  scoreNumber: { fontSize: 64, fontWeight: '900', color: '#CDFF4F', fontFamily: 'SpaceMono' },
-  scoreLabel: { fontSize: 12, fontWeight: '700', color: '#8A8E97', letterSpacing: 2 },
-  summary: { fontSize: 15, color: '#B8B4AB', lineHeight: 22, marginBottom: 24 },
-  sectionTitle: { fontSize: 12, fontWeight: '900', color: '#ECE7DC', letterSpacing: 1.5, marginBottom: 12 },
-  issuesSection: { marginBottom: 24 },
-  issueCard: { backgroundColor: '#16181D', padding: 16, marginBottom: 10, borderLeftWidth: 3, borderLeftColor: '#353A44', borderRadius: 8 },
+  loadingText: { fontSize: 14, fontWeight: '600', marginTop: 8 },
+  failTitle: { fontSize: 20, fontWeight: '800' },
+  failMsg: { fontSize: 14, textAlign: 'center' },
+  retryBtn: { borderWidth: 1, paddingVertical: 12, paddingHorizontal: 24, marginTop: 12, borderRadius: radius.sm },
+  retryText: { fontSize: 14, fontWeight: '800' },
+  scroll: { padding: space.xl, paddingBottom: 48 },
+  scoreSection: { alignItems: 'center', marginBottom: space.xl },
+  scoreNumber: { fontSize: 64, fontWeight: '900' },
+  scoreLabel: { fontSize: 12, fontWeight: '700', letterSpacing: 2 },
+  summary: { fontSize: 15, lineHeight: 22, marginBottom: space.xl },
+  section: { marginBottom: space.xl },
+  sectionTitle: { fontSize: 12, fontWeight: '900', letterSpacing: 1.5, marginBottom: space.sm },
+  sectionHint: { fontSize: 12, marginBottom: space.md, lineHeight: 17 },
+  issueCard: { padding: space.lg, marginBottom: 10, borderLeftWidth: 3, borderRadius: radius.sm },
   issueHeader: { flexDirection: 'row', marginBottom: 6 },
   severityBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4 },
-  severityText: { fontSize: 10, fontWeight: '900', color: '#FFFFFF', letterSpacing: 1 },
-  issueTitle: { fontSize: 16, fontWeight: '700', color: '#ECE7DC', textTransform: 'capitalize', marginBottom: 4 },
-  issueDesc: { fontSize: 13, color: '#B8B4AB', lineHeight: 19 },
-  issueStat: { fontSize: 12, color: '#8A8E97', marginTop: 4, fontStyle: 'italic' },
-  drillsSection: { marginBottom: 24 },
-  drillItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#1E2127' },
+  severityText: { fontSize: 10, fontWeight: '900', letterSpacing: 1 },
+  issueTitle: { fontSize: 16, fontWeight: '700', textTransform: 'capitalize', marginBottom: 4 },
+  issueDesc: { fontSize: 13, lineHeight: 19 },
+  // approval gate
+  suggCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: space.lg, marginBottom: 10, borderWidth: 1, borderRadius: radius.md },
+  suggInfo: { flex: 1, paddingRight: space.md },
+  suggName: { fontSize: 15, fontWeight: '800' },
+  suggDate: { fontSize: 12, marginTop: 2 },
+  suggActions: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  iconBtn: { width: 40, height: 40, borderRadius: radius.sm, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  addBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 40, paddingHorizontal: space.lg, borderRadius: radius.sm },
+  addBtnText: { fontSize: 14, fontWeight: '800' },
+  approvedRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingVertical: space.sm },
+  approvedText: { fontSize: 13, fontWeight: '600' },
+  viewPlanBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderWidth: 1, borderRadius: radius.sm, paddingVertical: space.md, marginTop: space.sm },
+  viewPlanText: { fontSize: 14, fontWeight: '800' },
+  // fallback drills
+  drillItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, borderBottomWidth: 1 },
   drillInfo: { flex: 1 },
-  drillName: { fontSize: 14, fontWeight: '700', color: '#ECE7DC' },
-  drillVolume: { fontSize: 12, color: '#8A8E97', marginTop: 2 },
-  coachCta: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1E2127', padding: 16, borderRadius: 12, marginBottom: 24, borderWidth: 1, borderColor: '#353A44' },
+  drillName: { fontSize: 14, fontWeight: '700' },
+  drillVolume: { fontSize: 12, marginTop: 2 },
+  coachCta: { flexDirection: 'row', alignItems: 'center', padding: space.lg, borderRadius: radius.md, marginBottom: space.xl, borderWidth: 1 },
   coachCtaContent: { flex: 1 },
-  coachCtaTitle: { fontSize: 15, fontWeight: '700', color: '#CDFF4F' },
-  coachCtaSubtitle: { fontSize: 12, color: '#8A8E97', marginTop: 2 },
-  disclaimer: { fontSize: 11, color: '#8A8E97', textAlign: 'center' },
+  coachCtaTitle: { fontSize: 15, fontWeight: '700' },
+  coachCtaSubtitle: { fontSize: 12, marginTop: 2 },
+  disclaimer: { fontSize: 11, textAlign: 'center' },
 });
