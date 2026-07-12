@@ -378,3 +378,33 @@ unchanged (0 switches, 2 flaws → 2 suggestions). Worker log for both runs: no
 ERROR/traceback and no switch/exit-latch warning surfaced. B3/model_meta intact.
 (Head-on `low_confidence_video` behavior not tested here — out of scope per the
 coordinator; the two target clips are green.)
+
+---
+---
+
+# Re-run 8 — post-MERGE full E2E (coach/progress/ML branches + ML work) (2026-07-11)
+
+Big merge (teammate's coach/progress/ML-pipeline branch + the ML work); worker
+restarted after a merge-bug fix (undefined var in tracker). One clip, coach skipped.
+Confirms the merged app is green end-to-end. **IMG_0274.MOV** (side-on single).
+
+| Check | Result |
+|---|---|
+| Completes, no worker error/traceback | 🟢 completed |
+| Latency (finalize→completed) | **8.3 s** |
+| NEW frontal metrics knee_valgus + pelvic_drop present, experimental on side clip | 🟢 both present, both `experimental` |
+| Sagittal intact: knee_drive/hip_extension trusted → flaws | 🟢 `[Low knee drive, Limited hip extension]` |
+| Suggestions | 🟢 **2** |
+| B3 movenet_version / model_meta.keypointFormat | 🟢 `rtmpose-lightweight` / `coco17` |
+| phase == "acceleration" | 🟢 |
+| captureQuality subjectMotion / movingSubject | 🟢 `0.89` / `true` |
+| Worker log ERROR/traceback | 🟢 none (no undefined-var/NameError) |
+
+**All 11 metric keys (DB confirms 11):**
+`trunk_lean, knee_drive, hip_extension, knee_flexion, arm_swing, overstride,
+vertical_oscillation, knee_valgus, pelvic_drop, contact_time_ms, cadence_spm`
+— the two new frontal metrics (`knee_valgus`, `pelvic_drop`) merged in cleanly and
+are correctly `experimental` on this side-on clip (also appear in
+`captureQuality.perMetricUsable` as `false`). Sagittal trusted angles, phase model,
+temporal honesty gating, tracker, and B3/model_meta all survive the merge. Merged
+app is green.
