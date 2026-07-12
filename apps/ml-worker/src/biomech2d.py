@@ -44,7 +44,13 @@ NORMAL_RANGE: dict[str, tuple[float, float]] = {
     "vertical_oscillation": (4.0, 11.0),   # bounce as % of torso length
     "contact_time_ms": (80.0, 140.0),
     "cadence_spm": (270.0, 330.0),
+    # ── frontal-plane (measurable from a FRONT/BACK view, not side-on) ──
+    "knee_valgus": (0.0, 8.0),             # peak knee medial deviation, % of leg length
+    "pelvic_drop": (0.0, 10.0),            # peak contralateral hip drop, degrees
 }
+# Metrics that live in the FRONTAL plane: trustworthy from a front/back view and
+# degraded from the side (the inverse of the sagittal metrics). See _viewpoint_penalty.
+FRONTAL: set[str] = {"knee_valgus", "pelvic_drop"}
 # Hard PHYSICAL envelope — wider than the "healthy" band. A value outside this is
 # a measurement failure (off-axis perspective, bad crop, a static-bystander lock,
 # or sub-Nyquist temporal sampling), not a real fault. Such a value is never shown
@@ -60,6 +66,8 @@ PLAUSIBLE: dict[str, tuple[float, float]] = {
     "vertical_oscillation": (0.0, 20.0),
     "contact_time_ms": (60.0, 400.0),
     "cadence_spm": (140.0, 360.0),
+    "knee_valgus": (0.0, 40.0),
+    "pelvic_drop": (0.0, 45.0),
 }
 
 # ── Sprint-phase-specific norms ───────────────────────────────────────────────
@@ -88,10 +96,12 @@ def _plausible_range(key: str, phase: str) -> tuple[float, float]:
 
 UNIT = {"trunk_lean": "deg", "knee_drive": "deg", "hip_extension": "deg",
         "knee_flexion": "deg", "arm_swing": "deg", "overstride": "%",
-        "vertical_oscillation": "%", "contact_time_ms": "ms", "cadence_spm": "spm"}
+        "vertical_oscillation": "%", "contact_time_ms": "ms", "cadence_spm": "spm",
+        "knee_valgus": "%", "pelvic_drop": "deg"}
 PLANE = {"trunk_lean": "sagittal", "knee_drive": "sagittal", "hip_extension": "sagittal",
          "knee_flexion": "sagittal", "arm_swing": "sagittal", "overstride": "sagittal",
-         "vertical_oscillation": "temporal", "contact_time_ms": "temporal", "cadence_spm": "temporal"}
+         "vertical_oscillation": "temporal", "contact_time_ms": "temporal", "cadence_spm": "temporal",
+         "knee_valgus": "frontal", "pelvic_drop": "frontal"}
 
 DRILLS: dict[str, dict[str, Any]] = {
     "trunk_lean": {"drillId": "drill-wall-drive", "drillName": "Wall drives", "cue": "Hold a long line from ankle to head; resist bending at the waist.", "demoAssetId": "demo-wall-drive", "sets": 3, "reps": 8, "rationale": "Grooves a stable trunk angle."},
@@ -103,12 +113,15 @@ DRILLS: dict[str, dict[str, Any]] = {
     "vertical_oscillation": {"drillId": "drill-wickets", "drillName": "Wicket runs", "cue": "Run TALL and flat — push horizontally, minimise bounce.", "demoAssetId": "demo-wickets", "sets": 3, "reps": 6, "rationale": "Lowers wasteful vertical oscillation."},
     "contact_time_ms": {"drillId": "drill-banded-starts", "drillName": "Resisted banded starts", "cue": "Punch the ground and get off it fast.", "demoAssetId": "demo-banded-starts", "sets": 4, "reps": 5, "rationale": "Shortens ground-contact time."},
     "cadence_spm": {"drillId": "drill-metronome", "drillName": "Metronome cadence intervals", "cue": "Match your footfalls to the beat; quick, light steps.", "demoAssetId": "demo-metronome", "sets": 4, "reps": 30, "rationale": "Raises step frequency toward the efficient range."},
+    "knee_valgus": {"drillId": "drill-lateral-band", "drillName": "Lateral band walks + single-leg balance", "cue": "Drive the knee OVER the middle toe; don't let it cave inward.", "demoAssetId": "demo-lateral-band", "sets": 3, "reps": 12, "rationale": "Strengthens glute-med to stop the knee collapsing inward."},
+    "pelvic_drop": {"drillId": "drill-hip-hitch", "drillName": "Single-leg hip hitches", "cue": "Keep your hips level — don't let the free side drop.", "demoAssetId": "demo-hip-hitch", "sets": 3, "reps": 10, "rationale": "Builds hip-abductor control to keep the pelvis level in stance."},
 }
 NAMES = {"trunk_lean": "Trunk angle off-target", "knee_drive": "Low knee drive",
          "hip_extension": "Limited hip extension", "knee_flexion": "Limited knee flexion",
          "arm_swing": "Arm swing off-target", "overstride": "Overstriding",
          "vertical_oscillation": "Excess vertical bounce", "contact_time_ms": "Long ground contact",
-         "cadence_spm": "Cadence off-target"}
+         "cadence_spm": "Cadence off-target", "knee_valgus": "Knee collapsing inward",
+         "pelvic_drop": "Hip dropping"}
 # short "why it matters" used by the results UI + coach grounding.
 WHY = {
     "trunk_lean": "A slight forward lean from the ankles keeps you driving forward; too upright or bent-at-the-waist wastes force.",
@@ -120,6 +133,8 @@ WHY = {
     "vertical_oscillation": "Energy spent bouncing up is energy not spent moving forward.",
     "contact_time_ms": "Less time on the ground generally means a springier, faster stride (needs high-fps video to measure well).",
     "cadence_spm": "Quicker, lighter steps usually cut overstriding and braking (needs high-fps video to measure well).",
+    "knee_valgus": "A knee that caves inward on landing wastes force and is a leading driver of runner's knee and ACL stress (best seen from front/back).",
+    "pelvic_drop": "Hips that drop on the swing side leak energy and overload the stance-leg hip and IT band (best seen from front/back).",
 }
 
 # ── Trust tiers (docs/research/angle-agnostic-kinematics.md) ──────────────────
@@ -129,6 +144,7 @@ WHY = {
 TIER = {
     "cadence_spm": 1, "contact_time_ms": 1, "vertical_oscillation": 1,
     "trunk_lean": 2, "knee_drive": 2, "hip_extension": 2, "knee_flexion": 2, "arm_swing": 2,
+    "knee_valgus": 2, "pelvic_drop": 2,   # tier-2 but FRONTAL-plane (see FRONTAL set)
     "overstride": 3,
 }
 # Sprint ground contact is ~90 ms; below ~120 fps the timing error swamps the signal
@@ -221,7 +237,31 @@ def _frame_scalars(k: np.ndarray, vert_down: np.ndarray, up: np.ndarray) -> dict
     leg_len = float(np.linalg.norm(ank - hip)) or 1e-6
     # Project hip position onto gravity axis for vertical oscillation (candidate).
     hip_vert = float(np.dot(mid_hp, vert_down))
+
+    # ── frontal-plane scalars (meaningful from a FRONT/BACK view) ──────────────
+    lh, rh = k[KP["left_hip"], :2], k[KP["right_hip"], :2]
+    lk, rk = k[KP["left_knee"], :2], k[KP["right_knee"], :2]
+    la, ra = k[KP["left_ankle"], :2], k[KP["right_ankle"], :2]
+
+    def _valgus(hp, kn, an) -> float:
+        # horizontal (x) deviation of the knee from the straight hip→ankle line,
+        # as % of leg length — a knee caving toward the midline in a front view.
+        dy = float(an[0] - hp[0])
+        if abs(dy) < 1e-4:
+            return 0.0
+        t = (float(kn[0]) - float(hp[0])) / dy
+        exp_x = float(hp[1]) + t * float(an[1] - hp[1])
+        ll = float(np.linalg.norm(an - hp)) or 1e-6
+        return abs(float(kn[1]) - exp_x) / ll * 100.0
+
+    knee_valgus = max(_valgus(lh, lk, la), _valgus(rh, rk, ra))
+    # pelvic drop: tilt of the hip line off horizontal (deg); level pelvis = 0.
+    _hv = rh - lh  # [dy, dx]
+    pelvic_drop = math.degrees(math.atan2(abs(float(_hv[0])), abs(float(_hv[1])) + 1e-6))
+
     return {
+        "knee_valgus": knee_valgus,
+        "pelvic_drop": pelvic_drop,
         "knee_drive": _angle_between_vectors(knee - hip, vert_down),   # thigh vs gravity vertical
         "hip_ext": _angle_at_joint(sh, hip, knee),                     # shoulder-hip-knee, peak
         "knee_flex": _angle_at_joint(hip, knee, ank),                  # knee joint angle, min=peak flexion
@@ -324,6 +364,10 @@ def _gait_signal(lank_y: np.ndarray, rank_y: np.ndarray, fps: float) -> tuple[fl
 
 def _viewpoint_penalty(azimuth_deg: float, plane: str) -> float:
     a = math.radians(abs(azimuth_deg) % 180)
+    if plane == "frontal":
+        # Frontal metrics (knee valgus, hip drop) are the INVERSE of sagittal:
+        # trustworthy from a front/back view (azimuth→90°), degraded from the side.
+        return min(1.0, math.cos(a) ** 2)
     out = math.sin(a) ** 2
     return min(1.0, out) if plane == "sagittal" else min(1.0, out * 0.25)
 
@@ -384,6 +428,9 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
         "arm_swing": (_elbow_med, int(np.argmin(np.abs(a["elbow"] - _elbow_med)))),
         "overstride": (round(overstride_pct, 1), contacts[0] if contacts else 0),
         "vertical_oscillation": (round(vo_pct, 1), 0),
+        # frontal-plane peaks (trusted from a front/back view; see FRONTAL / _viewpoint_penalty)
+        "knee_valgus": (float(np.percentile(a["knee_valgus"], 90)), int(np.argmax(a["knee_valgus"]))),
+        "pelvic_drop": (float(np.percentile(a["pelvic_drop"], 90)), int(np.argmax(a["pelvic_drop"]))),
     }
     # Dual-rate timing (fixes B1): if a FULL-source-fps ankle signal is available
     # (LK optical flow between pose keyframes), compute contact-time + cadence from
@@ -424,8 +471,12 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
             conf = mean_conf * (1 - vp) * 0.6
             trust = "experimental"
         else:
-            # Tier 2 sagittal → best side-on, degraded (not zeroed) off-axis.
-            vp = _viewpoint_penalty(azimuth_deg, "sagittal")
+            # Tier 2 → best in its own plane, degraded (not zeroed) off-axis. Sagittal
+            # metrics trust a SIDE view; frontal metrics (valgus, hip drop) trust a
+            # FRONT/BACK view — the inverse penalty, so every angle yields some trusted
+            # feedback.
+            plane = "frontal" if key in FRONTAL else "sagittal"
+            vp = _viewpoint_penalty(azimuth_deg, plane)
             conf = mean_conf * (1 - vp)
             trust = "trusted" if (conf >= 0.6 and vp <= 0.5) else "experimental"
         conf = max(0.0, min(1.0, conf))
@@ -508,7 +559,8 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
 
 
 _KEYS = ["knee_drive", "hip_ext", "knee_flex", "elbow", "trunk", "hip_y",
-         "torso_len", "ank_x_rel", "ank_y_rel", "leg_len", "conf"]
+         "torso_len", "ank_x_rel", "ank_y_rel", "leg_len", "conf",
+         "knee_valgus", "pelvic_drop"]
 
 
 def analyze_2d_sagittal_stream(frame_iter: Iterable[dict], fps: float,
