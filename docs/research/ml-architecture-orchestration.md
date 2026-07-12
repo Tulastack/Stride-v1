@@ -605,3 +605,25 @@ demoted to `experimental` as "implausible." Upright/static clips keep the uprigh
 (no regression). Scoped to `trunk_lean` (the clearly phase-sensitive metric); knee_drive /
 hip_extension acceleration-phase norms are a future refinement (need sprint-accel reference
 values rather than guesses).
+
+### Phase 3 — ✅ IMPLEMENTED & VERIFIED (dual-rate timing, fixes B1)
+
+B1: `FPS_TRUST_GATE = 120` but `temporal_fps = min(cap_fps, pose_fps=15)`, so cadence /
+contact-time were **always** "experimental" even on a 240fps capture. Fixed with a dual-rate
+signal — timing decoupled from the (sparse) pose sampling:
+- **`rtmpose_backend.iter_frames(timing_out=...)`** carries the two ankle heights at **FULL
+  source fps** by **Lucas-Kanade optical flow** (`cv2.calcOpticalFlowPyrLK`) between pose
+  keyframes, re-anchored from the pose each keyframe. **Opt-in**: when `timing_out is None`
+  (all non-worker callers, tests) the pose path does zero extra work and is unchanged.
+- **`biomech2d._gait_signal`** detects footstrikes / contact runs from that full-fps signal
+  with an **fps-scaled** smoothing window + refractory, and `_assemble` sets
+  `temporal_fps = timing_fps` (source fps) instead of `min(cap_fps, pose_fps)`.
+- Threaded through `pose2d.stream_frames` → `worker._run_2d` (passes `timing_fps=source_fps`).
+
+**Verified:** on a real 30fps clip the signal is populated full-fps (192 timing samples vs 82
+pose frames); on a **clean synthetic 120fps** foot signal `_gait_signal` returns contact
+**107 ms** / cadence **273 spm** and the full pipeline marks both **`trusted`** — the gate now
+*clears* (was categorically impossible before). At 30fps, temporal stays honestly
+`experimental` (30 < 120). Default (no-timing) path is byte-unchanged. **Known limit:** on a
+block-start clip the static set-hold inflates the raw contact-run (the value is
+`experimental`/hidden anyway); a real high-fps *running* clip is the payoff case.

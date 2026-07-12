@@ -209,13 +209,19 @@ def _run_2d(analysis_id: str, video_path: str, capture: dict, s3_key: str | None
 
     notify_progress(analysis_id, "biomechanics_calculation", 75, "2D sagittal biomechanics")
     overlay_frames: list = []
+    # Dual-rate timing: collect a full-source-fps ankle signal (LK optical flow
+    # between pose keyframes) so cadence/contact-time get real temporal resolution
+    # and can clear the fps trust gate on a high-fps capture (fixes B1).
+    timing_signal: list = []
     result = analyze_2d_sagittal_stream(
-        stream_frames(video_path, target_fps=pose_fps, target=target_xy),
+        stream_frames(video_path, target_fps=pose_fps, target=target_xy, timing_out=timing_signal),
         fps=eff_fps, azimuth_deg=azimuth, clip_id=analysis_id[:8],
         overlay_out=overlay_frames,
         source_fps=source_fps,
         capture_fps=capture_fps,
         image_down=image_down,
+        timing_signal=timing_signal,
+        timing_fps=source_fps,
     )
     _write_overlay(video_path, s3_key, {
         "fps": eff_fps,

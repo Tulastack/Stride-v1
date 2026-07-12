@@ -277,6 +277,51 @@ def _gait(lank: np.ndarray, rank: np.ndarray, fps: float) -> tuple[float, float]
     return round(contact_ms, 1), round(cadence, 1)
 
 
+def _gait_signal(lank_y: np.ndarray, rank_y: np.ndarray, fps: float) -> tuple[float, float]:
+    """Contact-time + cadence from a FULL-fps ankle-height signal (dual-rate).
+
+    Same footstrike model as _gait (foot lowest in the image = local max of ankle
+    y), but the smoothing window and inter-strike refractory scale with `fps`, so
+    it works at 30/60/120/240 fps and gives cadence/contact-time the temporal
+    resolution the 15fps pose sampling can't. Fed a per-frame ankle-y signal
+    tracked by optical flow between pose keyframes."""
+    sw = max(3, int(round(fps * 0.05)))          # ~50 ms smoothing
+    refractory = max(2, int(round(fps * 0.14)))   # ~140 ms min between same-foot strikes
+    strikes: list[int] = []
+    contact_runs: list[int] = []
+    for y in (lank_y, rank_y):
+        y = np.asarray(y, dtype=float)
+        if len(y) < 3:
+            continue
+        ys = _smooth(y, sw)
+        rng = float(ys.max() - ys.min())
+        if rng < 1e-3:
+            continue
+        strike_thr = float(ys.min() + rng * 0.7)
+        contact_thr = float(ys.min() + rng * 0.6)
+        last = -(10 ** 9)
+        run = 0
+        for i in range(len(ys)):
+            v = float(ys[i])
+            if v >= contact_thr:
+                run += 1
+            else:
+                if run >= 1:
+                    contact_runs.append(run)
+                run = 0
+            if 0 < i < len(ys) - 1 and (i - last) > refractory and v >= strike_thr and v >= ys[i - 1] and v >= ys[i + 1]:
+                strikes.append(i)
+                last = i
+        if run >= 1:
+            contact_runs.append(run)
+    strikes.sort()
+    intervals = [(strikes[i] - strikes[i - 1]) / fps for i in range(1, len(strikes))]
+    intervals = [d for d in intervals if d > 0.5 / fps]
+    cadence = 60.0 / float(np.mean(intervals)) if intervals else 0.0
+    contact_ms = float(np.mean(contact_runs)) / fps * 1000 if contact_runs else 0.0
+    return round(contact_ms, 1), round(cadence, 1)
+
+
 def _viewpoint_penalty(azimuth_deg: float, plane: str) -> float:
     a = math.radians(abs(azimuth_deg) % 180)
     out = math.sin(a) ** 2
@@ -292,7 +337,8 @@ def _band(value: float, conf: float) -> dict[str, float]:
 
 def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
               mean_conf: float, azimuth_deg: float, clip_id: str,
-              capture_fps: float | None = None, source_fps: float | None = None) -> dict[str, Any]:
+              capture_fps: float | None = None, source_fps: float | None = None,
+              timing_signal: list | None = None, timing_fps: float | None = None) -> dict[str, Any]:
     """Assemble metrics. `pose_fps` = keypoint sample rate (gait timing);
     `capture_fps` = phone capture rate (reported quality + nudges);
     `source_fps` = video container fps (flaw evidence timestamps)."""
@@ -339,12 +385,20 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
         "overstride": (round(overstride_pct, 1), contacts[0] if contacts else 0),
         "vertical_oscillation": (round(vo_pct, 1), 0),
     }
-    contact_ms, cadence = _gait(a["l_rel"], a["r_rel"], pose_fps)
+    # Dual-rate timing (fixes B1): if a FULL-source-fps ankle signal is available
+    # (LK optical flow between pose keyframes), compute contact-time + cadence from
+    # it and let the temporal trust gate see the REAL foot-sample rate. Otherwise
+    # timing rides the 15fps pose rate and can never clear FPS_TRUST_GATE (=120).
+    if timing_signal is not None and timing_fps and len(timing_signal) >= 8:
+        _ts = np.asarray(timing_signal, dtype=float)  # cols: frame_index, lank_y, rank_y
+        contact_ms, cadence = _gait_signal(_ts[:, 1], _ts[:, 2], float(timing_fps))
+        temporal_fps = float(timing_fps)
+    else:
+        contact_ms, cadence = _gait(a["l_rel"], a["r_rel"], pose_fps)
+        # Temporal trust needs BOTH high capture rate and dense keypoints.
+        temporal_fps = min(cap_fps, pose_fps)
     values["contact_time_ms"] = (contact_ms, 0)
     values["cadence_spm"] = (cadence, 0)
-
-    # Temporal trust needs BOTH high capture rate and dense keypoints.
-    temporal_fps = min(cap_fps, pose_fps)
 
     metrics, flaws, recs, per_usable = [], [], [], {}
     # Sprint PHASE from the athlete's posture, not the camera azimuth: a moving
@@ -464,7 +518,9 @@ def analyze_2d_sagittal_stream(frame_iter: Iterable[dict], fps: float,
                                source_fps: float | None = None,
                                capture_fps: float | None = None,
                                image_down: tuple[float, float] | None = None,
-                               estimate_azimuth: bool = True) -> dict[str, Any]:
+                               estimate_azimuth: bool = True,
+                               timing_signal: list | None = None,
+                               timing_fps: float | None = None) -> dict[str, Any]:
     """Memory-lean: consume a frame generator in ONE pass, retaining only scalar
     series. Raises low_confidence_video if too few usable frames survive. Stops
     after max_frames to bound worst-case latency.
@@ -524,7 +580,8 @@ def analyze_2d_sagittal_stream(frame_iter: Iterable[dict], fps: float,
     if estimate_azimuth and az_samples:
         use_az = float(np.median(az_samples))
     return _assemble(S, idxs, pose_fps, mean_conf, use_az, clip_id,
-                     capture_fps=cap_fps, source_fps=src_fps)
+                     capture_fps=cap_fps, source_fps=src_fps,
+                     timing_signal=timing_signal, timing_fps=timing_fps)
 
 
 def analyze_2d_sagittal(frames: list[dict], fps: float, mean_conf: float,

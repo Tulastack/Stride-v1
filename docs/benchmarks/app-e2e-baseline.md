@@ -312,3 +312,35 @@ false "excessive trunk lean" flaw is gone, while the two legitimate flaws (low
 knee drive, limited hip extension) and their 2 suggestions remain. Note trunk_lean
 also flipped from `experimental` (Re-run 4) to `trusted` here, since the phase
 model now trusts a drive-phase lean. B3/model_meta/keypointFormat unchanged.
+
+---
+---
+
+# Re-run 6 — P3 dual-rate temporal (Lucas-Kanade ankle signal) (2026-07-11)
+
+Worker restarted: full-source-fps ankle signal via LK optical flow between pose
+keyframes; biomech2d computes cadence/contact-time from it with temporal_fps =
+source fps (120fps trust gate now reachable on high-fps captures). Process +
+latency confirmation only. One clip: **IMG_0274.MOV** (30fps single), coach skipped.
+
+| Check | Result |
+|---|---|
+| Completes, no worker error/traceback | 🟢 completed |
+| **Latency (finalize→completed)** | **8.3 s** (vs ~8.2–8.5 s prior — LK adds no visible overhead; worker compute Claimed→overlay ~6.0 s, same as before) |
+| Temporal metrics experimental & not flagged (30 < 120 gate) | 🟢 contact_time_ms, cadence_spm, vertical_oscillation all `experimental`; not in flaws |
+| phase == "acceleration" | 🟢 |
+| trunk_lean trusted [35,55], not flagged | 🟢 40.5° |
+| flaws → suggestions | 🟢 `[Low knee drive, Limited hip extension]` → 2 |
+| B3 model_meta intact | 🟢 `rtmpose-lightweight` / `coco17` |
+| Worker log ERROR/traceback | 🟢 none |
+
+**Latency verdict:** no regression — the LK per-frame grayscale + optical-flow
+pass did not measurably increase end-to-end time (8.3 s, within the noise of prior
+~8 s runs on this clip).
+
+**Note (not a blocker):** the new LK-derived temporal values on this 30fps clip
+are implausible (contact_time_ms 5869 ms, cadence 399.8 spm) — expected, since
+sub-120fps temporal signal is unreliable — but they are correctly gated
+`experimental` and excluded from flaws, so the honesty behavior holds. (Per the
+coordinator, the 120fps trust gate + plausible values were unit-verified
+separately on a clean 120fps signal → contact 107 ms / cadence 273 spm → trusted.)

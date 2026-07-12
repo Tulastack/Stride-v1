@@ -36,6 +36,13 @@ KEYPOINT_FORMAT = "coco17"
 # Override via env RTMPOSE_CONFIDENCE_THRESHOLD.
 _CONF_THRESHOLD = float(os.environ.get("RTMPOSE_CONFIDENCE_THRESHOLD", "0.3"))
 
+# Lucas-Kanade params for the dual-rate ankle signal (tracked between pose
+# keyframes at full source fps — see iter_frames' timing_out / biomech2d).
+_LK_PARAMS = dict(
+    winSize=(21, 21), maxLevel=2,
+    criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03),
+)
+
 _body: Any | None = None
 
 
@@ -111,14 +118,21 @@ def _seed_bbox(target) -> tuple[float, float, float, float]:
     return (cx - 0.12, cy - 0.30, cx + 0.12, cy + 0.30)  # rough standing-person box
 
 
-def iter_frames(video_path: str, target_fps: int = 30, target=None):
+def iter_frames(video_path: str, target_fps: int = 30, target=None, timing_out=None):
     """Streaming generator yielding one lean per-frame dict at a time.
 
     `target` = the athlete to analyze, as a normalized point (x, y) OR a
     brush-traced bbox (x0, y0, x1, y1). When set, each frame is CROPPED to the
     tracked person's region and pose is run only on that crop — so other people
     are not even in the model's input. This is what stops keypoints jumping to
-    bystanders in a multi-person clip. No target → full-frame lock-and-follow."""
+    bystanders in a multi-person clip. No target → full-frame lock-and-follow.
+
+    `timing_out` (dual-rate): if a list is passed, it is filled at FULL source fps
+    with (frame_index, left_ankle_y_norm, right_ankle_y_norm). Between the (sparse)
+    pose keyframes the ankle heights are carried by Lucas-Kanade optical flow, so
+    cadence / ground-contact get real temporal resolution instead of being capped
+    at the 15fps pose rate (see biomech2d._gait_signal). When None, this adds no
+    per-frame work and the pose path is unchanged."""
     body = _load_body()
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
@@ -138,13 +152,17 @@ def iter_frames(video_path: str, target_fps: int = 30, target=None):
     tgt = None  # centroid for the no-target lock-and-follow path
     frame_idx = 0
     next_sample = 0.0
+    la, ra = KEYPOINT_INDEX["left_ankle"], KEYPOINT_INDEX["right_ankle"]
+    prev_gray = None            # previous frame (grayscale) for LK — timing path only
+    ankle_pts = None            # float32 [[Lx,Ly],[Rx,Ry]] full-frame px — LK state
     try:
         while True:
             ret, frame = cap.read()
             if not ret:
                 break
+            h, w = frame.shape[:2]
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) if timing_out is not None else None
             if frame_idx >= next_sample:
-                h, w = frame.shape[:2]
                 kp = np.zeros((17, 3), dtype=float)
                 excluded = True
 
@@ -185,6 +203,12 @@ def iter_frames(video_path: str, target_fps: int = 30, target=None):
                         kp[:, 2] = sc
                         excluded = float(np.mean(kp[core_idx, 2])) < _CONF_THRESHOLD
 
+                if timing_out is not None and not excluded:
+                    # (re-)anchor the LK ankle points from this fresh pose keyframe
+                    ankle_pts = np.array(
+                        [[float(kp[la, 1]) * w, float(kp[la, 0]) * h],
+                         [float(kp[ra, 1]) * w, float(kp[ra, 0]) * h]], dtype=np.float32)
+                    timing_out.append((frame_idx, float(kp[la, 0]), float(kp[ra, 0])))
                 yield {
                     "frame_index": frame_idx,
                     "keypoints": kp,
@@ -192,6 +216,16 @@ def iter_frames(video_path: str, target_fps: int = 30, target=None):
                     "excluded": excluded,
                 }
                 next_sample += interval
+            elif timing_out is not None and ankle_pts is not None and prev_gray is not None:
+                # between pose keyframes: carry the ankle heights at FULL source fps
+                new_pts, _st, _err = cv2.calcOpticalFlowPyrLK(prev_gray, gray, ankle_pts, None, **_LK_PARAMS)
+                if new_pts is not None:
+                    ankle_pts = new_pts
+                    timing_out.append((frame_idx,
+                                       float(np.clip(new_pts[0, 1] / h, 0.0, 1.0)),
+                                       float(np.clip(new_pts[1, 1] / h, 0.0, 1.0))))
+            if timing_out is not None:
+                prev_gray = gray
             frame_idx += 1
     finally:
         cap.release()

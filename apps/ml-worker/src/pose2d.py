@@ -43,16 +43,18 @@ def process_video(video_path: str, target_fps: int = 30) -> list[dict[str, Any]]
     return [_canonicalize(f, fmt) for f in mod.process_video(video_path, target_fps=target_fps)]
 
 
-def stream_frames(video_path: str, target_fps: int = 30, target=None):
+def stream_frames(video_path: str, target_fps: int = 30, target=None, timing_out=None):
     """Memory-lean generator: yields one canonical frame dict at a time. `target`
     is the user-selected athlete (normalized point or brush bbox) to crop-track;
-    backends without a streaming/tracking path fall back to their list output."""
+    backends without a streaming/tracking path fall back to their list output.
+    `timing_out` (optional list) is filled by streaming backends with a full-fps
+    ankle signal for dual-rate cadence/contact-time (see rtmpose_backend)."""
     name = os.environ.get("POSE2D_BACKEND", "movenet")
     mod = resolve(name)
     fmt = keypoint_format(mod)
     if hasattr(mod, "iter_frames"):
         logger.info("Pose2D backend (stream): %s%s (native=%s)", name, " +target" if target else "", fmt)
-        it = mod.iter_frames(video_path, target_fps=target_fps, target=target)
+        it = mod.iter_frames(video_path, target_fps=target_fps, target=target, timing_out=timing_out)
     else:
         logger.info("Pose2D backend (stream→list): %s (native=%s)", name, fmt)
         it = mod.process_video(video_path, target_fps=target_fps)
