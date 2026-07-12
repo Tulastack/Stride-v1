@@ -344,3 +344,37 @@ sub-120fps temporal signal is unreliable — but they are correctly gated
 `experimental` and excluded from flaws, so the honesty behavior holds. (Per the
 coordinator, the 120fps trust gate + plausible values were unit-verified
 separately on a clean 120fps signal → contact 107 ms / cadence 273 spm → trusted.)
+
+---
+---
+
+# Re-run 7 — single-target tracker fix (overlap-seed, position-primary, exit-latch) (2026-07-11)
+
+Worker restarted: seed locks the box that OVERLAPS the brush (was nearest-center
+bystander); tracking is position-primary; Kalman velocity clamped; exit-latch
+when the athlete leaves frame. Two clips, coach skipped. **Stability metric:** over
+consecutive overlay frames, max frame-to-frame jump of mean torso-centroid x
+(COCO 5,6,11,12); a jump > 0.18 = an identity switch.
+
+| Check | IMG_8269 (staggered PAIR, was switching) | IMG_0274 (single, no-regression) |
+|---|---|---|
+| Completes, no worker error/traceback | 🟢 completed | 🟢 completed |
+| Latency | **8.3 s** | **8.2 s** |
+| overall_score | 39 | 64 |
+| phase | acceleration | acceleration |
+| flaws | `[]` | `[Low knee drive, Limited hip extension]` |
+| suggestions | 0 | 2 |
+| overlay frames | 77 | 82 |
+| **max torso-centroid x jump** | **0.0576** | **0.049** |
+| **switches (>0.18)** | **0** ✅ | **0** ✅ |
+| B3 movenet_version / model_meta.keypointFormat | rtmpose-lightweight / coco17 | rtmpose-lightweight / coco17 |
+
+**Tracker fix verified:** IMG_8269 — the pair clip that previously switched — now
+holds a single athlete for the whole clip (max centroid-x jump 0.058, well under
+the 0.18 switch threshold; **0 switches**). The tight overlap-seed bbox
+`(0.44,0.42,0.66,0.92)` locked the intended left/center athlete (worker log:
+`Target lock: brush bbox (0.44, 0.42, 0.66, 0.92)`). IMG_0274 single-athlete
+unchanged (0 switches, 2 flaws → 2 suggestions). Worker log for both runs: no
+ERROR/traceback and no switch/exit-latch warning surfaced. B3/model_meta intact.
+(Head-on `low_confidence_video` behavior not tested here — out of scope per the
+coordinator; the two target clips are green.)

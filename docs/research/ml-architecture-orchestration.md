@@ -563,6 +563,32 @@ clip still yields trusted angles + 2 suggestions.
 counter (gate rejections / appearance tie-breaks / re-acquisitions) would make it directly
 observable.
 
+#### P1 hardening — the tracker WAS still switching (fixed)
+
+The original P1 "0 switches" was a **false pass**: the verification metric (centroid jump
+> 0.15) is blind to a switch between two *nearby* people (staggered starts), so on real
+phone testing it still hopped to a bystander "every time." Rendering the tracked skeleton
+over time (a `STRIDE_TRACK_DEBUG` per-frame decision log + montage) exposed four compounding
+bugs, all fixed in `crop_tracker.py`:
+1. **Seed picked the wrong person** — "nearest to the seed-box *centre*" is dominated by the
+   y-component, so a standing bystander (or a person to the side) beat the athlete bent at
+   the blocks. → **Seed by box _overlap_** (IoU + containment) with the brush box.
+2. **Athlete dropped mid-run** — a frozen appearance anchor rejected them once their pose
+   changed (bent set → driving). → **Position continuity is primary**; appearance only gates
+   re-acquisition, against the recent (EMA) look, not the frozen first pose.
+3. **Kalman velocity runaway** — a few noisy/low-confidence detections built a velocity that
+   shot the prediction off the subject, which then rejected everything. → **Velocity clamp**
+   (`_VMAX`).
+4. **Bystander pickup after exit** — once the athlete left frame it re-acquired leftover
+   noise. → **Exit latch** (`_exited`): once the tracked centroid reaches a frame edge, stop.
+
+Verified with a corrected metric on four real clips (single, staggered pair, multi-≤4,
+head-on pair): **0 switches** (max torso-centroid frame-to-frame x jump ≤ 0.058), and E2E on
+the previously-switching pair confirms it locks the intended athlete across all 77 frames.
+Honest note: a **head-on** clip now returns `low_confidence_video` (core keypoint confidence
+~0.15 < 0.3) rather than fabricating all-experimental output — correct, since sagittal form
+isn't measurable from the front.
+
 ### Phase 2 — ✅ IMPLEMENTED & VERIFIED (model-agnostic seam)
 
 The 2D pipeline is now genuinely backbone-agnostic, fixing bug **B2** (biomech2d used to

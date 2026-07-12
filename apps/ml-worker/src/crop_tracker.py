@@ -21,17 +21,23 @@ pose backbone can plug in. All boxes/points are normalized to the full frame.
 
 from __future__ import annotations
 
+import os
+
 import cv2
 import numpy as np
+
+# Optional per-frame decision log for diagnostics (set STRIDE_TRACK_DEBUG=1).
+DEBUG: list = []
 
 # Torso keypoints (COCO-17) give a stable centroid + appearance region.
 _TORSO = [5, 6, 11, 12]
 # A candidate must be within this normalized distance of the Kalman prediction
 # OR appearance-consistent; being BOTH far and dissimilar → treated as a miss.
-_MOTION_GATE = 0.22
-_APP_GATE = 0.45          # 1 - histogram-correlation above this = "looks different"
-_SEED_GATE = 0.28         # first lock: how near the seed box the athlete must be
-_ANCHOR_GATE = 0.60       # never adopt a target that looks nothing like the first lock
+_MOTION_GATE = 0.22       # max normalized jump from the Kalman prediction to still be "the target"
+_REACQ_MISS = 2           # after this many consecutive misses we're "re-acquiring"
+_REACQ_APP_GATE = 0.50    # on re-acquisition, candidate must match the RECENT (EMA) look
+_VMAX = 0.10              # cap per-frame predicted motion so noisy detections can't make it run away
+_RESET_MISS = 8           # after a long miss, drop the stale position lock so we can re-find anywhere
 
 
 def _torso_centroid_norm(xy: np.ndarray, origin, frame_wh) -> tuple[float, float]:
@@ -57,6 +63,25 @@ def _kp_bbox_px(xy: np.ndarray, sc: np.ndarray, cw: int, ch: int):
     return x0, y0, x1, y1
 
 
+def _iou(a, b) -> float:
+    """IoU of two normalized (x0, y0, x1, y1) boxes."""
+    ix0, iy0 = max(a[0], b[0]), max(a[1], b[1])
+    ix1, iy1 = min(a[2], b[2]), min(a[3], b[3])
+    iw, ih = max(0.0, ix1 - ix0), max(0.0, iy1 - iy0)
+    inter = iw * ih
+    ua = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter
+    return inter / ua if ua > 1e-9 else 0.0
+
+
+def _contained(det, box) -> float:
+    """Fraction of `det`'s area that lies inside `box` (both normalized xyxy)."""
+    ix0, iy0 = max(det[0], box[0]), max(det[1], box[1])
+    ix1, iy1 = min(det[2], box[2]), min(det[3], box[3])
+    inter = max(0.0, ix1 - ix0) * max(0.0, iy1 - iy0)
+    da = (det[2] - det[0]) * (det[3] - det[1])
+    return inter / da if da > 1e-9 else 0.0
+
+
 def _hsv_hist(patch_bgr: np.ndarray):
     """Normalized H-S histogram of an image patch (appearance signature)."""
     if patch_bgr is None or patch_bgr.size == 0 or patch_bgr.shape[0] < 4 or patch_bgr.shape[1] < 4:
@@ -75,6 +100,8 @@ class CropTracker:
         self.W, self.H = int(frame_w), int(frame_h)
         cx, cy = (x0 + x1) / 2.0, (y0 + y1) / 2.0
         w, h = max(abs(x1 - x0), 0.05), max(abs(y1 - y0), 0.08)
+        # the brushed box, kept for the first-lock overlap test
+        self.seed_box = (min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1))
 
         kf = cv2.KalmanFilter(6, 4)  # state [cx,cy,w,h,vx,vy], measure [cx,cy,w,h]
         kf.transitionMatrix = np.array([
@@ -96,6 +123,7 @@ class CropTracker:
         self.anchor = None          # first-lock appearance, never updated (drift anchor)
         self.miss = 0               # consecutive frames the target was not found
         self._cur = (cx, cy, w, h)  # latest predicted box (centre + size)
+        self._exited = False        # latched once the athlete tracks off a frame edge
 
     # ── prediction ────────────────────────────────────────────────────────
     def predict(self) -> None:
@@ -106,6 +134,11 @@ class CropTracker:
             # and re-acquires edge noise). Hold position instead.
             self.kf.statePost[4, 0] = 0.0
             self.kf.statePost[5, 0] = 0.0
+        else:
+            # Cap velocity so a handful of noisy/low-confidence detections can't
+            # build a runaway velocity that shoots the prediction off the subject.
+            self.kf.statePost[4, 0] = float(np.clip(self.kf.statePost[4, 0], -_VMAX, _VMAX))
+            self.kf.statePost[5, 0] = float(np.clip(self.kf.statePost[5, 0], -_VMAX, _VMAX))
         p = self.kf.predict()
         cx, cy = float(p[0, 0]), float(p[1, 0])
         w, h = max(float(p[2, 0]), 0.05), max(float(p[3, 0]), 0.08)
@@ -126,48 +159,83 @@ class CropTracker:
         origin: (cx0, cy0) crop top-left in full-frame px. crop_wh: (cw, ch)."""
         cx, cy, _, _ = self._cur
         cw, ch = crop_wh
+        ox, oy = origin
         seeded = self.hist is not None
-        best = None
-        best_cost = 1e9
-        for i in range(len(scores_c)):
-            xy, sc = kpts_c[i], scores_c[i]
-            core = float(np.mean(sc[_TORSO]))
-            pxn, pyn = _torso_centroid_norm(xy, origin, (self.W, self.H))
-            motion = ((pxn - cx) ** 2 + (pyn - cy) ** 2) ** 0.5
-            app = 0.0
-            app_anchor = 0.0
-            if seeded:
+        decision = None
+        cand_dbg = []
+
+        # Once the athlete has tracked off a frame edge they have EXITED the shot —
+        # stop, rather than re-acquiring whatever noise/bystander drifts through next.
+        if self._exited:
+            if os.environ.get("STRIDE_TRACK_DEBUG"):
+                DEBUG.append({"pred_x": round(cx, 2), "seeded": seeded, "miss": self.miss,
+                              "n": len(scores_c), "cands": [], "chosen": None, "exited": True})
+            return None
+
+        if not seeded:
+            # ── FIRST LOCK ── pick the detection whose box best OVERLAPS the
+            # brushed seed box. "Nearest to the box centre" mis-picks a bystander
+            # when the box spans several people or the athlete sits low (bent at
+            # the blocks), because the y-distance dominates. Overlap doesn't.
+            best_score = 0.0
+            for i in range(len(scores_c)):
+                xy, sc = kpts_c[i], scores_c[i]
+                bx0, by0, bx1, by1 = _kp_bbox_px(xy, sc, cw, ch)
+                det = ((ox + bx0) / self.W, (oy + by0) / self.H,
+                       (ox + bx1) / self.W, (oy + by1) / self.H)
+                # overlap = IoU with the brush box, boosted by how much of the
+                # detection is contained inside it (rewards a person the brush is on)
+                score = _iou(det, self.seed_box) + 0.5 * _contained(det, self.seed_box)
+                if os.environ.get("STRIDE_TRACK_DEBUG"):
+                    pxn, _ = _torso_centroid_norm(xy, origin, (self.W, self.H))
+                    cand_dbg.append((round(pxn, 2), round(score, 2), round(float(np.mean(sc[_TORSO])), 2)))
+                if score > best_score:
+                    best_score = score
+                    decision = i
+            if best_score < 0.10:   # nothing meaningfully inside the brush → miss
+                decision = None
+        else:
+            # ── TRACKING ── cascade: motion first, appearance to break ties/reject drift
+            best = None
+            best_cost = 1e9
+            for i in range(len(scores_c)):
+                xy, sc = kpts_c[i], scores_c[i]
+                core = float(np.mean(sc[_TORSO]))
+                pxn, pyn = _torso_centroid_norm(xy, origin, (self.W, self.H))
+                motion = ((pxn - cx) ** 2 + (pyn - cy) ** 2) ** 0.5
+                app = 0.0
+                app_anchor = 0.0
                 bx0, by0, bx1, by1 = _kp_bbox_px(xy, sc, cw, ch)
                 hh = _hsv_hist(crop_bgr[by0:by1, bx0:bx1])
                 if hh is not None:
                     app = 1.0 - max(0.0, float(cv2.compareHist(self.hist, hh, cv2.HISTCMP_CORREL)))
                     if self.anchor is not None:
                         app_anchor = 1.0 - max(0.0, float(cv2.compareHist(self.anchor, hh, cv2.HISTCMP_CORREL)))
-            cost = motion * 3.0 + app * 1.0 - core * 0.2
-            if cost < best_cost:
-                best_cost = cost
-                best = (i, motion, app, app_anchor)
-        if best is None:
-            return None
-        i, motion, app, app_anchor = best
-        if seeded:
-            # reject a candidate that is both far AND looks different (a bystander)
-            if motion > _MOTION_GATE and app > _APP_GATE:
-                return None
-            # after a loss streak, only RE-ACQUIRE something that looks like the
-            # target — otherwise a passer-by / edge noise gets adopted as the athlete
-            if self.miss >= 3 and app > _APP_GATE:
-                return None
-            # never let identity drift (frame by frame) onto something that looks
-            # nothing like the athlete we originally locked (e.g. edge noise once
-            # the runner has left the frame)
-            if app_anchor > _ANCHOR_GATE:
-                return None
-        else:
-            # first lock: the athlete must be near the seed box
-            if motion > _SEED_GATE:
-                return None
-        return i
+                cost = motion * 3.0 + app * 1.0 - core * 0.2
+                if os.environ.get("STRIDE_TRACK_DEBUG"):
+                    cand_dbg.append((round(pxn, 2), round(motion, 3), round(app, 2), round(core, 2)))
+                if cost < best_cost:
+                    best_cost = cost
+                    best = (i, motion, app, app_anchor)
+            if best is not None:
+                i, motion, app, app_anchor = best
+                decision = i
+                # Position continuity is PRIMARY: a detection within the motion
+                # gate of the prediction is the target — accept it even if the
+                # colour histogram drifted (a set→drive pose change makes appearance
+                # an unreliable hard gate).
+                if motion > _MOTION_GATE:
+                    decision = None
+                # Appearance only matters when RE-ACQUIRING after a loss, and
+                # against the RECENT (EMA) look — this rejects grabbing a nearby
+                # bystander once the athlete has actually left.
+                elif self.miss >= _REACQ_MISS and app > _REACQ_APP_GATE:
+                    decision = None
+
+        if os.environ.get("STRIDE_TRACK_DEBUG"):
+            DEBUG.append({"pred_x": round(cx, 2), "seeded": seeded, "miss": self.miss,
+                          "n": len(scores_c), "cands": cand_dbg, "chosen": decision})
+        return decision
 
     # ── update ────────────────────────────────────────────────────────────
     def update(self, xy, sc, crop_bgr, origin, crop_wh) -> None:
@@ -180,6 +248,9 @@ class CropTracker:
         self.kf.correct(np.array([[pxn], [pyn], [wn], [hn]], dtype=np.float32))
         self._cur = (pxn, pyn, wn, hn)
         self.miss = 0
+        # the athlete's own torso centroid reaching a frame edge = they are leaving
+        if pxn < 0.03 or pxn > 0.97 or pyn < 0.03 or pyn > 0.97:
+            self._exited = True
         hh = _hsv_hist(crop_bgr[by0:by1, bx0:bx1])
         if hh is not None:
             if self.hist is None:
