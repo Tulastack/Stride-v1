@@ -73,7 +73,7 @@ export function CoachMetricDiagram({
           <Path d="M8 148 H82" stroke={muted} strokeWidth={1} strokeOpacity={0.5} />
           {value != null && (
             <SvgText x={45} y={12} fill={accent} fontSize={10} fontWeight="700" textAnchor="middle">
-              {`${Math.round(value)}${unit === 'deg' || unit === '°' ? '°' : unit === 'ms' ? 'ms' : ''}`}
+              {`${Math.round(value).toLocaleString('en-US')}${unit === 'deg' || unit === '°' ? '°' : unit ? ` ${unit}` : ''}`}
             </SvgText>
           )}
         </Svg>
@@ -82,7 +82,7 @@ export function CoachMetricDiagram({
           {meta.cue ? <Text style={[styles.cue, { color: colors.text }]}>{meta.cue}</Text> : null}
           {normalRange ? (
             <Text style={[styles.range, { color: muted }]}>
-              Target {normalRange[0]}–{normalRange[1]}{unit === 'deg' ? '°' : unit ? ` ${unit}` : ''}
+              Target {normalRange[0].toLocaleString('en-US')}–{normalRange[1].toLocaleString('en-US')}{unit === 'deg' || unit === '°' ? '°' : unit ? ` ${unit}` : ''}
               {inRange === false ? ' · off target' : inRange ? ' · in range' : ''}
             </Text>
           ) : null}

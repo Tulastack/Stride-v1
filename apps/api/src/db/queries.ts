@@ -438,12 +438,28 @@ export async function approveSuggestion(
       [id, userId],
     );
 
+    // Pull sets/reps/cue for this drill from the source analysis's recommendations
+    // (already computed by the analysis engine) so the plan shows real, structured
+    // set/rep detail instead of just the drill's name.
+    let details: Record<string, unknown> = { drill_key: updatedSuggestion.drill_key };
+    const { rows: analysisRows } = await client.query<{ result_json: Record<string, unknown> | null }>(
+      'SELECT result_json FROM analyses WHERE id = $1',
+      [updatedSuggestion.analysis_id],
+    );
+    const recommendations = (analysisRows[0]?.result_json as any)?.recommendations as
+      | { drillId: string; sets?: number; reps?: number; cue?: string }[]
+      | undefined;
+    const rec = recommendations?.find((r) => r.drillId === updatedSuggestion.drill_key);
+    if (rec) {
+      details = { drill_key: updatedSuggestion.drill_key, sets: rec.sets, reps: rec.reps, cue: rec.cue };
+    }
+
     // Create calendar event
     const { rows: evtRows } = await client.query<CalendarEvent>(
       `INSERT INTO calendar_events (user_id, title, event_type, scheduled_date, details)
        VALUES ($1, $2, 'drill', $3, $4)
        RETURNING *`,
-      [userId, updatedSuggestion.drill_name, updatedSuggestion.suggested_date, JSON.stringify({ drill_key: updatedSuggestion.drill_key })],
+      [userId, updatedSuggestion.drill_name, updatedSuggestion.suggested_date, JSON.stringify(details)],
     );
     const calendarEvent = evtRows[0]!;
 

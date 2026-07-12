@@ -99,15 +99,6 @@ def _select_person(kpts, scores, w, h, target, core_idx):
     return best, cents[best]
 
 
-def _norm_bbox_from_kp(kp: np.ndarray) -> tuple[float, float, float, float] | None:
-    """Normalized (x0,y0,x1,y1) enclosing the confident keypoints of a person."""
-    good = kp[:, 2] > 0.3
-    if int(good.sum()) < 3:
-        return None
-    xs = kp[good, 1]; ys = kp[good, 0]
-    return (float(xs.min()), float(ys.min()), float(xs.max()), float(ys.max()))
-
-
 def _seed_bbox(target) -> tuple[float, float, float, float]:
     """Seed a normalized bbox from a point (x,y) OR an explicit brush bbox
     (x0,y0,x1,y1)."""

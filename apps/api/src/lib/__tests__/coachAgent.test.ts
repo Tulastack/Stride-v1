@@ -11,6 +11,7 @@ import { jest } from '@jest/globals';
 import { retrieveKnowledge } from '../coach/knowledge.js';
 import { buildCoachTools, type CoachDeps } from '../coach/tools.js';
 import { runTrackCoach } from '../coach/agent.js';
+import { CoachRateLimitError } from '../coach/errors.js';
 
 describe('retrieveKnowledge', () => {
   it('returns the most relevant, sourced entry for a query', () => {
@@ -131,6 +132,24 @@ describe('runTrackCoach agentic loop', () => {
     const secondBody = JSON.parse((fetchImpl.mock.calls[1] as any)[1].body);
     const roles = secondBody.messages.map((m: any) => m.role);
     expect(roles).toContain('tool');
+  });
+
+  it('throws CoachRateLimitError (not a generic Error) on a 429 from Groq', async () => {
+    const tools = buildCoachTools({ userId: 'u1', profile: null, deps: makeDeps() });
+    const fetchImpl = jest.fn<any>().mockResolvedValueOnce({
+      ok: false,
+      status: 429,
+      text: async () => '{"error":{"message":"Rate limit reached ... tokens per day (TPD)"}}',
+    } as any);
+
+    await expect(
+      runTrackCoach({
+        userMessage: 'How is my form?',
+        analysisContext: 'ATHLETE: test',
+        toolset: tools,
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+      }),
+    ).rejects.toThrow(CoachRateLimitError);
   });
 
   it('throws when GROQ_API_KEY is missing so the route can fall back', async () => {

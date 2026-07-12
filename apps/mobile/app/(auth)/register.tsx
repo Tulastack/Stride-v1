@@ -2,9 +2,12 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useStrideStore } from '../../src/store/useStrideStore';
+import { useTheme } from '../../src/context/ThemeContext';
+import { space, radius, type as typo } from '../../src/theme';
 
 export default function RegisterScreen() {
   const router = useRouter();
+  const { colors } = useTheme();
   const setToken = useStrideStore((state) => state.setToken);
   const setUser = useStrideStore((state) => state.setUser);
 
@@ -47,26 +50,26 @@ export default function RegisterScreen() {
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={styles.container}
+      style={[styles.container, { backgroundColor: colors.bg }]}
     >
       <ScrollView contentContainerStyle={styles.scrollContainer}>
         <View style={styles.header}>
-          <Text style={styles.brandName}>STRIDE</Text>
-          <Text style={styles.tagline}>AI-Powered Sprint Coaching</Text>
+          <Text style={[styles.brandName, { color: colors.text }]}>STRIDE</Text>
+          <Text style={[styles.tagline, { color: colors.muted }]}>AI-Powered Sprint Coaching</Text>
         </View>
 
-        <View style={styles.card}>
-          <Text style={styles.title}>Create Account</Text>
-          <Text style={styles.subtitle}>Start sprinting faster today</Text>
+        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Text style={[styles.title, { color: colors.text }]}>Create Account</Text>
+          <Text style={[styles.subtitle, { color: colors.muted }]}>Start sprinting faster today</Text>
 
-          {error ? <Text style={styles.errorText}>{error}</Text> : null}
+          {error ? <Text style={[styles.errorText, { color: colors.error }]}>{error}</Text> : null}
 
           <View style={styles.inputContainer}>
-            <Text style={styles.label}>Email Address</Text>
+            <Text style={[styles.label, { color: colors.muted }]}>Email Address</Text>
             <TextInput
-              style={styles.input}
+              style={[styles.input, { backgroundColor: colors.cardAlt, borderColor: colors.border, color: colors.text }]}
               placeholder="athlete@stride.ai"
-              placeholderTextColor="#5C6073"
+              placeholderTextColor={colors.muted}
               keyboardType="email-address"
               autoCapitalize="none"
               value={email}
@@ -75,11 +78,11 @@ export default function RegisterScreen() {
           </View>
 
           <View style={styles.inputContainer}>
-            <Text style={styles.label}>Password</Text>
+            <Text style={[styles.label, { color: colors.muted }]}>Password</Text>
             <TextInput
-              style={styles.input}
+              style={[styles.input, { backgroundColor: colors.cardAlt, borderColor: colors.border, color: colors.text }]}
               placeholder="••••••••"
-              placeholderTextColor="#5C6073"
+              placeholderTextColor={colors.muted}
               secureTextEntry
               autoCapitalize="none"
               value={password}
@@ -87,14 +90,14 @@ export default function RegisterScreen() {
             />
           </View>
 
-          <TouchableOpacity style={styles.registerButton} onPress={handleRegister} disabled={loading}>
-            <Text style={styles.registerButtonText}>{loading ? 'Creating Account...' : 'Get Started'}</Text>
+          <TouchableOpacity style={[styles.registerButton, { backgroundColor: colors.accent }]} onPress={handleRegister} disabled={loading}>
+            <Text style={[styles.registerButtonText, { color: colors.accentText }]}>{loading ? 'Creating Account...' : 'Get Started'}</Text>
           </TouchableOpacity>
 
           <View style={styles.footer}>
-            <Text style={styles.footerText}>Already have an account? </Text>
+            <Text style={[styles.footerText, { color: colors.muted }]}>Already have an account? </Text>
             <TouchableOpacity onPress={() => router.push('/(auth)/login')}>
-              <Text style={styles.loginLink}>Sign In</Text>
+              <Text style={[styles.loginLink, { color: colors.accent }]}>Sign In</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -104,114 +107,21 @@ export default function RegisterScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#0B0D17',
-  },
-  scrollContainer: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    padding: 24,
-  },
-  header: {
-    alignItems: 'center',
-    marginBottom: 48,
-  },
-  brandName: {
-    fontSize: 48,
-    fontWeight: '900',
-    color: '#FFFFFF',
-    letterSpacing: 6,
-    textShadowColor: 'rgba(255, 69, 58, 0.4)',
-    textShadowOffset: { width: 0, height: 4 },
-    textShadowRadius: 15,
-  },
-  tagline: {
-    fontSize: 16,
-    color: '#8E94A8',
-    marginTop: 8,
-    fontWeight: '500',
-    letterSpacing: 1,
-  },
-  card: {
-    backgroundColor: '#16192E',
-    borderRadius: 12,
-    padding: 32,
-    borderWidth: 1,
-    borderColor: '#262940',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.5,
-    shadowRadius: 15,
-    elevation: 8,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: '#8E94A8',
-    marginBottom: 24,
-  },
-  errorText: {
-    color: '#FF453A',
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 16,
-  },
-  inputContainer: {
-    marginBottom: 20,
-  },
-  label: {
-    color: '#8E94A8',
-    fontSize: 12,
-    fontWeight: '600',
-    marginBottom: 8,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  input: {
-    backgroundColor: '#0F1122',
-    borderColor: '#262940',
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    color: '#FFFFFF',
-    fontSize: 16,
-  },
-  registerButton: {
-    backgroundColor: '#FF453A',
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: 'center',
-    marginTop: 12,
-    shadowColor: '#FF453A',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-  },
-  registerButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: 'bold',
-    letterSpacing: 0.5,
-  },
-  footer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginTop: 24,
-  },
-  footerText: {
-    color: '#8E94A8',
-    fontSize: 14,
-  },
-  loginLink: {
-    color: '#FF453A',
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
+  container: { flex: 1 },
+  scrollContainer: { flexGrow: 1, justifyContent: 'center', padding: space.xl },
+  header: { alignItems: 'center', marginBottom: space.xxxl },
+  brandName: { fontSize: 40, fontWeight: '900', letterSpacing: 4 },
+  tagline: { ...typo.body, marginTop: space.sm, letterSpacing: 0.5 },
+  card: { borderRadius: radius.md, padding: space.xl, borderWidth: 1 },
+  title: { ...typo.display, fontSize: 26, marginBottom: space.xs },
+  subtitle: { ...typo.body, marginBottom: space.xl },
+  errorText: { ...typo.bodyMedium, marginBottom: space.lg },
+  inputContainer: { marginBottom: space.lg },
+  label: { ...typo.label, marginBottom: space.sm, textTransform: 'uppercase' },
+  input: { borderWidth: 1, borderRadius: radius.md, paddingHorizontal: space.lg, paddingVertical: space.md, fontSize: 16 },
+  registerButton: { borderRadius: radius.md, paddingVertical: space.lg, alignItems: 'center', marginTop: space.sm },
+  registerButtonText: { fontSize: 16, fontWeight: '700', letterSpacing: 0.5 },
+  footer: { flexDirection: 'row', justifyContent: 'center', marginTop: space.xl },
+  footerText: { fontSize: 14 },
+  loginLink: { fontSize: 14, fontWeight: '700' },
 });

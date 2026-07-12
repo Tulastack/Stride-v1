@@ -94,10 +94,10 @@ def _plausible_range(key: str, phase: str) -> tuple[float, float]:
     return PHASE_PLAUSIBLE.get(phase, {}).get(key, PLAUSIBLE.get(key, (float("-inf"), float("inf"))))
 
 
-UNIT = {"trunk_lean": "deg", "knee_drive": "deg", "hip_extension": "deg",
-        "knee_flexion": "deg", "arm_swing": "deg", "overstride": "%",
+UNIT = {"trunk_lean": "°", "knee_drive": "°", "hip_extension": "°",
+        "knee_flexion": "°", "arm_swing": "°", "overstride": "%",
         "vertical_oscillation": "%", "contact_time_ms": "ms", "cadence_spm": "spm",
-        "knee_valgus": "%", "pelvic_drop": "deg"}
+        "knee_valgus": "%", "pelvic_drop": "°"}
 PLANE = {"trunk_lean": "sagittal", "knee_drive": "sagittal", "hip_extension": "sagittal",
          "knee_flexion": "sagittal", "arm_swing": "sagittal", "overstride": "sagittal",
          "vertical_oscillation": "temporal", "contact_time_ms": "temporal", "cadence_spm": "temporal",
@@ -154,6 +154,26 @@ FPS_TRUST_GATE = 120.0
 # Perspective/scale corrupt vertical CoM off-axis and it is unmeasured on runners
 # (honesty ledger #9) — keep it a candidate, never headline-trusted yet.
 CANDIDATE = {"vertical_oscillation"}
+
+_UNIT_SUFFIXES = ("_ms", "_spm")
+
+
+def _metric_label(key: str) -> str:
+    """Human label for a metric key — strips a trailing unit suffix so e.g.
+    'contact_time_ms' reads as 'contact time', not 'contact time ms'."""
+    base = key
+    for suffix in _UNIT_SUFFIXES:
+        if base.endswith(suffix):
+            base = base[: -len(suffix)]
+            break
+    return base.replace("_", " ")
+
+
+def _fmt_value(val: float, unit: str) -> str:
+    """Thousands-separated number with unit — no space before deg/percent
+    (e.g. '18°', '40%'), a space before abbreviations (e.g. '167 ms')."""
+    num = f"{val:,.0f}"
+    return f"{num}{unit}" if unit in ("°", "%") else f"{num} {unit}"
 
 _VERT_DOWN = np.array([1.0, 0.0])  # image coords are [y, x]; y increases downward
 _UP = np.array([-1.0, 0.0])
@@ -510,22 +530,30 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
             ts = int(frame_i / max(src_fps, 1e-6) * 1000)
             flaws.append({
                 "id": fid, "name": NAMES[key], "phase": phase, "severity": sev,
-                "plainExplanation": f"Your {key.replace('_', ' ')} ({val:.0f}{UNIT[key]}) is {direction} the typical {lo:.0f}-{hi:.0f}{UNIT[key]}. {WHY[key]}",
+                "plainExplanation": f"{WHY[key]} Your {_metric_label(key)} is {direction} typical — {_fmt_value(val, UNIT[key])} vs. {_fmt_value(lo, UNIT[key])}–{_fmt_value(hi, UNIT[key])}.",
                 "evidence": {"frameTimestampMs": ts,
                              "jointAngles3D": {"knee_drive": round(values['knee_drive'][0], 1), "hip_extension": round(values['hip_extension'][0], 1), "trunk_lean": round(values['trunk_lean'][0], 1)},
                              "measured": band, "normalRange": list(_norm_range(key, phase)), "viewpointPenalty": round(vp, 2)},
             })
             recs.append({"flawId": fid, **DRILLS[key]})
 
-    # Running economy: composite 0-100 from how close usable metrics sit to their band.
-    econ_terms = []
+    # Running economy: composite 0-100 from how close usable, TRUSTED metrics sit
+    # to their band. A metric marked "experimental" (e.g. a temporal reading taken
+    # below FPS_TRUST_GATE) is excluded here — its number can still be wildly off
+    # even with high keypoint confidence, and one bad term would otherwise floor
+    # the whole score to 0. Fall back to usable-but-experimental terms only if
+    # NOTHING trusted survived, so the score still degrades gracefully instead of
+    # silently reporting a flat 0.
+    trusted_terms, fallback_terms = [], []
     for m in metrics:
         k = m["key"]; v = m["measured"]["value"]
         if not per_usable[k] or v <= 0:
             continue
         lo, hi = _norm_range(k, phase)
         mid = (lo + hi) / 2; half = max((hi - lo) / 2, 1e-6)
-        econ_terms.append(max(0.0, 1.0 - abs(v - mid) / (half * 2)))
+        term = max(0.0, 1.0 - abs(v - mid) / (half * 2))
+        (trusted_terms if m["trustStatus"] == "trusted" else fallback_terms).append(term)
+    econ_terms = trusted_terms or fallback_terms
     economy = int(round(100 * (sum(econ_terms) / len(econ_terms)))) if econ_terms else 0
 
     overall = float(np.mean([m["measured"]["confidence"] for m in metrics]))

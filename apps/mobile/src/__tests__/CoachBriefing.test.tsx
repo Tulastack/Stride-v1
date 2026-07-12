@@ -11,7 +11,7 @@ jest.mock('expo-router', () => ({
 }));
 
 jest.mock('../lib/analysisApi', () => ({
-  fetchAnalysisHistory: jest.fn(),
+  fetchAnalysisHistory: jest.fn(async () => []),
 }));
 
 jest.mock('../services/api', () => ({

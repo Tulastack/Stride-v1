@@ -19,6 +19,8 @@ const createSessionSchema = z.object({
 });
 
 import { generateCoachReply, buildAnalysisContext, runTrackCoach, buildCoachTools } from '../lib/coach.js';
+import { isCalendarRelevant } from '../lib/coach/calendarRelevance.js';
+import { CoachRateLimitError } from '../lib/coach/errors.js';
 
 const messageSchema = z.object({
   content: z.string().min(1).max(5000),
@@ -222,6 +224,11 @@ router.post('/:id/message', authenticate, async (req: any, res: Response, next: 
         onProgress: (ev) => { progress.push(ev.label); },
       });
     } catch (agentErr) {
+      if (agentErr instanceof CoachRateLimitError) {
+        // Same Groq account/quota — retrying via the fallback path would just
+        // fail again. Surface the friendly rate-limit message immediately.
+        throw agentErr;
+      }
       console.error('Coach agent failed, falling back to single-shot reply:', agentErr);
       progress.push('Drafting your coaching plan');
       assistantText = await generateCoachReply({
@@ -232,7 +239,8 @@ router.post('/:id/message', authenticate, async (req: any, res: Response, next: 
     }
 
     await touchCoachSession(id);
-    res.json({ role: 'assistant', content: assistantText, progress });
+    const calendarRelevant = await isCalendarRelevant(assistantText);
+    res.json({ role: 'assistant', content: assistantText, progress, calendarRelevant });
   } catch (err) {
     next(err);
   }
@@ -262,9 +270,15 @@ router.post('/:id/add-to-calendar', authenticate, async (req: any, res: Response
     tomorrow.setDate(now.getDate() + 1);
     const tomorrowStr = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
 
-    const planPrompt = `Based on this conversation:\n${conversationSummary}\n\nGenerate a JSON array of workout/drill events for the next 2 weeks.
-Each event: {"title": "string", "eventType": "drill" or "workout" or "rest", "scheduledDate": "YYYY-MM-DD", "details": {"volume": "string", "cue": "string"}}
-Rules: max 2 hard days in a row, include rest days, start from tomorrow (use realistic dates starting from ${tomorrowStr}).
+    const planPrompt = `Based on this conversation:\n${conversationSummary}\n\nGenerate a JSON array of events for the next 2 weeks.
+Each event: {"title": "string", "eventType": "drill" or "workout" or "rest" or "hydration" or "recovery" or "cross_training", "scheduledDate": "YYYY-MM-DD", "details": {"sets": number (optional), "reps": number (optional), "volume": "string", "cue": "string"}}
+Include numeric "sets" and "reps" whenever the event is a countable drill/exercise (e.g. high knee switches). Use "volume" for anything better described as a duration/distance (e.g. "20min tempo run", "400m x 4") instead of sets/reps.
+"drill" and "workout" are the primary event types — this plan should be built around those by default. Only include "hydration", "recovery" (e.g. foam rolling, ice bath, mobility work), or "cross_training" (e.g. swimming, cycling, yoga) events if the athlete specifically brought that up in the conversation — don't invent them for a conversation that was only about drills or workouts.
+Rules:
+- Keep each day manageable — typically 1 main workout and a couple of form drills.
+- Include rest days. Athletes need recovery.
+- No more than 2 hard days in a row.
+- Start from tomorrow (${tomorrowStr}).
 Output ONLY the raw JSON array. No markdown. No explanation. Just [ ... ]`;
 
     const { getAnalysesByUser } = await import('../db/queries.js');

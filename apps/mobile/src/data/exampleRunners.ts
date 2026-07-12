@@ -1,0 +1,123 @@
+// Curated reference runners for the Progress tab's Insights "Runner to Watch"
+// box — real, diverse elite track & field athletes (sprints, hurdles, middle
+// and long distance, relays; mixed era/gender/nationality), referenced purely
+// as public technique examples. No video assets yet (`videoUrl` left unset) —
+// swap in real clips/links when available.
+
+export interface ExampleRunner {
+  id: string;
+  name: string;
+  specialty: string;
+  formNote: string;
+  videoUrl?: string;
+}
+
+export const EXAMPLE_RUNNERS: ExampleRunner[] = [
+  { id: 'r001', name: 'Usain Bolt', specialty: '100m / 200m', formNote: 'Watch the long, relaxed stride and how upright he stays through max velocity without losing turnover.' },
+  { id: 'r002', name: 'Yohan Blake', specialty: '100m', formNote: 'Watch the explosive drive phase and aggressive arm drive out of the blocks.' },
+  { id: 'r003', name: 'Justin Gatlin', specialty: '100m', formNote: 'Watch the powerful, compact acceleration mechanics through the first 30m.' },
+  { id: 'r004', name: 'Tyson Gay', specialty: '100m / 200m', formNote: 'Watch the smooth, low-to-the-ground drive phase transitioning into upright sprinting.' },
+  { id: 'r005', name: 'Asafa Powell', specialty: '100m', formNote: 'Watch the long stride length and relaxed shoulders at top speed.' },
+  { id: 'r006', name: 'Christian Coleman', specialty: '100m', formNote: 'Watch the exceptionally quick reaction and turnover in the opening 20m.' },
+  { id: 'r007', name: 'Noah Lyles', specialty: '200m', formNote: 'Watch how he holds top-end speed through the curve into the home straight.' },
+  { id: 'r008', name: 'Fred Kerley', specialty: '100m', formNote: 'Watch the tall, powerful upright posture maintained at full speed.' },
+  { id: 'r009', name: 'Trayvon Bromell', specialty: '100m', formNote: 'Watch the compact, efficient drive phase mechanics.' },
+  { id: 'r010', name: 'Andre De Grasse', specialty: '200m', formNote: 'Watch the relaxed face and shoulders even while producing high force.' },
+  { id: 'r011', name: 'Akani Simbine', specialty: '100m', formNote: 'Watch the consistent, controlled acceleration pattern.' },
+  { id: 'r012', name: 'Ferdinand Omanyala', specialty: '100m', formNote: 'Watch the powerful start and quick first-step reaction.' },
+  { id: 'r013', name: 'Letsile Tebogo', specialty: '100m / 200m', formNote: 'Watch the smooth top-end mechanics and stride efficiency down the straight.' },
+  { id: 'r014', name: 'Marcell Jacobs', specialty: '100m', formNote: 'Watch the strong drive phase and quick transition to upright sprinting.' },
+  { id: 'r015', name: 'Carl Lewis', specialty: '100m / 200m', formNote: 'Watch the tall, relaxed sprinting posture and long acceleration pattern.' },
+  { id: 'r016', name: 'Maurice Greene', specialty: '100m', formNote: 'Watch the low, powerful drive phase and quick leg turnover.' },
+  { id: 'r017', name: 'Donovan Bailey', specialty: '100m', formNote: 'Watch the explosive start and strong drive-phase posture.' },
+  { id: 'r018', name: 'Linford Christie', specialty: '100m', formNote: 'Watch the disciplined, patient drive phase before rising to full height.' },
+  { id: 'r019', name: 'Jim Hines', specialty: '100m', formNote: 'Watch the classic upright sprint posture at top speed.' },
+  { id: 'r020', name: 'Bob Hayes', specialty: '100m', formNote: 'Watch the powerful, driving arm action.' },
+  { id: 'r021', name: 'Florence Griffith-Joyner', specialty: '100m / 200m', formNote: 'Watch the long stride and relaxed upper body at top speed.' },
+  { id: 'r022', name: 'Elaine Thompson-Herah', specialty: '100m / 200m', formNote: 'Watch the powerful drive phase and efficient acceleration into top speed.' },
+  { id: 'r023', name: 'Shelly-Ann Fraser-Pryce', specialty: '100m', formNote: 'Watch the exceptionally quick start and turnover for her stride length.' },
+  { id: 'r024', name: 'Shericka Jackson', specialty: '200m', formNote: 'Watch the strong top-end speed maintenance through the finish.' },
+  { id: 'r025', name: 'Dina Asher-Smith', specialty: '100m / 200m', formNote: 'Watch the relaxed arm carriage and smooth acceleration curve.' },
+  { id: 'r026', name: 'Marion Jones', specialty: '100m / 200m', formNote: 'Watch the long, powerful stride at top speed.' },
+  { id: 'r027', name: 'Merlene Ottey', specialty: '100m / 200m', formNote: 'Watch the efficient, economical stride pattern sustained across rounds.' },
+  { id: 'r028', name: 'Gail Devers', specialty: '100m', formNote: 'Watch the quick, low drive phase out of the blocks.' },
+  { id: 'r029', name: 'Evelyn Ashford', specialty: '100m', formNote: 'Watch the smooth, relaxed top-end sprinting form.' },
+  { id: 'r030', name: 'Wyomia Tyus', specialty: '100m', formNote: 'Watch the clean, upright sprinting posture.' },
+  { id: 'r031', name: 'Wilma Rudolph', specialty: '100m / 200m', formNote: 'Watch the long, fluid stride at full speed.' },
+  { id: 'r032', name: 'Betty Cuthbert', specialty: '100m / 200m', formNote: 'Watch the classic upright sprint form and strong finish.' },
+  { id: 'r033', name: 'Jesse Owens', specialty: '100m / 200m', formNote: 'Watch the smooth, powerful stride and minimal wasted motion.' },
+  { id: 'r034', name: 'Tommie Smith', specialty: '200m', formNote: 'Watch the long, striding acceleration through the curve.' },
+  { id: 'r035', name: 'Valeriy Borzov', specialty: '100m / 200m', formNote: 'Watch the technically precise, controlled acceleration pattern.' },
+  { id: 'r036', name: 'Michael Johnson', specialty: '200m / 400m', formNote: 'Watch the distinctive upright posture with short, extremely quick strides.' },
+  { id: 'r037', name: 'Wayde van Niekerk', specialty: '400m', formNote: 'Watch the relaxed, efficient stride maintained through the final 100m.' },
+  { id: 'r038', name: 'Steven Gardiner', specialty: '400m', formNote: 'Watch the long stride and smooth top-end speed for a 400m runner.' },
+  { id: 'r039', name: 'Kirani James', specialty: '400m', formNote: 'Watch the controlled pacing and relaxed shoulders through the bend.' },
+  { id: 'r040', name: 'LaShawn Merritt', specialty: '400m', formNote: 'Watch the strong, driving arm action maintained late in the race.' },
+  { id: 'r041', name: 'Jeremy Wariner', specialty: '400m', formNote: 'Watch the tall posture and consistent stride length across the race.' },
+  { id: 'r042', name: 'Michael Norman', specialty: '400m', formNote: 'Watch the fast early pace held together with relaxed mechanics.' },
+  { id: 'r043', name: 'Allyson Felix', specialty: '200m / 400m', formNote: 'Watch the smooth, efficient stride and strong finishing drive.' },
+  { id: 'r044', name: 'Sanya Richards-Ross', specialty: '400m', formNote: 'Watch the fast, relaxed turnover maintained into the home straight.' },
+  { id: 'r045', name: 'Shaunae Miller-Uibo', specialty: '400m', formNote: 'Watch the long stride and composed finish, famous for the dip at the line.' },
+  { id: 'r046', name: 'Marileidy Paulino', specialty: '400m', formNote: 'Watch the strong, sustained pace through the final bend.' },
+  { id: 'r047', name: 'Colin Jackson', specialty: '110m hurdles', formNote: 'Watch the tight, minimal-clearance hurdle technique and quick down-leg.' },
+  { id: 'r048', name: 'Aries Merritt', specialty: '110m hurdles', formNote: 'Watch the aggressive lead-leg attack and rhythm between hurdles.' },
+  { id: 'r049', name: 'Grant Holloway', specialty: '110m hurdles', formNote: 'Watch the consistent 3-step rhythm and low hurdle clearance.' },
+  { id: 'r050', name: 'Renaldo Nehemiah', specialty: '110m hurdles', formNote: 'Watch the flat, sprint-like hurdling technique.' },
+  { id: 'r051', name: 'Edwin Moses', specialty: '400m hurdles', formNote: 'Watch the famous 13-step pattern between hurdles and unwavering rhythm.' },
+  { id: 'r052', name: 'Karsten Warholm', specialty: '400m hurdles', formNote: 'Watch the aggressive, powerful stride pattern attacking each hurdle.' },
+  { id: 'r053', name: 'Rai Benjamin', specialty: '400m hurdles', formNote: 'Watch the smooth stride-pattern shifts as fatigue sets in late in the race.' },
+  { id: 'r054', name: 'Sally Pearson', specialty: '100m hurdles', formNote: 'Watch the quick, aggressive attack on each hurdle with minimal air time.' },
+  { id: 'r055', name: 'Kendra Harrison', specialty: '100m hurdles', formNote: 'Watch the tight hurdle clearance and fast down-leg strike.' },
+  { id: 'r056', name: 'Jasmine Camacho-Quinn', specialty: '100m hurdles', formNote: 'Watch the quick, low clearance and consistent step pattern.' },
+  { id: 'r057', name: 'Danielle Williams', specialty: '100m hurdles', formNote: 'Watch the smooth rhythm maintained between hurdles.' },
+  { id: 'r058', name: 'Sydney McLaughlin-Levrone', specialty: '400m hurdles', formNote: 'Watch the even stride pattern held across all ten hurdles.' },
+  { id: 'r059', name: 'Dalilah Muhammad', specialty: '400m hurdles', formNote: 'Watch the strong, composed hurdle clearance late in the race.' },
+  { id: 'r060', name: 'Femke Bol', specialty: '400m hurdles', formNote: 'Watch the consistent stride pattern and strong finishing speed.' },
+  { id: 'r061', name: 'Sebastian Coe', specialty: '800m / 1500m', formNote: 'Watch the light, quick turnover and relaxed upper body at race pace.' },
+  { id: 'r062', name: 'Steve Ovett', specialty: '800m / 1500m', formNote: 'Watch the smooth, economical stride at middle-distance pace.' },
+  { id: 'r063', name: 'David Rudisha', specialty: '800m', formNote: 'Watch the tall, powerful stride sustained across two full laps at sprint effort.' },
+  { id: 'r064', name: 'Wilson Kipketer', specialty: '800m', formNote: 'Watch the long, relaxed stride even at a very fast pace.' },
+  { id: 'r065', name: 'Emmanuel Korir', specialty: '800m', formNote: 'Watch the strong, controlled pacing through the first lap.' },
+  { id: 'r066', name: 'Athing Mu', specialty: '800m', formNote: 'Watch the relaxed, efficient stride held through a fast last 200m.' },
+  { id: 'r067', name: 'Keely Hodgkinson', specialty: '800m', formNote: 'Watch the smooth acceleration through the final straight.' },
+  { id: 'r068', name: 'Caster Semenya', specialty: '800m', formNote: 'Watch the powerful, front-running pace judgment and stride economy.' },
+  { id: 'r069', name: 'Hicham El Guerrouj', specialty: '1500m', formNote: 'Watch the light, floating stride even during a fast finishing kick.' },
+  { id: 'r070', name: 'Jakob Ingebrigtsen', specialty: '1500m / 5000m', formNote: 'Watch the high cadence and relaxed arm swing across changing paces.' },
+  { id: 'r071', name: 'Faith Kipyegon', specialty: '1500m', formNote: 'Watch the smooth, efficient stride maintained through a fast championship kick.' },
+  { id: 'r072', name: 'Genzebe Dibaba', specialty: '1500m', formNote: 'Watch the light, quick turnover at middle-distance pace.' },
+  { id: 'r073', name: 'Sifan Hassan', specialty: '1500m / 5000m / 10000m', formNote: 'Watch the distinctive high-cadence, upright stride across distances.' },
+  { id: 'r074', name: 'Mary Decker', specialty: '1500m / 3000m', formNote: 'Watch the smooth, economical stride pattern at pace.' },
+  { id: 'r075', name: 'Haile Gebrselassie', specialty: '10000m / marathon', formNote: 'Watch the famously efficient, low-vertical-oscillation stride.' },
+  { id: 'r076', name: 'Kenenisa Bekele', specialty: '5000m / 10000m', formNote: 'Watch the relaxed shoulders and quick, light foot strikes at pace.' },
+  { id: 'r077', name: 'Mo Farah', specialty: '5000m / 10000m', formNote: 'Watch the controlled, economical stride through a long race before the finishing kick.' },
+  { id: 'r078', name: 'Eliud Kipchoge', specialty: 'Marathon', formNote: 'Watch the remarkably consistent, relaxed stride sustained for over two hours.' },
+  { id: 'r079', name: 'Joshua Cheptegei', specialty: '5000m / 10000m', formNote: 'Watch the high cadence and upright posture maintained at a fast, sustained pace.' },
+  { id: 'r080', name: 'Paula Radcliffe', specialty: 'Marathon', formNote: 'Watch the high cadence and forward lean sustained across the marathon distance.' },
+  { id: 'r081', name: 'Tirunesh Dibaba', specialty: '5000m / 10000m', formNote: 'Watch the relaxed cruising stride that shifts into a powerful finishing kick.' },
+  { id: 'r082', name: 'Almaz Ayana', specialty: '10000m', formNote: 'Watch the high cadence and light ground contact at a fast, sustained pace.' },
+  { id: 'r083', name: 'Letesenbet Gidey', specialty: '5000m / 10000m', formNote: 'Watch the smooth, efficient stride held across a long, fast race.' },
+  { id: 'r084', name: 'Yalemzerf Yehualaw', specialty: 'Half marathon / marathon', formNote: 'Watch the quick, light stride sustained at a fast road-race pace.' },
+  { id: 'r085', name: 'Ryan Crouser', specialty: 'Shot put (start speed)', formNote: 'Watch the explosive lower-body drive off the line during warm-up sprints.' },
+  { id: 'r086', name: 'Su Bingtian', specialty: '100m', formNote: 'Watch the exceptionally quick start and low, powerful drive phase.' },
+  { id: 'r087', name: 'Frankie Fredericks', specialty: '100m / 200m', formNote: 'Watch the tall, relaxed sprinting posture at top speed.' },
+  { id: 'r088', name: 'Ato Boldon', specialty: '100m / 200m', formNote: 'Watch the powerful drive phase and quick transition to top speed.' },
+  { id: 'r089', name: 'Kerron Clement', specialty: '400m hurdles', formNote: 'Watch the consistent stride pattern maintained between hurdles.' },
+  { id: 'r090', name: 'Angelo Taylor', specialty: '400m hurdles', formNote: 'Watch the smooth rhythm shifting from a 13-step to 15-step pattern.' },
+  { id: 'r091', name: 'John Akii-Bua', specialty: '400m hurdles', formNote: 'Watch the tall, powerful hurdle clearance technique.' },
+  { id: 'r092', name: 'Michael East', specialty: '1500m', formNote: 'Watch the relaxed, tucked arm carriage at middle-distance pace.' },
+  { id: 'r093', name: 'Noureddine Morceli', specialty: '1500m', formNote: 'Watch the smooth, controlled pace judgment through a championship race.' },
+  { id: 'r094', name: 'Genevieve LaCaze', specialty: 'Steeplechase', formNote: 'Watch the efficient hurdle-clearance technique combined with distance-running stride.' },
+  { id: 'r095', name: 'Conseslus Kipruto', specialty: 'Steeplechase', formNote: 'Watch the quick, aggressive water-jump technique.' },
+  { id: 'r096', name: 'Beatrice Chepkoech', specialty: 'Steeplechase', formNote: 'Watch the strong, efficient barrier clearance at a fast pace.' },
+  { id: 'r097', name: 'Elijah Manangoi', specialty: '1500m', formNote: 'Watch the relaxed cruising stride before a powerful finishing kick.' },
+  { id: 'r098', name: 'Laura Muir', specialty: '1500m', formNote: 'Watch the relaxed cruising stride before a strong closing kick.' },
+  { id: 'r099', name: 'Christian Taylor', specialty: 'Sprint approach (triple jump)', formNote: 'Watch the accelerating sprint approach before takeoff — pure speed mechanics.' },
+  { id: 'r100', name: 'Marie-Josée Ta Lou', specialty: '100m / 200m', formNote: 'Watch the quick start and relaxed top-end speed through the finish.' },
+];
+
+/** Deterministic daily pick — stable within a day, rotates the next day. No
+ * backend needed; just a rotating index off the current date. */
+export function pickRunnerOfTheDay(runners: ExampleRunner[] = EXAMPLE_RUNNERS): ExampleRunner {
+  const dayIndex = Math.floor(Date.now() / 86_400_000);
+  return runners[dayIndex % runners.length];
+}

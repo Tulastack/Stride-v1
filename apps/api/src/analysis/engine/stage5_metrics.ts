@@ -151,9 +151,9 @@ export function computeMetrics(frames: Frame3D[], fps: number, worldUp?: Vec3): 
     stepIntervals.length && mean(stepIntervals) > 0 ? 60 / mean(stepIntervals) : 0;
 
   const metrics: ComputedMetric[] = [
-    { key: 'trunk_lean', value: round(trunkMean), unit: 'deg', normalRange: [38, 50], plane: 'sagittal', evidenceFrame: trunkFrame },
-    { key: 'knee_drive', value: round(kneeDrive), unit: 'deg', normalRange: [60, 85], plane: 'sagittal', evidenceFrame: kneeFrame },
-    { key: 'hip_extension', value: round(hipExt), unit: 'deg', normalRange: [35, 55], plane: 'sagittal', evidenceFrame: hipFrame },
+    { key: 'trunk_lean', value: round(trunkMean), unit: '°', normalRange: [38, 50], plane: 'sagittal', evidenceFrame: trunkFrame },
+    { key: 'knee_drive', value: round(kneeDrive), unit: '°', normalRange: [60, 85], plane: 'sagittal', evidenceFrame: kneeFrame },
+    { key: 'hip_extension', value: round(hipExt), unit: '°', normalRange: [35, 55], plane: 'sagittal', evidenceFrame: hipFrame },
     { key: 'contact_time_ms', value: round(contactTime), unit: 'ms', normalRange: [80, 110], plane: 'temporal', evidenceFrame: validStances[0]?.strikeIdx ?? 0 },
     { key: 'cadence_spm', value: round(cadence), unit: 'spm', normalRange: [160, 200], plane: 'temporal', evidenceFrame: 0 },
   ];

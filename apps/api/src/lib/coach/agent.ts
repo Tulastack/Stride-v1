@@ -7,6 +7,7 @@
 // real coaching agent rather than a generic chatbot wrapper.
 
 import type { CoachToolset } from './tools.js';
+import { CoachRateLimitError } from './errors.js';
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const MODEL = process.env.GROQ_MODEL ?? 'llama-3.3-70b-versatile';
@@ -16,13 +17,13 @@ const AGENT_SYSTEM_PROMPT = `You are "Stride Coach", an elite Track & Field coac
 
 YOU ARE A GROUNDED AGENT — USE YOUR TOOLS. Do not answer technical coaching questions from memory alone:
 • Call search_track_knowledge before giving mechanics/drill/strategy/periodization/nutrition/recovery advice, and base your answer on what it returns.
-• Call get_athlete_metrics whenever you discuss the athlete's form, so you cite their REAL measured numbers (e.g. "your knee drive of 59° is below the 80–110° range"). Never invent metrics.
+• Call get_athlete_metrics whenever you discuss the athlete's form. Use their REAL measured numbers to explain what's actually happening and why it costs them speed/efficiency — don't just recite a stat (e.g. not "your knee drive is 59°, normal is 80–110°" but "you're not driving your knee high enough in swing phase, which is shortening your stride"). Never invent metrics.
 • Call get_metric_trend when they ask about progress.
 • Call get_reference_drill before prescribing a specific named drill, to use the exact cue and surface any contraindications.
 • Call get_current_plan before proposing schedule changes, so you fit their existing plan and don't stack hard days.
 When knowledge tools return sources, weave the guidance in naturally; you may mention that it reflects established coaching science. If a metric is marked [experimental], hedge on it.
 
-CALENDAR: You can DISCUSS and design training, but you never schedule anything yourself. When you propose a plan or drills, end with an invitation like "Want me to add this to your plan?" and tell them to tap the calendar button below your message (the app requires their explicit approval — nothing is auto-added).
+CALENDAR: You can DISCUSS and design training, but you never schedule anything yourself. Workouts and drills are the primary things worth scheduling, and you don't need to ask whether to add a plan every time — the app shows a calendar button automatically when a reply contains a real, concrete plan (the athlete's tap is what actually adds it; nothing is auto-added). The athlete also has the flexibility to schedule other things themselves — hydration reminders, recovery (foam rolling, ice bath, mobility), cross-training (swimming, cycling, yoga) — but only build one of those into a plan if THEY specifically bring it up; don't volunteer it unprompted the way you would a workout. Only bring up scheduling explicitly if the athlete asks about it directly.
 
 PRIORITISATION: surface the TOP 1–2 things to fix, worst first. Don't dump every metric.
 
@@ -44,7 +45,17 @@ export interface RunCoachParams {
   toolset: CoachToolset;
   /** Injectable fetch for tests; defaults to global fetch. */
   fetchImpl?: typeof fetch;
+  /** Optional progress callback, fired as the agent works through tool calls. */
+  onProgress?: (ev: { label: string }) => void;
 }
+
+const TOOL_PROGRESS_LABELS: Record<string, string> = {
+  search_track_knowledge: 'Checking coaching knowledge',
+  get_athlete_metrics: 'Reading your latest analysis',
+  get_metric_trend: 'Checking your progress trend',
+  get_reference_drill: 'Looking up drill cues',
+  get_current_plan: 'Reviewing your current plan',
+};
 
 function parseArgs(raw: unknown): Record<string, any> {
   if (raw && typeof raw === 'object') return raw as Record<string, any>;
@@ -95,6 +106,7 @@ export async function runTrackCoach(params: RunCoachParams): Promise<string> {
     });
     if (!resp.ok) {
       const t = await resp.text().catch(() => '');
+      if (resp.status === 429) throw new CoachRateLimitError();
       throw new Error(`Groq API error: ${resp.status} ${t.slice(0, 300)}`);
     }
     const json = (await resp.json()) as any;
@@ -108,6 +120,7 @@ export async function runTrackCoach(params: RunCoachParams): Promise<string> {
       for (const call of toolCalls) {
         const fnName = call.function?.name ?? '';
         const fnArgs = parseArgs(call.function?.arguments);
+        params.onProgress?.({ label: TOOL_PROGRESS_LABELS[fnName] ?? 'Thinking it through' });
         const result = await params.toolset.execute(fnName, fnArgs);
         messages.push({
           role: 'tool',

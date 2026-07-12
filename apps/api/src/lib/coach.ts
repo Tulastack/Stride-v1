@@ -3,6 +3,8 @@
 // and recovery. It receives the ML analyzer's structured output as context so
 // every reply references the athlete's real measured numbers.
 
+import { CoachRateLimitError } from './coach/errors.js';
+
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const MODEL = process.env.GROQ_MODEL ?? 'llama-3.3-70b-versatile';
 
@@ -10,9 +12,9 @@ const SYSTEM_PROMPT = `You are "Stride Coach", an expert coach for runners and s
 
 SCOPE — your primary expertise is: (1) running form/biomechanics, (2) track training & periodization, (3) sports nutrition & hydration, (4) recovery & injury prevention. BUT you are also helpful with adjacent topics athletes care about: mental performance, team dynamics, recruiting/college athletics, competition prep, and general fitness. For topics completely outside athletics (math homework, coding, etc.), politely decline in one sentence.
 
-GROUNDING — you are given the athlete's LATEST run analysis if available. When discussing form, reference their actual numbers (e.g. "your knee drive of 59° is below the 80–110° range"). Do not invent metrics you weren't given.
+GROUNDING — you are given the athlete's LATEST run analysis if available. When discussing form, use the numbers to explain what's actually happening and why it costs them speed/efficiency — don't just recite a stat (e.g. not "your knee drive is 59°, normal is 80–110°" but "you're not driving your knee high enough in swing phase, which is shortening your stride"). Do not invent metrics you weren't given.
 
-CALENDAR INTEGRATION — when you suggest workouts or drill programs, ALWAYS end with: "Would you like me to add this to your calendar?" If the athlete says yes or asks to schedule/plan, confirm and tell them to tap the calendar button below your message.
+CALENDAR INTEGRATION — you never schedule anything yourself. Workouts and drills are the primary things worth scheduling, and you don't need to ask whether to add a plan every time — the app shows a calendar button automatically when a reply contains a real plan. The athlete also has the flexibility to schedule other things themselves — hydration reminders, recovery (foam rolling, ice bath, mobility), cross-training (swimming, cycling, yoga) — but only build one of those into a plan if THEY specifically bring it up; don't volunteer it unprompted the way you would a workout. Only mention the calendar explicitly if the athlete asks about scheduling directly.
 
 PRIORITISATION — surface the TOP 1–2 things to fix, worst first. Don't dump every metric.
 
@@ -68,17 +70,19 @@ export function buildAnalysisContext(result: AnalysisLike | null, profile?: Prof
     return `${who}\nLATEST RUN ANALYSIS: none available yet — give general, encouraging guidance and invite them to record a side-on running clip.`;
   }
 
+  const fmt = (n: number) => n.toLocaleString('en-US');
   const lines = result.metrics.map((m) => {
     const [lo, hi] = m.normalRange ?? [0, 0];
     const inRange = m.measured.value >= lo && m.measured.value <= hi;
     const tag = m.trustStatus === 'experimental' ? ' [experimental]' : '';
     const flag = inRange ? 'ok' : m.measured.value < lo ? 'LOW' : 'HIGH';
-    return `- ${m.key.replace(/_/g, ' ')}: ${m.measured.value}${m.unit} (normal ${lo}–${hi}${m.unit}) → ${flag}${tag}`;
+    const label = m.key.replace(/_(ms|spm)$/, '').replace(/_/g, ' ');
+    return `- ${label}: ${fmt(m.measured.value)}${m.unit} (normal ${fmt(lo)}–${fmt(hi)}${m.unit}) → ${flag}${tag}`;
   });
   const flaws = (result.flaws ?? [])
     .sort((a, b) => b.severity - a.severity)
     .slice(0, 4)
-    .map((f) => `- ${f.name}`);
+    .map((f) => `- ${f.plainExplanation || f.name}`);
   const nudge = result.captureQuality?.primaryNudge;
 
   return [
@@ -117,6 +121,7 @@ export async function generateCoachReply(params: {
   if (!resp.ok) {
     const t = await resp.text();
     console.error('Groq API error:', resp.status, t);
+    if (resp.status === 429) throw new CoachRateLimitError();
     throw new Error(`Groq API error: ${resp.status}`);
   }
   const json = (await resp.json()) as any;
