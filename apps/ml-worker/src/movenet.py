@@ -57,6 +57,10 @@ CORE_JOINTS: list[str] = [
 # Model version string used in analysis results
 MOVENET_VERSION: str = "singlepose-thunder-v4"
 
+# Native keypoint layout this backend emits (COCO-17). Declared so the pose2d
+# seam can canonicalize it (see canonical_2d / pose_backend).
+KEYPOINT_FORMAT: str = "coco17"
+
 # ---------------------------------------------------------------------------
 # Model singleton
 # ---------------------------------------------------------------------------

@@ -24,8 +24,14 @@ from datetime import datetime, timezone
 from typing import Any, Iterable
 
 import numpy as np
+from scipy.signal import savgol_filter
 
-from src.biomechanics import KP, _angle_at_joint, _angle_between_vectors
+# Index joints by CANONICAL name, never by a backbone's raw indices — the pose2d
+# seam guarantees every frame is in this canonical (COCO-17) layout, so a backbone
+# swap can't silently feed the wrong joint (bug B2). CANON_KP == the old COCO-17
+# map for the current backbones, so this is behaviour-preserving.
+from src.canonical_2d import CANON_KP as KP
+from src.biomechanics import _angle_at_joint, _angle_between_vectors
 
 # lo/hi "healthy" bands (peak-based for angles). Sources: sprint biomech literature.
 NORMAL_RANGE: dict[str, tuple[float, float]] = {
@@ -39,15 +45,47 @@ NORMAL_RANGE: dict[str, tuple[float, float]] = {
     "contact_time_ms": (80.0, 140.0),
     "cadence_spm": (270.0, 330.0),
 }
-# Hard physical bounds (NOT the "healthy" band above) — a value outside these
-# isn't a bad-but-real measurement, it means the underlying gait detection
-# failed (e.g. _gait()'s threshold heuristic mis-timed a stride at low
-# POSE_FPS). Even a very slow jog never has ~1s of single-foot ground contact,
-# so a value like 1900ms should be excluded, not reported as data.
-PLAUSIBLE_RANGE: dict[str, tuple[float, float]] = {
-    "contact_time_ms": (40.0, 400.0),
-    "cadence_spm": (100.0, 400.0),
+# Hard PHYSICAL envelope — wider than the "healthy" band. A value outside this is
+# a measurement failure (off-axis perspective, bad crop, a static-bystander lock,
+# or sub-Nyquist temporal sampling), not a real fault. Such a value is never shown
+# as "trusted" and never raises a flaw — it is honest to say "couldn't measure"
+# rather than to flag a garbage number. See _assemble's plausibility gate.
+PLAUSIBLE: dict[str, tuple[float, float]] = {
+    "trunk_lean": (0.0, 40.0),
+    "knee_drive": (0.0, 135.0),
+    "hip_extension": (80.0, 200.0),
+    "knee_flexion": (5.0, 150.0),
+    "arm_swing": (20.0, 160.0),
+    "overstride": (0.0, 20.0),
+    "vertical_oscillation": (0.0, 20.0),
+    "contact_time_ms": (60.0, 400.0),
+    "cadence_spm": (140.0, 360.0),
 }
+
+# ── Sprint-phase-specific norms ───────────────────────────────────────────────
+# Running mechanics differ by PHASE. The drive/acceleration out of blocks has a
+# large, correct forward trunk lean (~40-50°) that would be wrongly flagged
+# against the upright max-velocity range (8-22°). We detect the phase from the
+# athlete's posture (see _assemble) and, for phase-sensitive metrics, override
+# the "healthy" band + plausibility envelope. Metrics not listed for a phase fall
+# back to the upright/global values above.
+ACCEL_LEAN_THRESH = 28.0  # median trunk lean (deg) above which a moving athlete is in drive/accel
+PHASE_NORMAL_RANGE: dict[str, dict[str, tuple[float, float]]] = {
+    "acceleration": {"trunk_lean": (35.0, 55.0)},
+}
+PHASE_PLAUSIBLE: dict[str, dict[str, tuple[float, float]]] = {
+    "acceleration": {"trunk_lean": (12.0, 75.0)},
+}
+
+
+def _norm_range(key: str, phase: str) -> tuple[float, float]:
+    return PHASE_NORMAL_RANGE.get(phase, {}).get(key, NORMAL_RANGE[key])
+
+
+def _plausible_range(key: str, phase: str) -> tuple[float, float]:
+    return PHASE_PLAUSIBLE.get(phase, {}).get(key, PLAUSIBLE.get(key, (float("-inf"), float("inf"))))
+
+
 UNIT = {"trunk_lean": "°", "knee_drive": "°", "hip_extension": "°",
         "knee_flexion": "°", "arm_swing": "°", "overstride": "%",
         "vertical_oscillation": "%", "contact_time_ms": "ms", "cadence_spm": "spm"}
@@ -134,6 +172,25 @@ def _smooth(x: np.ndarray, w: int = 3) -> np.ndarray:
     if len(x) < w:
         return x
     return np.convolve(x, np.ones(w) / w, mode="same")
+
+
+def _savgol(x: np.ndarray, w: int = 5, p: int = 2) -> np.ndarray:
+    """Causal-friendly Savitzky-Golay smoothing for per-frame angle series.
+
+    Kept SHORT on purpose: at pose_fps=15 an 11-tap window (~730 ms) is longer
+    than a full swing phase (~250-350 ms) and would flatten the very peaks
+    (max knee drive, peak swing flexion) the metrics report. A 5-tap window is
+    ~330 ms — long enough to kill per-frame jitter, short enough to keep peaks.
+    Analysis is a queued job, so a non-causal filter is fine here."""
+    n = len(x)
+    if n < 5:
+        return x
+    wl = min(w, n)
+    if wl % 2 == 0:
+        wl -= 1
+    if wl <= p:
+        return x
+    return np.asarray(savgol_filter(x, wl, p), dtype=float)
 
 
 def _unit2(v: np.ndarray) -> np.ndarray:
@@ -240,6 +297,51 @@ def _gait(lank: np.ndarray, rank: np.ndarray, fps: float) -> tuple[float, float]
     return round(contact_ms, 1), round(cadence, 1)
 
 
+def _gait_signal(lank_y: np.ndarray, rank_y: np.ndarray, fps: float) -> tuple[float, float]:
+    """Contact-time + cadence from a FULL-fps ankle-height signal (dual-rate).
+
+    Same footstrike model as _gait (foot lowest in the image = local max of ankle
+    y), but the smoothing window and inter-strike refractory scale with `fps`, so
+    it works at 30/60/120/240 fps and gives cadence/contact-time the temporal
+    resolution the 15fps pose sampling can't. Fed a per-frame ankle-y signal
+    tracked by optical flow between pose keyframes."""
+    sw = max(3, int(round(fps * 0.05)))          # ~50 ms smoothing
+    refractory = max(2, int(round(fps * 0.14)))   # ~140 ms min between same-foot strikes
+    strikes: list[int] = []
+    contact_runs: list[int] = []
+    for y in (lank_y, rank_y):
+        y = np.asarray(y, dtype=float)
+        if len(y) < 3:
+            continue
+        ys = _smooth(y, sw)
+        rng = float(ys.max() - ys.min())
+        if rng < 1e-3:
+            continue
+        strike_thr = float(ys.min() + rng * 0.7)
+        contact_thr = float(ys.min() + rng * 0.6)
+        last = -(10 ** 9)
+        run = 0
+        for i in range(len(ys)):
+            v = float(ys[i])
+            if v >= contact_thr:
+                run += 1
+            else:
+                if run >= 1:
+                    contact_runs.append(run)
+                run = 0
+            if 0 < i < len(ys) - 1 and (i - last) > refractory and v >= strike_thr and v >= ys[i - 1] and v >= ys[i + 1]:
+                strikes.append(i)
+                last = i
+        if run >= 1:
+            contact_runs.append(run)
+    strikes.sort()
+    intervals = [(strikes[i] - strikes[i - 1]) / fps for i in range(1, len(strikes))]
+    intervals = [d for d in intervals if d > 0.5 / fps]
+    cadence = 60.0 / float(np.mean(intervals)) if intervals else 0.0
+    contact_ms = float(np.mean(contact_runs)) / fps * 1000 if contact_runs else 0.0
+    return round(contact_ms, 1), round(cadence, 1)
+
+
 def _viewpoint_penalty(azimuth_deg: float, plane: str) -> float:
     a = math.radians(abs(azimuth_deg) % 180)
     out = math.sin(a) ** 2
@@ -255,11 +357,16 @@ def _band(value: float, conf: float) -> dict[str, float]:
 
 def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
               mean_conf: float, azimuth_deg: float, clip_id: str,
-              capture_fps: float | None = None, source_fps: float | None = None) -> dict[str, Any]:
+              capture_fps: float | None = None, source_fps: float | None = None,
+              timing_signal: list | None = None, timing_fps: float | None = None) -> dict[str, Any]:
     """Assemble metrics. `pose_fps` = keypoint sample rate (gait timing);
     `capture_fps` = phone capture rate (reported quality + nudges);
     `source_fps` = video container fps (flaw evidence timestamps)."""
     a = {k: np.array(v) for k, v in S.items()}
+    # Kill per-frame keypoint jitter on the angle series BEFORE taking peak
+    # percentiles — raw jitter inflates the p95/p5 extremes the metrics report.
+    for _ak in ("knee_drive", "hip_ext", "knee_flex", "elbow", "trunk"):
+        a[_ak] = _savgol(a[_ak])
     cap_fps = float(capture_fps if capture_fps is not None else pose_fps)
     src_fps = float(source_fps if source_fps is not None else pose_fps)
     # near-side foot contact frames (for overstride)
@@ -270,24 +377,60 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
         overstride_pct = min(float(np.median(os_vals)) * 100.0, 40.0)  # clamp implausible off-axis values
     vo_pct = min(float((a["hip_y"].max() - a["hip_y"].min()) / max(np.median(a["torso_len"]), 1e-6)) * 100.0, 25.0)
 
+    # ── Static-subject guard (the "guard" half of the P0 fix) ──────────────────
+    # A running subject's near ankle swings strongly in image-y each stride; a
+    # tracker that latched onto a standing bystander barely moves. If vertical
+    # ankle travel (as a fraction of leg length) is below a floor, the locked
+    # target is almost certainly not the runner — so we refuse to raise any
+    # authoritative flaw from it and say so, rather than emitting a low-economy
+    # result full of "experimental" numbers that looks like a real (bad) run.
+    _leg = max(float(np.median(a["leg_len"])), 1e-6)
+    subject_motion = round(max(float(a["l_rel"].max() - a["l_rel"].min()),
+                               float(a["r_rel"].max() - a["r_rel"].min())) / _leg, 2)
+    moving_subject = subject_motion >= 0.25
+
+    # trunk_lean / arm_swing use a robust MEDIAN, not mean: a clip can mix phases
+    # (e.g. a sprint block-start holds a bent "set" pose + straight bracing arms
+    # for many frames, then drives out) and occlusion outliers — mean is corrupted
+    # by those, median tracks the representative posture. The peak metrics below
+    # keep percentiles because the PEAK is the point of interest.
+    _trunk_med = float(np.median(a["trunk"]))
+    _elbow_med = float(np.median(a["elbow"]))
     values = {
-        "trunk_lean": (float(np.mean(a["trunk"])), int(np.argmin(np.abs(a["trunk"] - np.mean(a["trunk"]))))),
+        "trunk_lean": (_trunk_med, int(np.argmin(np.abs(a["trunk"] - _trunk_med)))),
         "knee_drive": (float(np.percentile(a["knee_drive"], 95)), int(np.argmax(a["knee_drive"]))),
         "hip_extension": (float(np.percentile(a["hip_ext"], 95)), int(np.argmax(a["hip_ext"]))),
         "knee_flexion": (float(np.percentile(a["knee_flex"], 5)), int(np.argmin(a["knee_flex"]))),
-        "arm_swing": (float(np.mean(a["elbow"])), 0),
+        "arm_swing": (_elbow_med, int(np.argmin(np.abs(a["elbow"] - _elbow_med)))),
         "overstride": (round(overstride_pct, 1), contacts[0] if contacts else 0),
         "vertical_oscillation": (round(vo_pct, 1), 0),
     }
-    contact_ms, cadence = _gait(a["l_rel"], a["r_rel"], pose_fps)
+    # Dual-rate timing (fixes B1): if a FULL-source-fps ankle signal is available
+    # (LK optical flow between pose keyframes), compute contact-time + cadence from
+    # it and let the temporal trust gate see the REAL foot-sample rate. Otherwise
+    # timing rides the 15fps pose rate and can never clear FPS_TRUST_GATE (=120).
+    if timing_signal is not None and timing_fps and len(timing_signal) >= 8:
+        _ts = np.asarray(timing_signal, dtype=float)  # cols: frame_index, lank_y, rank_y
+        contact_ms, cadence = _gait_signal(_ts[:, 1], _ts[:, 2], float(timing_fps))
+        temporal_fps = float(timing_fps)
+    else:
+        contact_ms, cadence = _gait(a["l_rel"], a["r_rel"], pose_fps)
+        # Temporal trust needs BOTH high capture rate and dense keypoints.
+        temporal_fps = min(cap_fps, pose_fps)
     values["contact_time_ms"] = (contact_ms, 0)
     values["cadence_spm"] = (cadence, 0)
 
-    # Temporal trust needs BOTH high capture rate and dense keypoints.
-    temporal_fps = min(cap_fps, pose_fps)
-
     metrics, flaws, recs, per_usable = [], [], [], {}
-    phase = "acceleration" if azimuth_deg < 45 else "max_velocity"
+    # Sprint PHASE from the athlete's posture, not the camera azimuth: a moving
+    # athlete with a large forward trunk lean is driving/accelerating; a low lean
+    # is upright max-velocity; a non-moving subject is in no running phase.
+    trunk_val = values["trunk_lean"][0]
+    if not moving_subject:
+        phase = "static"
+    elif trunk_val >= ACCEL_LEAN_THRESH:
+        phase = "acceleration"
+    else:
+        phase = "max_velocity"
     for key, (val, evi) in values.items():
         tier = TIER.get(key, 2)
         if tier == 1:
@@ -306,15 +449,27 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
             conf = mean_conf * (1 - vp)
             trust = "trusted" if (conf >= 0.6 and vp <= 0.5) else "experimental"
         conf = max(0.0, min(1.0, conf))
+        # Plausibility backstop: a value outside the physical envelope is a failed
+        # measurement (off-axis perspective, static-bystander lock, sub-Nyquist
+        # timing) — demote it to experimental so it is never shown as trusted.
+        plo, phi = _plausible_range(key, phase)
+        plausible = (val > 0) and (plo <= val <= phi)
+        if not plausible:
+            trust = "experimental"
         band = _band(val, conf)
-        plausible_lo, plausible_hi = PLAUSIBLE_RANGE.get(key, (0.0, math.inf))
-        usable = conf >= 0.35 and val > 0 and plausible_lo <= val <= plausible_hi
+        usable = conf >= 0.35 and plausible
         per_usable[key] = usable
         metrics.append({"key": key, "measured": band, "unit": UNIT[key],
-                        "normalRange": list(NORMAL_RANGE[key]), "comparableAcrossViews": True,
+                        "normalRange": list(_norm_range(key, phase)), "comparableAcrossViews": True,
                         "trustStatus": trust, "tier": tier})
-        lo, hi = NORMAL_RANGE[key]
-        if usable and (val < lo or val > hi):
+        lo, hi = _norm_range(key, phase)
+        # Only a TRUSTED, plausible metric may raise an authoritative flaw + drill.
+        # Experimental/descriptive metrics (temporal below the fps gate, tier-3
+        # spatial, off-axis angles) are reported with their value but never flagged
+        # as faults — that is the honesty fix for the "garbage wearing a trusted
+        # badge / false-flaw every clip" failures found in the baseline. And a
+        # non-moving (static-lock) subject never raises a flaw at all.
+        if moving_subject and trust == "trusted" and usable and (val < lo or val > hi):
             dev = (lo - val if val < lo else val - hi) / max(hi - lo, 1)
             sev = 3 if dev > 0.5 else 2 if dev > 0.2 else 1
             fid = f"flaw-{key.replace('_', '-')}"
@@ -327,7 +482,7 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
                 "plainExplanation": f"{WHY[key]} Your {_metric_label(key)} is {direction} typical — {_fmt_value(val, UNIT[key])} vs. {_fmt_value(lo, UNIT[key])}–{_fmt_value(hi, UNIT[key])}.",
                 "evidence": {"frameTimestampMs": ts,
                              "jointAngles3D": {"knee_drive": round(values['knee_drive'][0], 1), "hip_extension": round(values['hip_extension'][0], 1), "trunk_lean": round(values['trunk_lean'][0], 1)},
-                             "measured": band, "normalRange": list(NORMAL_RANGE[key]), "viewpointPenalty": round(vp, 2)},
+                             "measured": band, "normalRange": list(_norm_range(key, phase)), "viewpointPenalty": round(vp, 2)},
             })
             recs.append({"flawId": fid, **DRILLS[key]})
 
@@ -343,7 +498,7 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
         k = m["key"]; v = m["measured"]["value"]
         if not per_usable[k] or v <= 0:
             continue
-        lo, hi = NORMAL_RANGE[k]
+        lo, hi = _norm_range(k, phase)
         mid = (lo + hi) / 2; half = max((hi - lo) / 2, 1e-6)
         term = max(0.0, 1.0 - abs(v - mid) / (half * 2))
         (trusted_terms if m["trustStatus"] == "trusted" else fallback_terms).append(term)
@@ -352,20 +507,29 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
 
     overall = float(np.mean([m["measured"]["confidence"] for m in metrics]))
     nudge = None
-    if azimuth_deg > 45:
+    if not moving_subject:
+        nudge = "Couldn't lock onto a clearly running subject — make sure the runner is centered (or brush to select them) and moving across the frame."
+    elif azimuth_deg > 45:
         nudge = "Film from the side (perpendicular to running direction) for trustworthy joint angles."
     elif cap_fps < 60:
         nudge = "Record at 120fps+ for accurate ground-contact and cadence."
 
+    if not moving_subject:
+        summary = f"Couldn't get a clear read on a running subject in this clip. Economy {economy}/100."
+    elif not flaws:
+        summary = f"Clean mechanics — nothing flagged. Economy {economy}/100."
+    else:
+        summary = f"{len(flaws)} thing{'s' if len(flaws) > 1 else ''} to work on. Economy {economy}/100."
+
     return {
         "id": f"analysis-{clip_id}", "phase": phase, "economyScore": economy,
-        "summary": (f"Clean mechanics — nothing flagged. Economy {economy}/100." if not flaws
-                    else f"{len(flaws)} thing{'s' if len(flaws) > 1 else ''} to work on. Economy {economy}/100."),
+        "summary": summary,
         "flaws": flaws, "recommendations": recs, "metrics": metrics,
         "captureQuality": {"overall": round(overall, 2), "fps": round(cap_fps, 1),
                            "poseFps": round(pose_fps, 1), "motionBlur": "low",
                            "framing": "full", "perMetricUsable": per_usable,
                            "cameraAzimuthDeg": round(azimuth_deg, 1),
+                           "subjectMotion": subject_motion, "movingSubject": moving_subject,
                            **({"primaryNudge": nudge} if nudge else {})},
         "reconstructionMethod": "2d", "createdAt": datetime.now(timezone.utc).isoformat(),
     }
@@ -382,7 +546,9 @@ def analyze_2d_sagittal_stream(frame_iter: Iterable[dict], fps: float,
                                source_fps: float | None = None,
                                capture_fps: float | None = None,
                                image_down: tuple[float, float] | None = None,
-                               estimate_azimuth: bool = True) -> dict[str, Any]:
+                               estimate_azimuth: bool = True,
+                               timing_signal: list | None = None,
+                               timing_fps: float | None = None) -> dict[str, Any]:
     """Memory-lean: consume a frame generator in ONE pass, retaining only scalar
     series. Raises low_confidence_video if too few usable frames survive. Stops
     after max_frames to bound worst-case latency.
@@ -442,7 +608,8 @@ def analyze_2d_sagittal_stream(frame_iter: Iterable[dict], fps: float,
     if estimate_azimuth and az_samples:
         use_az = float(np.median(az_samples))
     return _assemble(S, idxs, pose_fps, mean_conf, use_az, clip_id,
-                     capture_fps=cap_fps, source_fps=src_fps)
+                     capture_fps=cap_fps, source_fps=src_fps,
+                     timing_signal=timing_signal, timing_fps=timing_fps)
 
 
 def analyze_2d_sagittal(frames: list[dict], fps: float, mean_conf: float,

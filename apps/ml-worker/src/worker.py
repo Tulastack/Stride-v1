@@ -214,13 +214,19 @@ def _run_2d(analysis_id: str, video_path: str, capture: dict, s3_key: str | None
 
     notify_progress(analysis_id, "biomechanics_calculation", 75, "2D sagittal biomechanics")
     overlay_frames: list = []
+    # Dual-rate timing: collect a full-source-fps ankle signal (LK optical flow
+    # between pose keyframes) so cadence/contact-time get real temporal resolution
+    # and can clear the fps trust gate on a high-fps capture (fixes B1).
+    timing_signal: list = []
     result = analyze_2d_sagittal_stream(
-        stream_frames(video_path, target_fps=pose_fps, target=target_xy),
+        stream_frames(video_path, target_fps=pose_fps, target=target_xy, timing_out=timing_signal),
         fps=eff_fps, azimuth_deg=azimuth, clip_id=analysis_id[:8],
         overlay_out=overlay_frames,
         source_fps=source_fps,
         capture_fps=capture_fps,
         image_down=image_down,
+        timing_signal=timing_signal,
+        timing_fps=source_fps,
     )
     _write_overlay(video_path, s3_key, {
         "fps": eff_fps,
@@ -231,6 +237,22 @@ def _run_2d(analysis_id: str, video_path: str, capture: dict, s3_key: str | None
     })
     overall_score = int(round(result["captureQuality"]["overall"] * 100))
 
+    # Backend-derived model identity (bug B3): the persisted model version must
+    # reflect the backend that ACTUALLY ran, not a hardcoded MoveNet string. This
+    # rides inside result_json so both the API callback and the DB fallback use it.
+    pose_backend = os.environ.get("POSE2D_BACKEND", "rtmpose")
+    rtmpose_mode = os.environ.get("RTMPOSE_MODE", "balanced")
+    model_version = f"rtmpose-{rtmpose_mode}" if pose_backend == "rtmpose" else pose_backend
+    result["model_meta"] = {
+        "backend": pose_backend,
+        "model_version": model_version,
+        "detector": "yolox" if pose_backend == "rtmpose" else "none",
+        "device": "cpu",
+        "poseFps": pose_fps,
+        "pipeline": "2d-sagittal",
+        "keypointFormat": "coco17",  # canonical layout metrics were computed on
+    }
+
     notify_progress(analysis_id, "finalizing", 95, "Complete")
     ok = notify_analysis_completed(analysis_id, overall_score, result)
     if not ok:
@@ -238,7 +260,7 @@ def _run_2d(analysis_id: str, video_path: str, capture: dict, s3_key: str | None
             with conn.cursor() as cursor:
                 cursor.execute(
                     "UPDATE analyses SET status='completed', overall_score=%s, result_json=%s, movenet_version=%s, completed_at=now() WHERE id=%s",
-                    (overall_score, json.dumps(result), "rtmpose+2d-sagittal", analysis_id),
+                    (overall_score, json.dumps(result), model_version, analysis_id),
                 )
 
 

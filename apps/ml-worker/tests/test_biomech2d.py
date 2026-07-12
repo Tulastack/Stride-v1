@@ -2,7 +2,7 @@
 production path for real (side-on, single-camera) uploads. Regression guard
 against reintroducing 'deg' text, missing thousands separators, or a metric
 label leaking its unit suffix (e.g. 'contact time ms')."""
-from src.biomech2d import PLAUSIBLE_RANGE, UNIT, WHY, _fmt_value, _metric_label
+from src.biomech2d import UNIT, WHY, _fmt_value, _metric_label, _plausible_range
 
 
 def test_units_use_the_degree_symbol_not_the_word_deg():
@@ -41,11 +41,11 @@ def test_every_metric_has_a_why_reason():
 
 def test_contact_time_plausibility_rejects_values_actually_seen_in_production():
     # These exact figures were pulled from real stored analyses — a gait-timing
-    # bug (likely from low POSE_FPS combined with the stance-detection threshold
-    # in _gait()) produced physically impossible ground-contact readings that
-    # then poisoned the economy score to a flat 0. No human's foot is on the
-    # ground for over a second while running.
-    lo, hi = PLAUSIBLE_RANGE["contact_time_ms"]
+    # bug (dual-rate optical-flow timing since fixed) produced physically
+    # impossible ground-contact readings that then poisoned the economy score
+    # to a flat 0. No human's foot is on the ground for over a second while
+    # running.
+    lo, hi = _plausible_range("contact_time_ms", "max_velocity")
     for impossible in (1066.7, 1111.1, 1900.0, 561.9):
         assert not (lo <= impossible <= hi), f"{impossible}ms should be rejected as implausible"
     # Real, physiologically normal ground-contact times must still pass through.
@@ -54,6 +54,6 @@ def test_contact_time_plausibility_rejects_values_actually_seen_in_production():
 
 
 def test_cadence_plausibility_has_a_sane_floor_and_ceiling():
-    lo, hi = PLAUSIBLE_RANGE["cadence_spm"]
+    lo, hi = _plausible_range("cadence_spm", "max_velocity")
     assert lo < 270 < hi  # the "normal" NORMAL_RANGE band must fit inside the plausible one
     assert not (lo <= 0 <= hi)
