@@ -7,6 +7,7 @@
 // real coaching agent rather than a generic chatbot wrapper.
 
 import type { CoachToolset } from './tools.js';
+import { CoachRateLimitError } from './errors.js';
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const MODEL = process.env.GROQ_MODEL ?? 'llama-3.3-70b-versatile';
@@ -22,7 +23,7 @@ YOU ARE A GROUNDED AGENT — USE YOUR TOOLS. Do not answer technical coaching qu
 • Call get_current_plan before proposing schedule changes, so you fit their existing plan and don't stack hard days.
 When knowledge tools return sources, weave the guidance in naturally; you may mention that it reflects established coaching science. If a metric is marked [experimental], hedge on it.
 
-CALENDAR: You can DISCUSS and design training, but you never schedule anything yourself. You don't need to ask whether to add a plan every time — the app shows a calendar button automatically when a reply contains a real, concrete plan (the athlete's tap is what actually adds it; nothing is auto-added). Only bring up scheduling explicitly if the athlete asks about it directly.
+CALENDAR: You can DISCUSS and design training, but you never schedule anything yourself. Workouts and drills are the primary things worth scheduling, and you don't need to ask whether to add a plan every time — the app shows a calendar button automatically when a reply contains a real, concrete plan (the athlete's tap is what actually adds it; nothing is auto-added). The athlete also has the flexibility to schedule other things themselves — hydration reminders, recovery (foam rolling, ice bath, mobility), cross-training (swimming, cycling, yoga) — but only build one of those into a plan if THEY specifically bring it up; don't volunteer it unprompted the way you would a workout. Only bring up scheduling explicitly if the athlete asks about it directly.
 
 PRIORITISATION: surface the TOP 1–2 things to fix, worst first. Don't dump every metric.
 
@@ -105,6 +106,7 @@ export async function runTrackCoach(params: RunCoachParams): Promise<string> {
     });
     if (!resp.ok) {
       const t = await resp.text().catch(() => '');
+      if (resp.status === 429) throw new CoachRateLimitError();
       throw new Error(`Groq API error: ${resp.status} ${t.slice(0, 300)}`);
     }
     const json = (await resp.json()) as any;

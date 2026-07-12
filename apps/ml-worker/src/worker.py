@@ -78,7 +78,12 @@ STORAGE_DRIVER = os.environ.get("STORAGE_DRIVER", "s3").lower()
 LOCAL_STORAGE = STORAGE_DRIVER == "local"
 LOCAL_STORAGE_DIR = os.environ.get("LOCAL_STORAGE_DIR", "/tmp/stride-local-storage")
 
-# Pipeline selection:
+# Pipeline selection — the ONLY switch between the two analysis engines. No
+# deployment config in this repo ever sets this to "wham", so every real
+# environment runs the (default) 2d branch below; the 3D TypeScript engine
+# (apps/api/src/analysis/engine/engine.ts, reached via POST
+# /internal/analysis-biomech) is kept working, not deleted, just dormant
+# until something explicitly starts this worker with STRIDE_PIPELINE=wham.
 #   STRIDE_PIPELINE=2d      (default) — RTMPose + 2D sagittal biomechanics. The
 #                           production path: accurate sagittal angles from a good
 #                           2D backbone, no fragile monocular 3D lift. CPU-friendly.

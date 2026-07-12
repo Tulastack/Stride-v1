@@ -20,10 +20,16 @@ interface DrillSuggestion {
   status: 'pending' | 'approved' | 'skipped';
 }
 
-// Severity index → label + a semantic weight (color comes from the theme).
-const SEVERITY_LABELS: Record<number, string> = { 5: 'MAJOR', 4: 'SIGNIFICANT', 3: 'MODERATE', 2: 'MINOR', 1: 'MINOR' };
+// Severity index → label + a red-to-green color, worst to mildest.
+const SEVERITY_LABELS: Record<number, { label: string; color: string }> = {
+  5: { label: 'MAJOR', color: '#DC2626' },
+  4: { label: 'SIGNIFICANT', color: '#EA580C' },
+  3: { label: 'MODERATE', color: '#D97706' },
+  2: { label: 'MINOR', color: '#CA8A04' },
+  1: { label: 'MINOR', color: '#65A30D' },
+};
 
-function severityLabel(index: number, total: number): string {
+function severityInfo(index: number, total: number): { label: string; color: string } {
   if (total <= 1) return SEVERITY_LABELS[3];
   return SEVERITY_LABELS[Math.max(1, 5 - index)] ?? SEVERITY_LABELS[3];
 }
@@ -173,17 +179,20 @@ export default function AnalysisScreen() {
         {topFlaws.length > 0 && (
           <View style={styles.section}>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>AREAS TO IMPROVE</Text>
-            {topFlaws.map((flaw, index) => (
-              <View key={flaw.id} style={[styles.issueCard, { backgroundColor: colors.card, borderLeftColor: colors.accent }]}>
-                <View style={styles.issueHeader}>
-                  <View style={[styles.severityBadge, { backgroundColor: colors.cardAlt }]}>
-                    <Text style={[styles.severityText, { color: colors.muted }]}>{severityLabel(index, topFlaws.length)}</Text>
+            {topFlaws.map((flaw, index) => {
+              const { label, color } = severityInfo(index, topFlaws.length);
+              return (
+                <View key={flaw.id} style={[styles.issueCard, { backgroundColor: colors.card, borderLeftColor: color }]}>
+                  <View style={styles.issueHeader}>
+                    <View style={[styles.severityBadge, { backgroundColor: color }]}>
+                      <Text style={styles.severityText}>{label}</Text>
+                    </View>
                   </View>
+                  <Text style={[styles.issueTitle, { color: colors.text }]}>{flaw.name.replace(/_/g, ' ')}</Text>
+                  <Text style={[styles.issueDesc, { color: colors.muted }]}>{flaw.plainExplanation}</Text>
                 </View>
-                <Text style={[styles.issueTitle, { color: colors.text }]}>{flaw.name.replace(/_/g, ' ')}</Text>
-                <Text style={[styles.issueDesc, { color: colors.muted }]}>{flaw.plainExplanation}</Text>
-              </View>
-            ))}
+              );
+            })}
           </View>
         )}
 
@@ -302,7 +311,7 @@ const styles = StyleSheet.create({
   issueCard: { padding: space.lg, marginBottom: 10, borderLeftWidth: 3, borderRadius: radius.sm },
   issueHeader: { flexDirection: 'row', marginBottom: 6 },
   severityBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4 },
-  severityText: { fontSize: 10, fontWeight: '900', letterSpacing: 1 },
+  severityText: { fontSize: 10, fontWeight: '900', letterSpacing: 1, color: '#FFFFFF' },
   issueTitle: { fontSize: 16, fontWeight: '700', textTransform: 'capitalize', marginBottom: 4 },
   issueDesc: { fontSize: 13, lineHeight: 19 },
   // approval gate

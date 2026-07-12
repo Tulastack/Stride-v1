@@ -18,12 +18,21 @@ const PLAN_EXEMPLARS = [
   'Your schedule for this week: Monday sprint intervals, Wednesday tempo run, Friday drills, weekend rest.',
   'I recommend adding these workouts to your training plan this week.',
   'Try this drill program to fix your knee drive over the next two weeks.',
+  'Drink 500ml of water two hours before every training session this week.',
+  'Set a daily hydration reminder to drink water throughout the day, especially before and after training.',
+  'Schedule a foam rolling and mobility session tonight to help you recover.',
+  'Add a 30 minute easy swim tomorrow as a cross-training recovery day.',
+  "Let's swap tomorrow's run for a 30 minute easy bike ride instead.",
 ];
 
-// Empirically calibrated against Xenova/all-MiniLM-L6-v2: concrete plan/drill
-// replies score ~0.63-0.82 against the exemplars above; a passing mention of
-// "workouts" with no actual plan scores ~0.53, praise/nutrition/form-only
-// replies score ~0.18-0.42. 0.55 cleanly separates the two.
+// Empirically calibrated against Xenova/all-MiniLM-L6-v2: concrete plan/drill,
+// hydration, recovery, and cross-training replies score ~0.58-0.88 against the
+// exemplars above; a passing mention of "workouts" with no actual plan scores
+// ~0.53, praise/form-only replies score ~0.17-0.42. 0.55 cleanly separates those.
+// Known soft edge case: a vague "make sure you hydrate"/"recovery matters"
+// comment with no real plan can score ~0.58-0.61 (slight over-trigger) —
+// acceptable since the CTA only ever offers to generate a plan; nothing is
+// added without explicit approval.
 const SIMILARITY_THRESHOLD = 0.55;
 
 type Extractor = (text: string, opts: { pooling: 'mean'; normalize: boolean }) => Promise<{ data: Float32Array | number[] }>;

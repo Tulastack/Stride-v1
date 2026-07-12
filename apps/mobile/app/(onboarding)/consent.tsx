@@ -12,30 +12,39 @@ import {
 import { useRouter } from 'expo-router';
 import { useStrideStore } from '../../src/store/useStrideStore';
 import { strideApi } from '../../src/services/api';
+import { useTheme } from '../../src/context/ThemeContext';
+import { space, radius, type as typo } from '../../src/theme';
 
 function Checkbox({
   checked,
   onPress,
   testID,
+  accent,
+  accentText,
+  border,
 }: {
   checked: boolean;
   onPress: () => void;
   testID?: string;
+  accent: string;
+  accentText: string;
+  border: string;
 }) {
   return (
     <TouchableOpacity
       testID={testID}
       onPress={onPress}
-      style={[styles.checkbox, checked && styles.checkboxChecked]}
+      style={[styles.checkbox, { borderColor: checked ? accent : border }, checked && { backgroundColor: accent }]}
       activeOpacity={0.7}
     >
-      {checked && <Text style={styles.checkmark}>✓</Text>}
+      {checked && <Text style={[styles.checkmark, { color: accentText }]}>✓</Text>}
     </TouchableOpacity>
   );
 }
 
 export default function ConsentScreen() {
   const router = useRouter();
+  const { colors } = useTheme();
   const setConsentGiven = useStrideStore((state) => state.setConsentGiven);
   const setDrillIntensityCap = useStrideStore((state) => state.setDrillIntensityCap);
 
@@ -86,25 +95,25 @@ export default function ConsentScreen() {
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={styles.container}
+      style={[styles.container, { backgroundColor: colors.bg }]}
     >
       <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
-          <Text style={styles.brandName}>STRIDE</Text>
+          <Text style={[styles.brandName, { color: colors.text }]}>STRIDE</Text>
         </View>
 
-        <View style={styles.card}>
-          <Text style={styles.title}>Safety & Consent</Text>
-          <Text style={styles.subtitle}>Please review and accept to continue</Text>
+        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Text style={[styles.title, { color: colors.text }]}>Safety & Consent</Text>
+          <Text style={[styles.subtitle, { color: colors.muted }]}>Please review and accept to continue</Text>
 
           {/* Date of Birth */}
           <View style={styles.inputContainer}>
-            <Text style={styles.label}>Date of Birth (optional)</Text>
+            <Text style={[styles.label, { color: colors.muted }]}>Date of Birth (optional)</Text>
             <TextInput
               testID="dob-input"
-              style={styles.input}
+              style={[styles.input, { backgroundColor: colors.cardAlt, borderColor: colors.border, color: colors.text }]}
               placeholder="YYYY-MM-DD"
-              placeholderTextColor="#5C6073"
+              placeholderTextColor={colors.muted}
               autoCapitalize="none"
               keyboardType="numbers-and-punctuation"
               value={dob}
@@ -122,11 +131,14 @@ export default function ConsentScreen() {
               testID="terms-checkbox"
               checked={termsAccepted}
               onPress={() => setTermsAccepted((v) => !v)}
+              accent={colors.accent}
+              accentText={colors.accentText}
+              border={colors.border}
             />
-            <Text style={styles.checkboxLabel}>
+            <Text style={[styles.checkboxLabel, { color: colors.text }]}>
               I accept the{' '}
-              <Text style={styles.linkText}>Terms & Conditions</Text> and{' '}
-              <Text style={styles.linkText}>Privacy Policy</Text>
+              <Text style={[styles.linkText, { color: colors.accent }]}>Terms & Conditions</Text> and{' '}
+              <Text style={[styles.linkText, { color: colors.accent }]}>Privacy Policy</Text>
             </Text>
           </TouchableOpacity>
 
@@ -140,8 +152,11 @@ export default function ConsentScreen() {
               testID="medical-checkbox"
               checked={medicalAccepted}
               onPress={() => setMedicalAccepted((v) => !v)}
+              accent={colors.accent}
+              accentText={colors.accentText}
+              border={colors.border}
             />
-            <Text style={styles.checkboxLabel}>
+            <Text style={[styles.checkboxLabel, { color: colors.text }]}>
               I accept the Medical Disclaimer: Stride provides coaching insights only. Consult a
               physician before starting any new training program.
             </Text>
@@ -150,15 +165,19 @@ export default function ConsentScreen() {
           {/* Minor Toggle */}
           <TouchableOpacity
             testID="minor-toggle"
-            style={[styles.toggleRow, isMinor && styles.toggleRowActive]}
+            style={[
+              styles.toggleRow,
+              { backgroundColor: colors.cardAlt, borderColor: colors.border },
+              isMinor && { borderColor: colors.accent, backgroundColor: colors.cardAlt },
+            ]}
             onPress={() => {
               setIsMinor((v) => !v);
               if (isMinor) setParentalConsent(false);
             }}
             activeOpacity={0.8}
           >
-            <View style={[styles.toggleIndicator, isMinor && styles.toggleIndicatorActive]} />
-            <Text style={[styles.toggleLabel, isMinor && { color: '#FF453A' }]}>
+            <View style={[styles.toggleIndicator, { borderColor: colors.border }, isMinor && { backgroundColor: colors.accent, borderColor: colors.accent }]} />
+            <Text style={[styles.toggleLabel, { color: colors.muted }, isMinor && { color: colors.accent }]}>
               I am under 18
             </Text>
           </TouchableOpacity>
@@ -174,25 +193,32 @@ export default function ConsentScreen() {
                 testID="parental-consent-checkbox"
                 checked={parentalConsent}
                 onPress={() => setParentalConsent((v) => !v)}
+                accent={colors.accent}
+                accentText={colors.accentText}
+                border={colors.border}
               />
-              <Text style={styles.checkboxLabel}>
+              <Text style={[styles.checkboxLabel, { color: colors.text }]}>
                 A parent or guardian has reviewed and consents to my use of Stride.
               </Text>
             </TouchableOpacity>
           )}
 
           {/* Error */}
-          {error ? <Text style={styles.errorText}>{error}</Text> : null}
+          {error ? <Text style={[styles.errorText, { color: colors.error }]}>{error}</Text> : null}
 
           {/* Continue Button */}
           <TouchableOpacity
             testID="consent-continue-btn"
-            style={[styles.continueButton, !canContinue && styles.continueButtonDisabled]}
+            style={[
+              styles.continueButton,
+              { backgroundColor: colors.accent },
+              !canContinue && { backgroundColor: colors.cardAlt },
+            ]}
             onPress={handleContinue}
             disabled={!canContinue || loading}
             activeOpacity={0.8}
           >
-            <Text style={styles.continueButtonText}>
+            <Text style={[styles.continueButtonText, { color: canContinue ? colors.accentText : colors.muted }]}>
               {loading ? 'Saving...' : 'Continue'}
             </Text>
           </TouchableOpacity>
@@ -203,167 +229,43 @@ export default function ConsentScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#0B0D17',
-  },
-  scrollContainer: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    padding: 24,
-  },
-  header: {
-    alignItems: 'center',
-    marginBottom: 32,
-  },
-  brandName: {
-    fontSize: 48,
-    fontWeight: '900',
-    color: '#FFFFFF',
-    letterSpacing: 6,
-    textShadowColor: 'rgba(255, 69, 58, 0.4)',
-    textShadowOffset: { width: 0, height: 4 },
-    textShadowRadius: 15,
-  },
-  card: {
-    backgroundColor: '#16192E',
-    borderRadius: 12,
-    padding: 32,
-    borderWidth: 1,
-    borderColor: '#262940',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.5,
-    shadowRadius: 15,
-    elevation: 8,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: '#8E94A8',
-    marginBottom: 24,
-  },
-  inputContainer: {
-    marginBottom: 24,
-  },
-  label: {
-    color: '#8E94A8',
-    fontSize: 12,
-    fontWeight: '600',
-    marginBottom: 8,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  input: {
-    backgroundColor: '#0F1122',
-    borderColor: '#262940',
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    color: '#FFFFFF',
-    fontSize: 16,
-  },
-  checkboxRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
-    marginBottom: 20,
-  },
+  container: { flex: 1 },
+  scrollContainer: { flexGrow: 1, justifyContent: 'center', padding: space.xl },
+  header: { alignItems: 'center', marginBottom: space.xxl },
+  brandName: { fontSize: 40, fontWeight: '900', letterSpacing: 4 },
+  card: { borderRadius: radius.md, padding: space.xl, borderWidth: 1 },
+  title: { ...typo.display, fontSize: 26, marginBottom: space.xs },
+  subtitle: { ...typo.body, marginBottom: space.xl },
+  inputContainer: { marginBottom: space.xl },
+  label: { ...typo.label, marginBottom: space.sm, textTransform: 'uppercase' },
+  input: { borderWidth: 1, borderRadius: radius.md, paddingHorizontal: space.lg, paddingVertical: space.md, fontSize: 16 },
+  checkboxRow: { flexDirection: 'row', alignItems: 'flex-start', gap: space.md, marginBottom: space.lg },
   checkbox: {
-    width: 16,
-    height: 16,
+    width: 18,
+    height: 18,
     borderWidth: 1.5,
-    borderColor: '#8E94A8',
     borderRadius: 4,
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: 2,
     flexShrink: 0,
   },
-  checkboxChecked: {
-    backgroundColor: '#FF453A',
-    borderColor: '#FF453A',
-  },
-  checkmark: {
-    color: '#FFFFFF',
-    fontSize: 10,
-    fontWeight: '900',
-    lineHeight: 14,
-  },
-  checkboxLabel: {
-    flex: 1,
-    color: '#E4E6EB',
-    fontSize: 14,
-    lineHeight: 22,
-  },
-  linkText: {
-    color: '#FF453A',
-    fontWeight: '600',
-  },
+  checkmark: { color: '#FFFFFF', fontSize: 11, fontWeight: '900', lineHeight: 15 },
+  checkboxLabel: { flex: 1, fontSize: 14, lineHeight: 21 },
+  linkText: { fontWeight: '700' },
   toggleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    backgroundColor: '#0F1122',
+    gap: space.md,
     borderWidth: 1,
-    borderColor: '#262940',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    marginBottom: 20,
+    borderRadius: radius.md,
+    paddingHorizontal: space.lg,
+    paddingVertical: space.md,
+    marginBottom: space.lg,
   },
-  toggleRowActive: {
-    borderColor: '#FF453A',
-    backgroundColor: 'rgba(255,69,58,0.08)',
-  },
-  toggleIndicator: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    borderWidth: 1.5,
-    borderColor: '#8E94A8',
-    backgroundColor: 'transparent',
-  },
-  toggleIndicatorActive: {
-    backgroundColor: '#FF453A',
-    borderColor: '#FF453A',
-  },
-  toggleLabel: {
-    color: '#8E94A8',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  errorText: {
-    color: '#FF453A',
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 16,
-  },
-  continueButton: {
-    backgroundColor: '#FF453A',
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: 'center',
-    marginTop: 8,
-    shadowColor: '#FF453A',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-  },
-  continueButtonDisabled: {
-    backgroundColor: '#3D1D1A',
-    shadowOpacity: 0,
-  },
-  continueButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: 'bold',
-    letterSpacing: 0.5,
-  },
+  toggleIndicator: { width: 18, height: 18, borderRadius: 9, borderWidth: 1.5 },
+  toggleLabel: { fontSize: 14, fontWeight: '700' },
+  errorText: { ...typo.bodyMedium, marginBottom: space.lg },
+  continueButton: { borderRadius: radius.md, paddingVertical: space.lg, alignItems: 'center', marginTop: space.xs },
+  continueButtonText: { fontSize: 16, fontWeight: '700', letterSpacing: 0.5 },
 });

@@ -1,14 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, SafeAreaView, ActivityIndicator, Pressable, Modal, Animated } from 'react-native';
 import { useRouter } from 'expo-router';
-import { TrendingUp, X, Users } from 'lucide-react-native';
+import { TrendingUp, X, Users, AlertTriangle } from 'lucide-react-native';
 import { fetchAnalysisHistory } from '../../src/lib/analysisApi';
 import { strideApi } from '../../src/services/api';
 import { useTheme } from '../../src/context/ThemeContext';
 import { space, radius, iconStroke } from '../../src/theme';
 import type { AnalysisResult } from '../../src/types/analysis';
 import { TrendChart } from '../../src/components/progress/TrendChart';
-import { EXAMPLE_RUNNERS } from '../../src/data/exampleRunners';
+import { pickRunnerOfTheDay } from '../../src/data/exampleRunners';
 
 /** Real score for an analysis — the computed running-economy index when
  * available, falling back to a flaw-count heuristic (same formula as the
@@ -32,6 +32,33 @@ function improvementSummary(history: AnalysisResult[]): string {
   if (delta > 2) return `Trending up — your form score is averaging ${delta} points higher than when you started.`;
   if (delta < -2) return `Your form score has dipped ${Math.abs(delta)} points recently — worth a look at what changed.`;
   return `Your form score has stayed steady over your last ${scores.length} sprints.`;
+}
+
+interface RecurringIssue {
+  name: string;
+  count: number;
+  explanation: string;
+}
+
+/** Aggregates flaws by name across every analysis (not just the latest),
+ * ranked by how severe and how frequent they are, so the athlete sees what
+ * actually keeps coming up rather than a single run's snapshot. */
+function topRecurringIssues(history: AnalysisResult[]): RecurringIssue[] {
+  const byName = new Map<string, { count: number; totalSeverity: number; explanation: string }>();
+  for (const analysis of history) {
+    for (const flaw of analysis.flaws) {
+      const entry = byName.get(flaw.name) ?? { count: 0, totalSeverity: 0, explanation: flaw.plainExplanation };
+      entry.count += 1;
+      entry.totalSeverity += flaw.severity;
+      entry.explanation = flaw.plainExplanation; // keep the most recent wording
+      byName.set(flaw.name, entry);
+    }
+  }
+  return [...byName.entries()]
+    .map(([name, v]) => ({ name, count: v.count, avgSeverity: v.totalSeverity / v.count, explanation: v.explanation }))
+    .sort((a, b) => b.avgSeverity * b.count - a.avgSeverity * a.count)
+    .slice(0, 3)
+    .map(({ name, count, explanation }) => ({ name, count, explanation }));
 }
 
 export default function ProgressScreen() {
@@ -132,16 +159,39 @@ export default function ProgressScreen() {
               );
             })}
 
+            {topRecurringIssues(history).length > 0 && (
+              <>
+                <View style={styles.runnersHeader}>
+                  <AlertTriangle size={16} color={colors.accent} strokeWidth={iconStroke} />
+                  <Text style={[styles.runnersTitle, { color: colors.text }]}>TOP ISSUES ACROSS YOUR SPRINTS</Text>
+                </View>
+                {topRecurringIssues(history).map((issue) => (
+                  <View key={issue.name} style={[styles.runnerCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    <View style={styles.issueTop}>
+                      <Text style={[styles.runnerName, { color: colors.text }]}>{issue.name.replace(/_/g, ' ')}</Text>
+                      <Text style={[styles.issueCount, { color: colors.muted }]}>
+                        {issue.count} of {history.length} sprint{history.length !== 1 ? 's' : ''}
+                      </Text>
+                    </View>
+                    <Text style={[styles.runnerNote, { color: colors.muted }]}>{issue.explanation}</Text>
+                  </View>
+                ))}
+              </>
+            )}
+
             <View style={styles.runnersHeader}>
               <Users size={16} color={colors.accent} strokeWidth={iconStroke} />
-              <Text style={[styles.runnersTitle, { color: colors.text }]}>RUNNERS TO WATCH</Text>
+              <Text style={[styles.runnersTitle, { color: colors.text }]}>RUNNER TO WATCH</Text>
             </View>
-            {EXAMPLE_RUNNERS.map((runner) => (
-              <View key={runner.id} style={[styles.runnerCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                <Text style={[styles.runnerName, { color: colors.text }]}>{runner.name} · {runner.specialty}</Text>
-                <Text style={[styles.runnerNote, { color: colors.muted }]}>{runner.formNote}</Text>
-              </View>
-            ))}
+            {(() => {
+              const runner = pickRunnerOfTheDay();
+              return (
+                <View style={[styles.runnerSpotlight, { backgroundColor: colors.cardAlt, borderColor: colors.accent }]}>
+                  <Text style={[styles.runnerName, { color: colors.text }]}>{runner.name} · {runner.specialty}</Text>
+                  <Text style={[styles.runnerNote, { color: colors.muted }]}>{runner.formNote}</Text>
+                </View>
+              );
+            })()}
           </View>
         ) : history.length === 0 ? (
           <View style={styles.emptyState}>
@@ -264,6 +314,9 @@ const styles = StyleSheet.create({
   runnerCard: { padding: space.lg, borderWidth: 1, borderRadius: radius.md, marginBottom: space.sm, gap: 4 },
   runnerName: { fontSize: 14, fontWeight: '800' },
   runnerNote: { fontSize: 13, lineHeight: 18 },
+  runnerSpotlight: { padding: space.lg, borderWidth: 1.5, borderRadius: radius.md, marginBottom: space.md, gap: 4 },
+  issueTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  issueCount: { fontSize: 11, fontWeight: '700' },
   subtitle: { fontSize: 14, marginTop: space.xs },
   emptyState: { alignItems: 'center', marginTop: 80, gap: space.sm },
   emptyTitle: { fontSize: 18, fontWeight: '700' },

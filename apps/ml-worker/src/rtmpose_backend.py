@@ -87,6 +87,19 @@ def _norm_bbox_from_kp(kp: np.ndarray) -> tuple[float, float, float, float] | No
     return (float(xs.min()), float(ys.min()), float(xs.max()), float(ys.max()))
 
 
+def _iou(a: tuple[float, float, float, float], b: tuple[float, float, float, float]) -> float:
+    """Intersection-over-union of two normalized (x0,y0,x1,y1) boxes."""
+    ax0, ay0, ax1, ay1 = a
+    bx0, by0, bx1, by1 = b
+    iw = max(0.0, min(ax1, bx1) - max(ax0, bx0))
+    ih = max(0.0, min(ay1, by1) - max(ay0, by0))
+    inter = iw * ih
+    area_a = max(0.0, ax1 - ax0) * max(0.0, ay1 - ay0)
+    area_b = max(0.0, bx1 - bx0) * max(0.0, by1 - by0)
+    union = area_a + area_b - inter
+    return inter / union if union > 1e-9 else 0.0
+
+
 def _seed_bbox(target) -> tuple[float, float, float, float]:
     """Seed a normalized bbox from a point (x,y) OR an explicit brush bbox
     (x0,y0,x1,y1)."""
@@ -143,23 +156,35 @@ def iter_frames(video_path: str, target_fps: int = 30, target=None):
                     cx1 = min(w, int((x1 + mx) * w)); cy1 = min(h, int((y1 + my) * h))
                     if cx1 - cx0 >= 24 and cy1 - cy0 >= 24:
                         crop = frame[cy0:cy1, cx0:cx1]
-                        cw, ch = cx1 - cx0, cy1 - cy0
                         kpts_c, scores_c = body(crop)
                         if len(scores_c) > 0:
-                            # prefer the person nearest the crop centre (the target
-                            # sits centred because we re-centre the crop each frame)
-                            cens = [((np.mean(xy[_TORSO, 0]) / cw - 0.5) ** 2 + (np.mean(xy[_TORSO, 1]) / ch - 0.5) ** 2) for xy in kpts_c]
-                            b = int(np.argmin(cens))
-                            xy, sc = kpts_c[b], scores_c[b]
-                            kp[:, 0] = np.clip((cy0 + xy[:, 1]) / h, 0, 1)  # y (full-frame)
-                            kp[:, 1] = np.clip((cx0 + xy[:, 0]) / w, 0, 1)  # x
-                            kp[:, 2] = sc
-                            nb = _norm_bbox_from_kp(kp)
-                            if nb is not None:
+                            # Match against the box we ACTUALLY tracked last frame (IoU),
+                            # not just whichever detection is nearest the crop centre —
+                            # centre-proximity alone picks the wrong runner whenever a
+                            # bystander drifts toward the middle of the (re-centred) crop.
+                            best_kp, best_bbox, best_score = None, None, -1.0
+                            for xy, sc in zip(kpts_c, scores_c):
+                                cand = np.zeros((17, 3), dtype=float)
+                                cand[:, 0] = np.clip((cy0 + xy[:, 1]) / h, 0, 1)  # y (full-frame)
+                                cand[:, 1] = np.clip((cx0 + xy[:, 0]) / w, 0, 1)  # x
+                                cand[:, 2] = sc
+                                cand_bbox = _norm_bbox_from_kp(cand)
+                                if cand_bbox is None:
+                                    continue
+                                # Overlap with the prior tracked box matters far more than
+                                # raw detection confidence — a confident bystander should
+                                # still lose to a lower-confidence read of the real target.
+                                score = _iou(cand_bbox, tbox) + 0.1 * float(np.mean(sc[core_idx]))
+                                if score > best_score:
+                                    best_kp, best_bbox, best_score = cand, cand_bbox, score
+                            if best_kp is not None and _iou(best_bbox, tbox) > 0.05:
+                                kp = best_kp
                                 # EMA the tracked box toward the new detection
-                                tbox = tuple(0.5 * o + 0.5 * n for o, n in zip(tbox, nb))
-                            miss = 0
-                            excluded = float(np.mean(kp[core_idx, 2])) < CONFIDENCE_THRESHOLD
+                                tbox = tuple(0.5 * o + 0.5 * n for o, n in zip(tbox, best_bbox))
+                                miss = 0
+                                excluded = float(np.mean(kp[core_idx, 2])) < CONFIDENCE_THRESHOLD
+                            else:
+                                miss += 1
                         else:
                             miss += 1
                     else:

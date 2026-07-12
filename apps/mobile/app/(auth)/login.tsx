@@ -4,9 +4,12 @@ import { useRouter } from 'expo-router';
 import { useStrideStore } from '../../src/store/useStrideStore';
 import { strideApi } from '../../src/services/api';
 import { supabase, isSupabaseConfigured } from '../../src/lib/supabase';
+import { useTheme } from '../../src/context/ThemeContext';
+import { space, radius, type as typo } from '../../src/theme';
 
 export default function LoginScreen() {
   const router = useRouter();
+  const { colors } = useTheme();
   const setToken = useStrideStore((state) => state.setToken);
   const setUser = useStrideStore((state) => state.setUser);
 
@@ -79,26 +82,26 @@ export default function LoginScreen() {
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={styles.container}
+      style={[styles.container, { backgroundColor: colors.bg }]}
     >
       <ScrollView contentContainerStyle={styles.scrollContainer}>
         <View style={styles.header}>
-          <Text style={styles.brandName}>STRIDE</Text>
-          <Text style={styles.tagline}>AI-Powered Sprint Coaching</Text>
+          <Text style={[styles.brandName, { color: colors.text }]}>STRIDE</Text>
+          <Text style={[styles.tagline, { color: colors.muted }]}>AI-Powered Sprint Coaching</Text>
         </View>
 
-        <View style={styles.card}>
-          <Text style={styles.title}>Welcome Back</Text>
-          <Text style={styles.subtitle}>Sign in to analyze your sprint form</Text>
+        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Text style={[styles.title, { color: colors.text }]}>Welcome Back</Text>
+          <Text style={[styles.subtitle, { color: colors.muted }]}>Sign in to analyze your sprint form</Text>
 
-          {error ? <Text style={styles.errorText}>{error}</Text> : null}
+          {error ? <Text style={[styles.errorText, { color: colors.error }]}>{error}</Text> : null}
 
           <View style={styles.inputContainer}>
-            <Text style={styles.label}>Email Address</Text>
+            <Text style={[styles.label, { color: colors.muted }]}>Email Address</Text>
             <TextInput
-              style={styles.input}
+              style={[styles.input, { backgroundColor: colors.cardAlt, borderColor: colors.border, color: colors.text }]}
               placeholder="athlete@stride.ai"
-              placeholderTextColor="#5C6073"
+              placeholderTextColor={colors.muted}
               keyboardType="email-address"
               autoCapitalize="none"
               value={email}
@@ -107,11 +110,11 @@ export default function LoginScreen() {
           </View>
 
           <View style={styles.inputContainer}>
-            <Text style={styles.label}>Password</Text>
+            <Text style={[styles.label, { color: colors.muted }]}>Password</Text>
             <TextInput
-              style={styles.input}
+              style={[styles.input, { backgroundColor: colors.cardAlt, borderColor: colors.border, color: colors.text }]}
               placeholder="••••••••"
-              placeholderTextColor="#5C6073"
+              placeholderTextColor={colors.muted}
               secureTextEntry
               autoCapitalize="none"
               value={password}
@@ -119,18 +122,18 @@ export default function LoginScreen() {
             />
           </View>
 
-          <TouchableOpacity style={styles.loginButton} onPress={handleLogin} disabled={loading}>
-            <Text style={styles.loginButtonText}>{loading ? 'Authenticating...' : 'Sign In'}</Text>
+          <TouchableOpacity style={[styles.loginButton, { backgroundColor: colors.accent }]} onPress={handleLogin} disabled={loading}>
+            <Text style={[styles.loginButtonText, { color: colors.accentText }]}>{loading ? 'Authenticating...' : 'Sign In'}</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.demoButton} onPress={handleQuickDemo}>
-            <Text style={styles.demoButtonText}>Quick Demo Login (Bypass)</Text>
+          <TouchableOpacity style={[styles.demoButton, { borderColor: colors.border }]} onPress={handleQuickDemo}>
+            <Text style={[styles.demoButtonText, { color: colors.accent }]}>Quick Demo Login (Bypass)</Text>
           </TouchableOpacity>
 
           <View style={styles.footer}>
-            <Text style={styles.footerText}>Don't have an account? </Text>
+            <Text style={[styles.footerText, { color: colors.muted }]}>Don't have an account? </Text>
             <TouchableOpacity onPress={() => router.push('/(auth)/register')}>
-              <Text style={styles.registerLink}>Sign Up</Text>
+              <Text style={[styles.registerLink, { color: colors.accent }]}>Sign Up</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -140,128 +143,23 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#0B0D17',
-  },
-  scrollContainer: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    padding: 24,
-  },
-  header: {
-    alignItems: 'center',
-    marginBottom: 48,
-  },
-  brandName: {
-    fontSize: 48,
-    fontWeight: '900',
-    color: '#FFFFFF',
-    letterSpacing: 6,
-    textShadowColor: 'rgba(255, 69, 58, 0.4)',
-    textShadowOffset: { width: 0, height: 4 },
-    textShadowRadius: 15,
-  },
-  tagline: {
-    fontSize: 16,
-    color: '#8E94A8',
-    marginTop: 8,
-    fontWeight: '500',
-    letterSpacing: 1,
-  },
-  card: {
-    backgroundColor: '#16192E',
-    borderRadius: 12,
-    padding: 32,
-    borderWidth: 1,
-    borderColor: '#262940',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.5,
-    shadowRadius: 15,
-    elevation: 8,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: '#8E94A8',
-    marginBottom: 24,
-  },
-  errorText: {
-    color: '#FF453A',
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 16,
-  },
-  inputContainer: {
-    marginBottom: 20,
-  },
-  label: {
-    color: '#8E94A8',
-    fontSize: 12,
-    fontWeight: '600',
-    marginBottom: 8,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  input: {
-    backgroundColor: '#0F1122',
-    borderColor: '#262940',
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    color: '#FFFFFF',
-    fontSize: 16,
-  },
-  loginButton: {
-    backgroundColor: '#FF453A',
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: 'center',
-    marginTop: 12,
-    shadowColor: '#FF453A',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-  },
-  loginButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: 'bold',
-    letterSpacing: 0.5,
-  },
-  demoButton: {
-    backgroundColor: '#1E254A',
-    borderColor: '#262940',
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginTop: 16,
-  },
-  demoButtonText: {
-    color: '#FF9F0A',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  footer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginTop: 24,
-  },
-  footerText: {
-    color: '#8E94A8',
-    fontSize: 14,
-  },
-  registerLink: {
-    color: '#FF453A',
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
+  container: { flex: 1 },
+  scrollContainer: { flexGrow: 1, justifyContent: 'center', padding: space.xl },
+  header: { alignItems: 'center', marginBottom: space.xxxl },
+  brandName: { fontSize: 40, fontWeight: '900', letterSpacing: 4 },
+  tagline: { ...typo.body, marginTop: space.sm, letterSpacing: 0.5 },
+  card: { borderRadius: radius.md, padding: space.xl, borderWidth: 1 },
+  title: { ...typo.display, fontSize: 26, marginBottom: space.xs },
+  subtitle: { ...typo.body, marginBottom: space.xl },
+  errorText: { ...typo.bodyMedium, marginBottom: space.lg },
+  inputContainer: { marginBottom: space.lg },
+  label: { ...typo.label, marginBottom: space.sm, textTransform: 'uppercase' },
+  input: { borderWidth: 1, borderRadius: radius.md, paddingHorizontal: space.lg, paddingVertical: space.md, fontSize: 16 },
+  loginButton: { borderRadius: radius.md, paddingVertical: space.lg, alignItems: 'center', marginTop: space.sm },
+  loginButtonText: { fontSize: 16, fontWeight: '700', letterSpacing: 0.5 },
+  demoButton: { borderWidth: 1, borderRadius: radius.md, paddingVertical: space.md, alignItems: 'center', marginTop: space.lg },
+  demoButtonText: { fontSize: 14, fontWeight: '700' },
+  footer: { flexDirection: 'row', justifyContent: 'center', marginTop: space.xl },
+  footerText: { fontSize: 14 },
+  registerLink: { fontSize: 14, fontWeight: '700' },
 });

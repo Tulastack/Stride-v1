@@ -1,7 +1,15 @@
-// Biomechanics engine — full capture-agnostic pipeline (Stages 0–7).
+// Biomechanics engine — full capture-agnostic 3D pipeline (Stages 0–7).
 //
-// Production path: Stage 1 hygiene → WHAM Stage 2 → OpenCap Stage 3 (GPU sidecar
-// from ml-worker) → Stages 4–7 metrics/confidence on the API.
+// NOT the active production path. Real uploads today run apps/ml-worker/src/
+// biomech2d.py (2D sagittal-plane, single side-on view) — the default and
+// only pipeline any deployed environment actually configures. This 3D engine
+// (Stage 1 hygiene → WHAM Stage 2 → OpenCap Stage 3 GPU sidecar → Stages 4-7
+// metrics/confidence here) is kept intentionally, not deleted: it's exercised
+// by apps/api/scripts/validate-biomech.ts and the engine/__tests__ suite, and
+// is reachable in production via POST /internal/analysis-biomech — but that
+// route is only ever called by ml-worker when STRIDE_PIPELINE=wham, which
+// nothing in this repo's configs sets. Flip that env var on the worker to
+// activate it; until then it's a deliberately dormant, not dead, pipeline.
 // Missing sidecars fail loudly — no inline synthetic lift.
 
 import type {

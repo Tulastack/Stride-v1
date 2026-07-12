@@ -46,7 +46,7 @@ CREATE TABLE calendar_events (
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     title VARCHAR(200) NOT NULL,
     event_type VARCHAR(20) NOT NULL
-        CHECK (event_type IN ('workout','rest','competition','drill')),
+        CHECK (event_type IN ('workout','rest','competition','drill','hydration','recovery','cross_training')),
     scheduled_date DATE NOT NULL,
     details JSONB,
     status VARCHAR(20) DEFAULT 'scheduled'
@@ -90,6 +90,13 @@ CREATE TABLE suggestion_audit (
     action VARCHAR(10) NOT NULL CHECK (action IN ('approved','skipped')),
     acted_at TIMESTAMPTZ DEFAULT now()
 );
+
+-- Migration: Allow 'hydration'/'recovery'/'cross_training' calendar events
+-- (run against existing DBs — workout/drill remain the coach's primary focus,
+-- these exist so the athlete can add other things themselves if they want to)
+-- ALTER TABLE calendar_events DROP CONSTRAINT IF EXISTS calendar_events_event_type_check;
+-- ALTER TABLE calendar_events ADD CONSTRAINT calendar_events_event_type_check
+--     CHECK (event_type IN ('workout','rest','competition','drill','hydration','recovery','cross_training'));
 
 -- Migration: Add consent fields (run against existing DBs)
 -- ALTER TABLE users ADD COLUMN IF NOT EXISTS date_of_birth DATE;

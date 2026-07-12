@@ -34,10 +34,10 @@ export function MetricRow({ metric, usable, testID }: { metric: Metric; usable?:
       <View style={styles.right}>
         <Text style={[styles.value, { color: valueColor }]}>
           {metric.measured.value}
-          <Text style={styles.unit}> {metric.unit}</Text>
+          <Text style={styles.unit}>{metric.unit === '°' ? metric.unit : ` ${metric.unit}`}</Text>
         </Text>
         <Text style={styles.band}>
-          {metric.measured.low}–{metric.measured.high} {metric.unit}
+          {metric.measured.low}–{metric.measured.high}{metric.unit === '°' ? metric.unit : ` ${metric.unit}`}
         </Text>
         <ConfidenceMeter confidence={metric.measured.confidence} testID={`meter-${metric.key}`} />
       </View>

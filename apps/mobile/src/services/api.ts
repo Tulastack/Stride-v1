@@ -49,7 +49,9 @@ async function request<T>(path: string, options: FetchOptions = {}): Promise<T> 
 
   if (!response.ok) {
     const errorJson = await response.json().catch(() => ({}));
-    throw new Error(errorJson.error || `HTTP error! status: ${response.status}`);
+    const err = new Error(errorJson.error || `HTTP error! status: ${response.status}`) as Error & { status?: number };
+    err.status = response.status;
+    throw err;
   }
 
   return response.json();

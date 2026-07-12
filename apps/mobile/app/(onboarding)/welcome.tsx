@@ -3,9 +3,12 @@ import { View, Text, StyleSheet, TextInput, TouchableOpacity, KeyboardAvoidingVi
 import { useRouter } from 'expo-router';
 import { useStrideStore } from '../../src/store/useStrideStore';
 import { strideApi } from '../../src/services/api';
+import { useTheme } from '../../src/context/ThemeContext';
+import { space, radius, type as typo } from '../../src/theme';
 
 export default function OnboardingScreen() {
   const router = useRouter();
+  const { colors } = useTheme();
   const user = useStrideStore((state) => state.user);
   const setUser = useStrideStore((state) => state.setUser);
 
@@ -60,21 +63,21 @@ export default function OnboardingScreen() {
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={styles.container}
+      style={[styles.container, { backgroundColor: colors.bg }]}
     >
       <ScrollView contentContainerStyle={styles.scrollContainer}>
-        <Text style={styles.title}>Athlete Profile</Text>
-        <Text style={styles.subtitle}>Help Stride Coach customize your biomechanical feedback</Text>
+        <Text style={[styles.title, { color: colors.text }]}>Athlete Profile</Text>
+        <Text style={[styles.subtitle, { color: colors.muted }]}>Help Stride Coach customize your biomechanical feedback</Text>
 
-        {error ? <Text style={styles.errorText}>{error}</Text> : null}
+        {error ? <Text style={[styles.errorText, { color: colors.error }]}>{error}</Text> : null}
 
         {/* Display Name Input */}
         <View style={styles.section}>
-          <Text style={styles.label}>What should we call you?</Text>
+          <Text style={[styles.label, { color: colors.text }]}>What should we call you?</Text>
           <TextInput
-            style={styles.input}
+            style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, color: colors.text }]}
             placeholder="e.g. Adhiban"
-            placeholderTextColor="#5C6073"
+            placeholderTextColor={colors.muted}
             value={displayName}
             onChangeText={setDisplayName}
           />
@@ -82,18 +85,19 @@ export default function OnboardingScreen() {
 
         {/* Event Specialty */}
         <View style={styles.section}>
-          <Text style={styles.label}>Select your primary event specialty</Text>
+          <Text style={[styles.label, { color: colors.text }]}>Select your primary event specialty</Text>
           <View style={styles.buttonRow}>
             {(['100m', '200m', '400m'] as const).map((spec) => (
               <TouchableOpacity
                 key={spec}
                 style={[
                   styles.optionButton,
-                  eventSpecialty === spec ? styles.activeOption : null,
+                  { backgroundColor: colors.card, borderColor: colors.border },
+                  eventSpecialty === spec && { backgroundColor: colors.accent, borderColor: colors.accent },
                 ]}
                 onPress={() => setEventSpecialty(spec)}
               >
-                <Text style={[styles.optionText, eventSpecialty === spec ? styles.activeOptionText : null]}>
+                <Text style={[styles.optionText, { color: colors.muted }, eventSpecialty === spec && { color: colors.accentText }]}>
                   {spec}
                 </Text>
               </TouchableOpacity>
@@ -103,18 +107,19 @@ export default function OnboardingScreen() {
 
         {/* Experience Level */}
         <View style={styles.section}>
-          <Text style={styles.label}>What is your experience level?</Text>
+          <Text style={[styles.label, { color: colors.text }]}>What is your experience level?</Text>
           <View style={styles.buttonRow}>
             {(['beginner', 'intermediate', 'advanced'] as const).map((level) => (
               <TouchableOpacity
                 key={level}
                 style={[
                   styles.optionButton,
-                  experienceLevel === level ? styles.activeOption : null,
+                  { backgroundColor: colors.card, borderColor: colors.border },
+                  experienceLevel === level && { backgroundColor: colors.accent, borderColor: colors.accent },
                 ]}
                 onPress={() => setExperienceLevel(level)}
               >
-                <Text style={[styles.optionText, experienceLevel === level ? styles.activeOptionText : null]}>
+                <Text style={[styles.optionText, { color: colors.muted }, experienceLevel === level && { color: colors.accentText }]}>
                   {level.charAt(0).toUpperCase() + level.slice(1)}
                 </Text>
               </TouchableOpacity>
@@ -124,19 +129,19 @@ export default function OnboardingScreen() {
 
         {/* Personal Best */}
         <View style={styles.section}>
-          <Text style={styles.label}>Personal Best (Seconds - Optional)</Text>
+          <Text style={[styles.label, { color: colors.text }]}>Personal Best (Seconds - Optional)</Text>
           <TextInput
-            style={styles.input}
+            style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, color: colors.text }]}
             placeholder="e.g. 10.85"
-            placeholderTextColor="#5C6073"
+            placeholderTextColor={colors.muted}
             keyboardType="decimal-pad"
             value={pb}
             onChangeText={setPb}
           />
         </View>
 
-        <TouchableOpacity style={styles.completeButton} onPress={handleCompleteOnboarding} disabled={loading}>
-          <Text style={styles.completeButtonText}>{loading ? 'Saving Profile...' : 'Finish Setup'}</Text>
+        <TouchableOpacity style={[styles.completeButton, { backgroundColor: colors.accent }]} onPress={handleCompleteOnboarding} disabled={loading}>
+          <Text style={[styles.completeButtonText, { color: colors.accentText }]}>{loading ? 'Saving Profile...' : 'Finish Setup'}</Text>
         </TouchableOpacity>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -144,93 +149,17 @@ export default function OnboardingScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#0B0D17',
-  },
-  scrollContainer: {
-    flexGrow: 1,
-    padding: 24,
-    justifyContent: 'center',
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#8E94A8',
-    marginBottom: 32,
-    lineHeight: 22,
-  },
-  errorText: {
-    color: '#FF453A',
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 20,
-  },
-  section: {
-    marginBottom: 28,
-  },
-  label: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 12,
-  },
-  input: {
-    backgroundColor: '#16192E',
-    borderColor: '#262940',
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    color: '#FFFFFF',
-    fontSize: 16,
-  },
-  buttonRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  optionButton: {
-    flex: 1,
-    backgroundColor: '#16192E',
-    borderColor: '#262940',
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: 'center',
-  },
-  activeOption: {
-    backgroundColor: '#FF453A',
-    borderColor: '#FF453A',
-  },
-  optionText: {
-    color: '#8E94A8',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  activeOptionText: {
-    color: '#FFFFFF',
-  },
-  completeButton: {
-    backgroundColor: '#FF453A',
-    borderRadius: 12,
-    paddingVertical: 18,
-    alignItems: 'center',
-    marginTop: 20,
-    shadowColor: '#FF453A',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-  },
-  completeButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: 'bold',
-    letterSpacing: 0.5,
-  },
+  container: { flex: 1 },
+  scrollContainer: { flexGrow: 1, padding: space.xl, justifyContent: 'center' },
+  title: { ...typo.display, fontSize: 30, marginBottom: space.xs },
+  subtitle: { ...typo.body, marginBottom: space.xxl, lineHeight: 22 },
+  errorText: { ...typo.bodyMedium, marginBottom: space.xl },
+  section: { marginBottom: space.xxl },
+  label: { fontSize: 16, fontWeight: '600', marginBottom: space.md },
+  input: { borderWidth: 1, borderRadius: radius.md, paddingHorizontal: space.lg, paddingVertical: space.md, fontSize: 16 },
+  buttonRow: { flexDirection: 'row', justifyContent: 'space-between', gap: space.md },
+  optionButton: { flex: 1, borderWidth: 1, borderRadius: radius.md, paddingVertical: space.lg, alignItems: 'center' },
+  optionText: { fontSize: 14, fontWeight: '700' },
+  completeButton: { borderRadius: radius.md, paddingVertical: space.lg + 2, alignItems: 'center', marginTop: space.lg },
+  completeButtonText: { fontSize: 16, fontWeight: '700', letterSpacing: 0.5 },
 });

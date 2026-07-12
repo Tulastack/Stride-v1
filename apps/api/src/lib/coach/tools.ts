@@ -173,10 +173,12 @@ export function buildCoachTools(ctx: CoachToolContext) {
             ? metrics
                 .map((m) => {
                   const key = String(m.key ?? '');
-                  const val = m.measured?.value ?? m.measured ?? '—';
+                  const label = key.replace(/_(ms|spm)$/, '').replace(/_/g, ' ');
+                  const val = typeof m.measured?.value === 'number' ? m.measured.value : (m.measured ?? '—');
                   const conf = typeof m.measured?.confidence === 'number' ? m.measured.confidence : null;
                   const [lo, hi] = m.normalRange ?? [];
-                  const range = lo != null && hi != null ? ` (normal ${lo}-${hi}${m.unit ?? ''})` : '';
+                  const fmt = (n: unknown) => (typeof n === 'number' ? n.toLocaleString('en-US') : n);
+                  const range = lo != null && hi != null ? ` (normal ${fmt(lo)}-${fmt(hi)}${m.unit ?? ''})` : '';
                   const trust =
                     m.trustStatus === 'experimental'
                       ? ' [experimental — hedge; do not treat as definitive]'
@@ -188,7 +190,7 @@ export function buildCoachTools(ctx: CoachToolContext) {
                     usable[key] === false || (conf != null && conf < 0.35)
                       ? ' [NOT USABLE — do not cite as fact; ask them to re-film]'
                       : '';
-                  return `- ${key.replace(/_/g, ' ')}: ${val}${m.unit ?? ''}${range}${confStr}${trust}${gated}`;
+                  return `- ${label}: ${fmt(val)}${m.unit ?? ''}${range}${confStr}${trust}${gated}`;
                 })
                 .join('\n')
             : '- (no per-metric values)';

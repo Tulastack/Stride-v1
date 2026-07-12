@@ -1,5 +1,5 @@
-import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, SafeAreaView, Pressable, ActivityIndicator } from 'react-native';
+import React, { useRef, useState, useCallback } from 'react';
+import { View, Text, StyleSheet, ScrollView, SafeAreaView, Pressable, ActivityIndicator, Animated } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, CheckCircle2, Circle } from 'lucide-react-native';
 import { strideApi } from '../../src/services/api';
@@ -9,7 +9,7 @@ import { space, radius, iconStroke } from '../../src/theme';
 type CalendarEvent = {
   id: string;
   title: string;
-  event_type: 'workout' | 'rest' | 'competition' | 'drill';
+  event_type: 'workout' | 'rest' | 'competition' | 'drill' | 'hydration' | 'recovery' | 'cross_training';
   scheduled_date: string;
   status: 'scheduled' | 'completed' | 'skipped';
   details?: {
@@ -24,11 +24,30 @@ type CalendarEvent = {
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 const EVENT_TYPE_COLORS: Record<string, string> = {
-  drill: '#CDA84E',    // gold accent
-  workout: '#2E8F63',  // success green
-  competition: '#C1432B', // error red
-  rest: '#79766A',     // muted
+  drill: '#CDA84E',        // gold accent
+  workout: '#2E8F63',      // success green
+  competition: '#C1432B',  // error red
+  rest: '#79766A',         // muted
+  hydration: '#3B82F6',    // blue
+  recovery: '#EC4899',     // rose
+  cross_training: '#0EA5E9', // teal-blue
 };
+
+// Fixed display order for grouping the day's activities by type. Workouts and
+// drills come first (the coach's primary focus) — hydration/recovery/cross-
+// training are things the athlete can add themselves when they want to.
+const CATEGORY_ORDER: { type: CalendarEvent['event_type']; label: string }[] = [
+  { type: 'workout', label: 'WORKOUTS' },
+  { type: 'drill', label: 'FORM' },
+  { type: 'hydration', label: 'HYDRATION' },
+  { type: 'recovery', label: 'RECOVERY' },
+  { type: 'cross_training', label: 'CROSS-TRAINING' },
+  { type: 'rest', label: 'REST' },
+  { type: 'competition', label: 'COMPETITION' },
+];
+
+const CHECK_ANIM_MS = 220;
+const CHECK_HOLD_MS = 220;
 
 function getMonthData(year: number, month: number) {
   const firstDay = new Date(year, month, 1).getDay();
@@ -58,6 +77,8 @@ export default function CalendarScreen() {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<string>(formatDate(new Date()));
+  const [completingId, setCompletingId] = useState<string | null>(null);
+  const checkAnim = useRef(new Animated.Value(0)).current;
 
   const now = new Date();
   const viewYear = new Date(now.getFullYear(), now.getMonth() + monthOffset, 1).getFullYear();
@@ -102,16 +123,20 @@ export default function CalendarScreen() {
 
   const dayEvents = events.filter((e) => e.scheduled_date === selectedDate && e.status !== 'completed');
 
-  const toggleComplete = async (event: CalendarEvent) => {
-    const newStatus = event.status === 'completed' ? 'scheduled' : 'completed';
-    try {
-      await strideApi.updateEvent(event.id, { status: newStatus });
-      setEvents((prev) =>
-        prev.map((e) => (e.id === event.id ? { ...e, status: newStatus } : e))
-      );
-    } catch {
-      // silently fail
-    }
+  // Every event visible in dayEvents is always 'scheduled' (completed ones are
+  // filtered out), so tapping only ever means "mark complete." Plays a brief
+  // checkmark pop before the item actually leaves the list.
+  const completeWithAnimation = (event: CalendarEvent) => {
+    if (completingId) return; // one at a time
+    setCompletingId(event.id);
+    checkAnim.setValue(0);
+    Animated.timing(checkAnim, { toValue: 1, duration: CHECK_ANIM_MS, useNativeDriver: true }).start();
+
+    strideApi.updateEvent(event.id, { status: 'completed' }).catch(() => {});
+    setTimeout(() => {
+      setEvents((prev) => prev.map((e) => (e.id === event.id ? { ...e, status: 'completed' } : e)));
+      setCompletingId(null);
+    }, CHECK_ANIM_MS + CHECK_HOLD_MS);
   };
 
   // Helper: get the date string for a given day number
@@ -124,8 +149,8 @@ export default function CalendarScreen() {
   const getDotColor = (dateStr: string): string | null => {
     const dayEvts = eventsByDate.get(dateStr);
     if (!dayEvts || dayEvts.length === 0) return null;
-    // Priority: competition > drill > workout > rest
-    const priority = ['competition', 'drill', 'workout', 'rest'];
+    // Priority: competition > drill > workout > cross-training > recovery > hydration > rest
+    const priority = ['competition', 'drill', 'workout', 'cross_training', 'recovery', 'hydration', 'rest'];
     for (const p of priority) {
       if (dayEvts.some((e) => e.event_type === p)) return EVENT_TYPE_COLORS[p];
     }
@@ -206,39 +231,61 @@ export default function CalendarScreen() {
           </View>
         ) : (
           <View style={styles.eventList}>
-            {dayEvents.map((event) => (
-              <Pressable
-                key={event.id}
-                style={[styles.eventCard, { backgroundColor: colors.card, borderColor: colors.border }]}
-                onPress={() => toggleComplete(event)}
-              >
-                <View style={styles.eventLeft}>
-                  {event.status === 'completed' ? (
-                    <CheckCircle2 color={colors.success} size={22} />
-                  ) : (
-                    <Circle color={colors.muted} size={22} />
-                  )}
-                  <View style={styles.eventInfo}>
-                    <Text style={[styles.eventTitle, { color: colors.text }, event.status === 'completed' && [styles.eventDone, { color: colors.muted }]]}>
-                      {event.title}
-                    </Text>
-                    {event.details?.sets && event.details?.reps ? (
-                      <Text style={[styles.eventVolume, { color: colors.muted }]}>
-                        {event.details.sets} sets × {event.details.reps} reps
-                      </Text>
-                    ) : event.details?.volume ? (
-                      <Text style={[styles.eventVolume, { color: colors.muted }]}>{event.details.volume}</Text>
-                    ) : null}
-                    {event.details?.cue && (
-                      <Text style={[styles.eventCue, { color: colors.muted }]}>{event.details.cue}</Text>
-                    )}
-                  </View>
+            {CATEGORY_ORDER.map(({ type, label }) => {
+              const items = dayEvents.filter((e) => e.event_type === type);
+              if (!items.length) return null;
+              return (
+                <View key={type} style={styles.categoryGroup}>
+                  <Text style={[styles.categoryLabel, { color: colors.muted }]}>{label}</Text>
+                  {items.map((event) => {
+                    const completing = completingId === event.id;
+                    return (
+                      <Pressable
+                        key={event.id}
+                        style={[styles.eventCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+                        onPress={() => completeWithAnimation(event)}
+                        disabled={completing}
+                      >
+                        <View style={styles.eventLeft}>
+                          {completing ? (
+                            <Animated.View
+                              style={{
+                                opacity: checkAnim,
+                                transform: [{
+                                  scale: checkAnim.interpolate({ inputRange: [0, 0.6, 1], outputRange: [0.5, 1.25, 1] }),
+                                }],
+                              }}
+                            >
+                              <CheckCircle2 color={colors.success} size={22} />
+                            </Animated.View>
+                          ) : (
+                            <Circle color={colors.muted} size={22} />
+                          )}
+                          <View style={styles.eventInfo}>
+                            <Text style={[styles.eventTitle, { color: colors.text }]}>
+                              {event.title}
+                            </Text>
+                            {event.details?.sets && event.details?.reps ? (
+                              <Text style={[styles.eventVolume, { color: colors.muted }]}>
+                                {event.details.sets} sets × {event.details.reps} reps
+                              </Text>
+                            ) : event.details?.volume ? (
+                              <Text style={[styles.eventVolume, { color: colors.muted }]}>{event.details.volume}</Text>
+                            ) : null}
+                            {event.details?.cue && (
+                              <Text style={[styles.eventCue, { color: colors.muted }]}>{event.details.cue}</Text>
+                            )}
+                          </View>
+                        </View>
+                        <View style={[styles.eventBadge, { backgroundColor: EVENT_TYPE_COLORS[event.event_type] || '#353A44' }]}>
+                          <Text style={styles.eventBadgeText}>{event.event_type.replace(/_/g, ' ').toUpperCase()}</Text>
+                        </View>
+                      </Pressable>
+                    );
+                  })}
                 </View>
-                <View style={[styles.eventBadge, { backgroundColor: EVENT_TYPE_COLORS[event.event_type] || '#353A44' }]}>
-                  <Text style={styles.eventBadgeText}>{event.event_type.toUpperCase()}</Text>
-                </View>
-              </Pressable>
-            ))}
+              );
+            })}
           </View>
         )}
       </ScrollView>
@@ -268,7 +315,9 @@ const styles = StyleSheet.create({
   emptyState: { alignItems: 'center', marginTop: 40, gap: space.sm },
   emptyTitle: { fontSize: 20, fontWeight: '800' },
   emptySubtitle: { fontSize: 14 },
-  eventList: { gap: space.md },
+  eventList: { gap: space.lg },
+  categoryGroup: { gap: space.md },
+  categoryLabel: { fontSize: 11, fontWeight: '900', letterSpacing: 1.5 },
   eventCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: space.lg, borderWidth: 1, borderRadius: radius.md },
   eventLeft: { flexDirection: 'row', alignItems: 'flex-start', gap: space.md, flex: 1 },
   eventInfo: { flex: 1, gap: 4 },

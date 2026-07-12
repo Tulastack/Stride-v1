@@ -213,6 +213,14 @@ const biomechSchema = z.object({
 /**
  * 3. WHAM + OpenCap pipeline output → PRD v2.2 AnalysisResult (Stages 4–7 on API).
  * POST /internal/analysis-biomech
+ *
+ * DORMANT IN PRODUCTION, NOT DELETED: only ever called by ml-worker's WHAM
+ * branch (apps/ml-worker/src/worker.py, _process_wham_opencap), which only
+ * runs when that worker is started with STRIDE_PIPELINE=wham. No deployment
+ * config in this repo sets that — every real environment defaults to the 2D
+ * path (biomech2d.py), which never calls this route. Kept live and working
+ * intentionally so the 3D pipeline stays exercisable without deleting code;
+ * flip STRIDE_PIPELINE=wham on the worker to actually activate it.
  */
 router.post('/analysis-biomech', verifyInternalSecret, async (req: any, res: Response, next: NextFunction) => {
   try {

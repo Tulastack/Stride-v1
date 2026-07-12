@@ -2,15 +2,15 @@ import { explainMetric } from '../metricExplanations.js';
 
 describe('explainMetric', () => {
   it('explains a low-side deviation in plain, cause-and-effect language', () => {
-    const text = explainMetric('knee_drive', 59, 'deg', [80, 110]);
+    const text = explainMetric('knee_drive', 59, '°', [80, 110]);
     expect(text).toBeTruthy();
     expect(text).not.toMatch(/^Your knee drive \(/); // not the old raw-stat template
-    expect(text).toMatch(/59deg/);
-    expect(text).toMatch(/80–110deg/);
+    expect(text).toMatch(/59°/);
+    expect(text).toMatch(/80–110°/);
   });
 
   it('explains a high-side deviation with the high-direction template', () => {
-    const text = explainMetric('trunk_lean', 60, 'deg', [38, 50]);
+    const text = explainMetric('trunk_lean', 60, '°', [38, 50]);
     expect(text).toBeTruthy();
     expect(text).toMatch(/leaning further forward/);
   });

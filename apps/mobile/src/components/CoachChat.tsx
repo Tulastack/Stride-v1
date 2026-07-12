@@ -167,8 +167,14 @@ export function CoachChat({ analysisId }: { analysisId?: string } = {}) {
         sections,
         showCalendarCta: reply.calendarRelevant === true,
       }]);
-    } catch {
-      setMessages((m) => [...m, { role: 'assistant', content: "Couldn't reach the coach. Check connection." }]);
+    } catch (err: any) {
+      const busy = err?.status === 429;
+      setMessages((m) => [...m, {
+        role: 'assistant',
+        content: busy
+          ? "Your coach is a little busy right now — give it a few minutes and try again."
+          : "Couldn't reach the coach. Check connection.",
+      }]);
     } finally {
       stopThinking();
       setLoading(false);
