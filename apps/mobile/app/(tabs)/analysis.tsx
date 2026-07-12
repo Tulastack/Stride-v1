@@ -23,6 +23,16 @@ interface DrillSuggestion {
 // Severity index → label + a semantic weight (color comes from the theme).
 const SEVERITY_LABELS: Record<number, string> = { 5: 'MAJOR', 4: 'SIGNIFICANT', 3: 'MODERATE', 2: 'MINOR', 1: 'MINOR' };
 
+// Friendly labels for every metric key the analyzers emit (sagittal + frontal).
+const METRIC_LABEL: Record<string, string> = {
+  trunk_lean: 'Trunk lean', knee_drive: 'Knee drive', hip_extension: 'Hip extension',
+  knee_flexion: 'Knee flexion', arm_swing: 'Arm swing', overstride: 'Overstride',
+  vertical_oscillation: 'Vertical bounce', contact_time_ms: 'Ground contact', cadence_spm: 'Cadence',
+  knee_valgus: 'Knee collapse', pelvic_drop: 'Hip drop', arm_crossover: 'Arm crossover',
+  foot_crossover: 'Foot crossover', stance_width: 'Stance width', head_tilt: 'Head tilt',
+};
+const metricLabel = (k: string) => METRIC_LABEL[k] ?? k.replace(/_/g, ' ');
+
 function severityLabel(index: number, total: number): string {
   if (total <= 1) return SEVERITY_LABELS[3];
   return SEVERITY_LABELS[Math.max(1, 5 - index)] ?? SEVERITY_LABELS[3];
@@ -169,6 +179,46 @@ export default function AnalysisScreen() {
 
         <Text style={[styles.summary, { color: colors.text }]}>{result.summary}</Text>
 
+        {/* Measurements — the full breakdown, so it's never "just a score". Every
+            metric shows its value, ideal range, and whether we could trust it. */}
+        {result.metrics && result.metrics.length > 0 && (
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>YOUR MEASUREMENTS</Text>
+            {result.metrics.map((m) => {
+              const [lo, hi] = m.normalRange ?? [0, 0];
+              const experimental = m.trustStatus === 'experimental';
+              const inRange = !experimental && m.measured.value >= lo && m.measured.value <= hi;
+              const valueColor = experimental ? colors.muted : inRange ? colors.success : colors.accent;
+              return (
+                <View key={m.key} style={[styles.metricRow, { borderBottomColor: colors.border }]}>
+                  <View style={styles.metricLeft}>
+                    <Text style={[styles.metricLabel, { color: experimental ? colors.muted : colors.text }]}>
+                      {metricLabel(m.key)}
+                    </Text>
+                    {experimental ? (
+                      <Text style={[styles.metricTag, { color: colors.muted }]}>experimental</Text>
+                    ) : !inRange ? (
+                      <Text style={[styles.metricTag, { color: colors.accent }]}>needs work</Text>
+                    ) : null}
+                  </View>
+                  <View style={styles.metricRight}>
+                    <Text style={[styles.metricValue, { color: valueColor }]}>
+                      {m.measured.value}
+                      <Text style={[styles.metricUnit, { color: colors.muted }]}> {m.unit}</Text>
+                    </Text>
+                    {(lo || hi) ? (
+                      <Text style={[styles.metricRange, { color: colors.muted }]}>ideal {lo}–{hi}</Text>
+                    ) : null}
+                  </View>
+                </View>
+              );
+            })}
+            <Text style={[styles.sectionHint, { color: colors.muted }]}>
+              "Experimental" values need a cleaner side-on, well-lit, high-frame-rate clip before we'll stand behind them.
+            </Text>
+          </View>
+        )}
+
         {/* Issues */}
         {topFlaws.length > 0 && (
           <View style={styles.section}>
@@ -305,6 +355,15 @@ const styles = StyleSheet.create({
   severityText: { fontSize: 10, fontWeight: '900', letterSpacing: 1 },
   issueTitle: { fontSize: 16, fontWeight: '700', textTransform: 'capitalize', marginBottom: 4 },
   issueDesc: { fontSize: 13, lineHeight: 19 },
+  // measurements breakdown
+  metricRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1 },
+  metricLeft: { flex: 1, gap: 2 },
+  metricLabel: { fontSize: 15, fontWeight: '700' },
+  metricTag: { fontSize: 11, fontWeight: '700', fontStyle: 'italic' },
+  metricRight: { alignItems: 'flex-end', gap: 1 },
+  metricValue: { fontSize: 18, fontWeight: '800' },
+  metricUnit: { fontSize: 12, fontWeight: '600' },
+  metricRange: { fontSize: 11 },
   // approval gate
   suggCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: space.lg, marginBottom: 10, borderWidth: 1, borderRadius: radius.md },
   suggInfo: { flex: 1, paddingRight: space.md },
