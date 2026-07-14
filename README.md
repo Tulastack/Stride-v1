@@ -2,8 +2,6 @@
 
 AI-powered sprint biomechanics from phone video. Record a sprint, get a full breakdown of your form, and a training plan to fix what's off.
 
-No lab. No markers. No setup. Just your phone.
-
 ![Stride Analysis](docs/assets/demo.gif)
 
 ## How It Works
