@@ -1,114 +1,77 @@
-# Stride — AI Sprint Biomechanics Analysis
+# Stride
 
-Stride is a mobile app that gives sprinters and coaches real-time biomechanical feedback from phone video. Record a sprint, get an AI-powered analysis of form, and receive a personalized training plan — no lab, no markers, no setup.
+AI-powered sprint biomechanics from phone video. Record a sprint, get a full breakdown of your form, and a training plan to fix what's off.
 
-## What It Does
+No lab. No markers. No setup. Just your phone.
 
-1. **Record or import** a sprint video from your phone
-2. **AI pose estimation** tracks 17 body keypoints at up to 240fps
-3. **Biomechanical analysis** computes joint angles, stride metrics, and detects form issues
-4. **LLM coaching** generates personalized drill recommendations grounded in the athlete's real data
-5. **Training plan** schedules corrective drills on a calendar with volume and coaching cues
+![Stride Analysis](docs/assets/demo.gif)
+
+## How It Works
+
+You film a sprint (or import a video). The app runs pose estimation on every frame, computes joint angles and stride metrics, detects form issues, then generates a personalized coaching report with drills and a calendar plan.
+
+The whole pipeline runs in about 15 seconds per clip.
 
 ## Architecture
 
 ```
-┌─────────────────┐       ┌──────────────┐       ┌──────────────────┐
-│  React Native   │──────▶│  Express API │──────▶│  Aurora DSQL     │
-│  (Expo / iOS /  │       │  (TypeScript)│       │  (PostgreSQL)    │
-│   Android)      │       └──────┬───────┘       └──────────────────┘
-└─────────────────┘              │
-                                 │ SQS
-                                 ▼
-                          ┌──────────────┐
-                          │  ML Worker   │
-                          │  (Python)    │
-                          │  TensorFlow  │
-                          │  RTMPose     │
-                          │  OpenCV      │
-                          └──────────────┘
+React Native App → Express API → Aurora DSQL (Postgres)
+                       ↓
+                   SQS Queue
+                       ↓
+                  ML Worker (Python)
+                  RTMPose + TensorFlow
+                  Biomechanics Engine
+                  LLM Coach (Groq/Gemini)
 ```
 
-## Tech Stack
+## Stack
 
-| Layer | Technology |
-|-------|-----------|
+| Layer | What |
+|-------|------|
 | Mobile | React Native, Expo, TypeScript |
-| API | Express 5, TypeScript, Zod, Supabase Auth (JWT) |
-| ML/CV | Python, TensorFlow, RTMPose (ONNX), OpenCV, NumPy, SciPy |
-| LLM | Groq (Llama 3.3 70B), Gemini 1.5 Pro (fallback) |
-| Database | AWS Aurora DSQL (PostgreSQL-compatible, serverless) |
-| Storage | AWS S3 (video), SQS (job queue) |
-| Infrastructure | AWS ECS Fargate, ALB, Terraform, Docker |
-| Auth | Supabase (JWT, JWKS verification) |
-| CI/CD | GitHub Actions |
+| API | Express 5, TypeScript, Supabase Auth |
+| ML | Python, TensorFlow, RTMPose, OpenCV, SciPy |
+| LLM | Groq (Llama 3.3 70B), Gemini 1.5 Pro fallback |
+| Database | AWS Aurora DSQL |
+| Storage | S3 for video, SQS for job queue |
+| Infra | ECS Fargate, ALB, Terraform |
 
 ## ML Pipeline
 
-```
-Video → RTMPose 2D keypoints → Gravity-anchored canonicalization →
-Sagittal biomechanics (angles, phases, gait timing) →
-Trust-tiered metric reporting → Flaw detection → LLM coaching report
-```
+Video frames go through RTMPose (2D keypoints), then gravity-anchored canonicalization (phone accelerometer aligns angles to true vertical), then sagittal biomechanics (joint angles, stride phases, gait timing), then trust-tiered reporting (only confident measurements raise flaws), then the LLM generates coaching advice grounded in the athlete's actual numbers.
 
-Key features of the CV system:
-- **Crop-to-target tracking** — IoU-based person tracking locks onto the selected athlete in multi-person clips
-- **Gravity-anchored angles** — uses phone accelerometer to measure joint angles against true vertical, not camera-relative
-- **Trust tiers** — metrics are labeled trusted/experimental based on viewing angle, fps, and confidence. Only trusted metrics raise flaws.
-- **Phase-aware norms** — different thresholds for acceleration vs max-velocity phase
-- **Dual-rate temporal analysis** — 120fps ankle signal for accurate ground contact time, 15fps pose for joint angles
+Key things worth noting:
 
-## Project Structure
+The system tracks a specific person using IoU-based bounding box matching, so it works in multi-person clips. Metrics are labeled trusted or experimental depending on camera angle, fps, and keypoint confidence. Only trusted metrics generate flaw alerts. The coach is a multi-step agent with tools (not a single prompt), so it can look up the athlete's history, drill library, and calendar before answering.
+
+## Project Layout
 
 ```
-apps/
-  api/           — Express API (TypeScript)
-  ml-worker/     — Python ML pipeline (pose estimation + biomechanics)
-  mobile/        — React Native app (Expo)
-packages/
-  types/         — Shared TypeScript types
-  content/       — Coaching knowledge base
-  design-tokens/ — Design system tokens
-infra/
-  terraform/     — AWS infrastructure as code
-  docker-compose.yml — Local development stack
-scripts/         — Deploy/undeploy/dev automation
-docs/
-  research/      — ML architecture + angle-agnostic kinematics research
-  benchmarks/    — Pipeline accuracy + app E2E baselines
+apps/api/          Express API (TypeScript)
+apps/ml-worker/    ML pipeline (Python)
+apps/mobile/       React Native app (Expo)
+packages/          Shared types, design tokens
+infra/terraform/   AWS infrastructure
+scripts/           Deploy and dev automation
+docs/              Research and benchmarks
 ```
-
-## Key Engineering Decisions
-
-- **2D-first, 3D-optional**: Sagittal 2D analysis is accurate to 3-5° from side-on video (validated against VideoRun2D literature). WHAM 3D lift available as an upgrade path when GPU is added.
-- **Honesty over hallucination**: Metrics that can't be reliably measured (bad angle, low fps, low confidence) are reported as "experimental" and never generate false-positive flaws.
-- **IAM token auth for database**: No static passwords — ECS tasks authenticate to DSQL using short-lived IAM tokens.
-- **Agent-based coaching**: The AI coach uses a multi-step tool-calling agent (not a single LLM prompt) with access to the athlete's metrics history, drill library, and calendar.
-- **Local-first development**: Full stack runs locally via docker-compose or native processes — no AWS dependency for development.
 
 ## Running Locally
 
-```bash
-# Install dependencies
+```
 npm install
-
-# Start local stack (Postgres + API + ML worker)
 ./scripts/dev-local.sh
-
-# Start mobile app
 cd apps/mobile && npx expo start
 ```
 
-## Deployment
+## Deploying
 
-```bash
-cd infra/terraform
-terraform init && terraform apply
-
-# Deploy containers
+```
+cd infra/terraform && terraform apply
 ./scripts/deploy.sh
 ```
 
 ## Status
 
-Working end-to-end: video upload → ML analysis → results → AI coach → calendar planning. Pre-launch (HTTPS + app store submission remaining).
+Working end-to-end. Pre-launch (HTTPS and app store submission remaining).
