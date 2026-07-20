@@ -154,9 +154,9 @@ const styles = StyleSheet.create({
   uploadWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: space.xl },
   uploadStep: { fontSize: 12, fontWeight: '600', letterSpacing: 1.1 },
   cameraOverlay: { flex: 1, justifyContent: 'flex-end', alignItems: 'center', paddingBottom: space.xxxl, gap: space.lg },
-  closeBtn: { position: 'absolute', top: space.xl, right: space.xl, width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center' },
+  closeBtn: { position: 'absolute', top: space.xl, right: space.xl, width: 36, height: 36, borderRadius: radius.pill, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center' },
   closeBtnText: { color: '#fff', fontSize: 18, fontWeight: '600' },
   cameraHint: { fontSize: 12, color: '#fff', backgroundColor: 'rgba(0,0,0,0.5)', padding: space.sm, borderRadius: radius.sm },
-  camBtn: { width: 64, height: 64, borderRadius: 32, borderWidth: 2, borderColor: '#fff', alignItems: 'center', justifyContent: 'center' },
-  camInner: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#C1432B' },
+  camBtn: { width: 64, height: 64, borderRadius: radius.pill, borderWidth: 2, borderColor: '#fff', alignItems: 'center', justifyContent: 'center' },
+  camInner: { width: 44, height: 44, borderRadius: radius.pill, backgroundColor: '#C1432B' },
 });

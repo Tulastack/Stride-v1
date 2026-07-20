@@ -5,6 +5,8 @@ import { TrendingUp, X } from 'lucide-react-native';
 import { fetchAnalysisHistory } from '../../src/lib/analysisApi';
 import { useTheme } from '../../src/context/ThemeContext';
 import { space, radius, iconStroke } from '../../src/theme';
+import { TrendChart } from '../../src/components/TrendChart';
+import { trendSeries, personalBestIndex, deltaVsBaseline } from '../../src/lib/briefing';
 import type { AnalysisResult } from '../../src/types/analysis';
 
 export default function ProgressScreen() {
@@ -13,6 +15,7 @@ export default function ProgressScreen() {
   const [history, setHistory] = useState<AnalysisResult[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedAnalysis, setSelectedAnalysis] = useState<AnalysisResult | null>(null);
+  const [compareFirst, setCompareFirst] = useState(false);
 
   useEffect(() => {
     fetchAnalysisHistory()
@@ -32,6 +35,8 @@ export default function ProgressScreen() {
   }
 
   const maxScore = 100;
+  const latest = history[history.length - 1];
+  const metricKeys = latest ? latest.metrics.map((m) => m.key) : [];
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.bg }]}>
@@ -42,6 +47,53 @@ export default function ProgressScreen() {
           <Text style={[styles.title, { color: colors.text }]}>Your{'\n'}Progress</Text>
           <Text style={[styles.subtitle, { color: colors.muted }]}>{history.length} sprint{history.length !== 1 ? 's' : ''} analyzed</Text>
         </View>
+
+        {history.length > 0 && (
+          <View style={styles.trendsSection}>
+            <View style={styles.trendsHeader}>
+              <Text style={[styles.sectionLabel, { color: colors.muted }]}>METRIC TRENDS</Text>
+              <Pressable
+                testID="compare-first-toggle"
+                onPress={() => setCompareFirst((v) => !v)}
+                style={[styles.toggle, { borderColor: colors.border, backgroundColor: compareFirst ? colors.accent : 'transparent' }]}
+              >
+                <Text style={[styles.toggleText, { color: compareFirst ? colors.accentText : colors.muted }]}>
+                  Compare to first
+                </Text>
+              </Pressable>
+            </View>
+
+            {metricKeys.map((key) => {
+              const series = trendSeries(history, key);
+              if (series.length === 0) return null;
+              const baseline = compareFirst ? deltaVsBaseline(history, key) : undefined;
+              return (
+                <View key={key} style={styles.trendBlock}>
+                  <TrendChart series={series} pbIndex={personalBestIndex(series)} />
+                  {compareFirst && baseline && baseline.comparable && (
+                    <Text
+                      accessibilityLabel={`baseline-${key}`}
+                      style={[
+                        styles.baseline,
+                        { color: baseline.direction === 'improve' ? colors.success : baseline.direction === 'regress' ? colors.error : colors.muted },
+                      ]}
+                    >
+                      {`${baseline.delta > 0 ? '+' : ''}${baseline.delta}${baseline.unit} vs first upload`}
+                    </Text>
+                  )}
+                </View>
+              );
+            })}
+
+            <Pressable
+              accessibilityLabel="retest-cta"
+              onPress={() => router.push('/')}
+              style={[styles.retestCta, { backgroundColor: colors.accent }]}
+            >
+              <Text style={[styles.retestText, { color: colors.accentText }]}>Re-test your sprint</Text>
+            </Pressable>
+          </View>
+        )}
 
         {history.length === 0 ? (
           <View style={styles.emptyState}>
@@ -140,6 +192,15 @@ const styles = StyleSheet.create({
   titleBlock: { marginBottom: space.xxl, gap: space.xs },
   title: { fontSize: 36, fontWeight: '900', letterSpacing: -1, lineHeight: 42 },
   subtitle: { fontSize: 14, marginTop: space.xs },
+  trendsSection: { marginBottom: space.xxl, gap: space.md },
+  trendsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  sectionLabel: { fontSize: 12, fontWeight: '700', letterSpacing: 1.1 },
+  toggle: { paddingHorizontal: space.md, paddingVertical: space.xs, borderWidth: 1, borderRadius: radius.sm },
+  toggleText: { fontSize: 12, fontWeight: '700' },
+  trendBlock: { gap: space.xs },
+  baseline: { fontSize: 13, fontWeight: '700', paddingHorizontal: space.xs },
+  retestCta: { marginTop: space.sm, paddingVertical: 14, alignItems: 'center', borderRadius: radius.sm },
+  retestText: { fontSize: 14, fontWeight: '800' },
   emptyState: { alignItems: 'center', marginTop: 80, gap: space.sm },
   emptyTitle: { fontSize: 18, fontWeight: '700' },
   emptySubtitle: { fontSize: 14, textAlign: 'center' },
