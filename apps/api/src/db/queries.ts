@@ -29,14 +29,33 @@ export async function getUserBySupabaseUid(supabaseUid: string): Promise<User | 
 }
 
 export async function createUser(supabaseUid: string, email: string): Promise<User> {
-  const { rows } = await pool.query<User>(
-    `INSERT INTO users (supabase_uid, email)
-     VALUES ($1, $2)
-     ON CONFLICT (supabase_uid) DO UPDATE SET email = EXCLUDED.email
-     RETURNING *`,
-    [supabaseUid, email],
-  );
-  return rows[0]!;
+  // Get-or-create for the auth path. Two hazards under concurrent first-login:
+  //   • users.email is ALSO unique, so the ON CONFLICT (supabase_uid) arbiter
+  //     doesn't cover an email-index collision → intermittent 23505.
+  //   • ON CONFLICT DO UPDATE takes a row lock across BOTH unique indexes and
+  //     can deadlock (40P01) when sessions acquire them in different orders.
+  // DO NOTHING avoids the update-lock deadlock; the select-fallback + bounded
+  // retry make the whole thing race-proof (the row always exists on conflict).
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const { rows } = await pool.query<User>(
+        `INSERT INTO users (supabase_uid, email)
+         VALUES ($1, $2)
+         ON CONFLICT (supabase_uid) DO NOTHING
+         RETURNING *`,
+        [supabaseUid, email],
+      );
+      if (rows[0]) return rows[0];
+      const existing = await getUserBySupabaseUid(supabaseUid);
+      if (existing) return existing;
+      // No row returned and none found: a racing insert hasn't committed yet.
+      if (attempt >= 3) throw new Error(`createUser: could not resolve user ${supabaseUid}`);
+    } catch (err) {
+      const code = (err as { code?: string }).code;
+      if ((code === '23505' || code === '40P01') && attempt < 3) continue;
+      throw err;
+    }
+  }
 }
 
 export async function updateUser(
@@ -399,8 +418,11 @@ export async function approveSuggestion(
   try {
     await client.query('BEGIN');
 
+    // FOR UPDATE row-locks the suggestion so concurrent approvals (double-tap,
+    // two devices, a retried request) serialize here instead of all reading
+    // 'pending' and each inserting a duplicate calendar event.
     const { rows: suggRows } = await client.query<DrillSuggestion>(
-      'SELECT * FROM drill_suggestions WHERE id = $1 AND user_id = $2',
+      'SELECT * FROM drill_suggestions WHERE id = $1 AND user_id = $2 FOR UPDATE',
       [id, userId],
     );
     const suggestion = suggRows[0];
@@ -463,14 +485,21 @@ export async function skipSuggestion(id: string, userId: string): Promise<DrillS
   try {
     await client.query('BEGIN');
 
+    // Row-lock so a skip can't race an approve into a double audit / event.
     const { rows: suggRows } = await client.query<DrillSuggestion>(
-      'SELECT * FROM drill_suggestions WHERE id = $1 AND user_id = $2',
+      'SELECT * FROM drill_suggestions WHERE id = $1 AND user_id = $2 FOR UPDATE',
       [id, userId],
     );
     const suggestion = suggRows[0];
     if (!suggestion) {
       await client.query('ROLLBACK');
       return null;
+    }
+
+    // Already-decided suggestions are left as-is (idempotent, no second audit row).
+    if (suggestion.status !== 'pending') {
+      await client.query('COMMIT');
+      return suggestion;
     }
 
     const { rows: updatedRows } = await client.query<DrillSuggestion>(
