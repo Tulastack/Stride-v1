@@ -202,7 +202,7 @@ export function buildCoachTools(ctx: CoachToolContext) {
                 .map((f) => `- ${f.name}${f.plainExplanation ? `: ${f.plainExplanation}` : ''}`)
                 .join('\n')
             : '- none flagged';
-          const econ = r.economyScore != null ? `Economy score: ${r.economyScore}/100.\n` : '';
+          const econ = r.economyScore != null ? `Form score: ${r.economyScore}/100.\n` : '';
           const nudge = r.captureQuality?.primaryNudge
             ? `Capture note: ${r.captureQuality.primaryNudge}\n`
             : '';

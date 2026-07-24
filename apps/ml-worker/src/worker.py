@@ -253,7 +253,10 @@ def _run_2d(analysis_id: str, video_path: str, capture: dict, s3_key: str | None
             cq["motionBlur"] = capture["motionBlur"]
         if capture.get("framing"):
             cq["framing"] = capture["framing"]
-    overall_score = int(round(result["captureQuality"]["overall"] * 100))
+    # analyses.overall_score IS the running form score the app displays —
+    # previously this persisted capture quality, so the DB column disagreed
+    # with the economyScore inside result_json.
+    overall_score = int(result.get("economyScore") or 0)
 
     # Backend-derived model identity (bug B3): the persisted model version must
     # reflect the backend that ACTUALLY ran, not a hardcoded MoveNet string. This

@@ -155,6 +155,64 @@ FPS_TRUST_GATE = 120.0
 # (honesty ledger #9) — keep it a candidate, never headline-trusted yet.
 CANDIDATE = {"vertical_oscillation"}
 
+# ── Form-score weights (max points one metric's fault can cost) ───────────────
+# Ordered by how much each mechanic actually moves sprint performance:
+# propulsion (hip extension, knee drive) > braking (overstride) > posture
+# (trunk) > ground timing > recovery/style > frontal stability. A hip-extension
+# fault costs ~3x an arm-swing quirk instead of the old equal averaging.
+FORM_WEIGHT: dict[str, float] = {
+    "hip_extension": 18.0,
+    "knee_drive": 16.0,
+    "overstride": 14.0,
+    "trunk_lean": 12.0,
+    "contact_time_ms": 12.0,
+    "cadence_spm": 10.0,
+    "knee_valgus": 10.0,
+    "knee_flexion": 8.0,
+    "pelvic_drop": 8.0,
+    "arm_swing": 6.0,
+    "vertical_oscillation": 6.0,
+}
+# Penalty curve steepness, in band-half-widths outside the healthy band:
+# dev=0.5 → ~28% of the weight, dev=1.5 → ~63%, dev=3+ → ~86-100% (saturates).
+FORM_SCORE_DECAY = 1.5
+
+
+def _form_score(scorable: list[tuple[str, float, bool]], phase: str) -> int:
+    """Running form score, 0-100: start at 100 and deduct per demonstrated fault.
+
+    `scorable` is (metric_key, value, trusted) for USABLE metrics only
+    (plausible + confident). Scoring rules:
+      * Anywhere INSIDE the healthy band deducts nothing — the band is a
+        plateau. (The old formula rewarded only the band MIDPOINT, so an elite
+        ~0% overstride against the 0-12% band scored 50% — perfect form was
+        mathematically punished on every "lower is better" metric.)
+      * Outside the band the deduction rises smoothly and saturates at the
+        metric's FORM_WEIGHT: weight * (1 - exp(-dev/FORM_SCORE_DECAY)), where
+        dev = distance outside the band in band-half-widths.
+      * Only trusted metrics score; if nothing trusted survived, usable
+        experimental metrics score at HALF weight (uncertainty discount)
+        rather than silently reporting 0.
+      * Sparse-coverage cap: 1 scored metric caps at 80, 2 cap at 90 — a clip
+        where almost nothing was measurable can't claim a perfect 100.
+    """
+    trusted = [(k, v) for k, v, t in scorable if t]
+    pool = trusted or [(k, v) for k, v, _ in scorable]
+    if not pool:
+        return 0
+    discount = 1.0 if trusted else 0.5
+
+    total = 0.0
+    for k, v in pool:
+        lo, hi = _norm_range(k, phase)
+        half = max((hi - lo) / 2.0, 1e-6)
+        dev = (lo - v) / half if v < lo else (v - hi) / half if v > hi else 0.0
+        if dev > 0:
+            total += FORM_WEIGHT.get(k, 8.0) * (1.0 - math.exp(-dev / FORM_SCORE_DECAY))
+
+    cap = 100.0 if len(pool) >= 3 else 90.0 if len(pool) == 2 else 80.0
+    return int(round(max(0.0, min(cap, 100.0 - discount * total))))
+
 _UNIT_SUFFIXES = ("_ms", "_spm")
 
 
@@ -538,24 +596,15 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
             })
             recs.append({"flawId": fid, **DRILLS[key]})
 
-    # Running economy: composite 0-100 from how close usable, TRUSTED metrics sit
-    # to their band. A metric marked "experimental" (e.g. a temporal reading taken
-    # below FPS_TRUST_GATE) is excluded here — its number can still be wildly off
-    # even with high keypoint confidence, and one bad term would otherwise floor
-    # the whole score to 0. Fall back to usable-but-experimental terms only if
-    # NOTHING trusted survived, so the score still degrades gracefully instead of
-    # silently reporting a flat 0.
-    trusted_terms, fallback_terms = [], []
-    for m in metrics:
-        k = m["key"]; v = m["measured"]["value"]
-        if not per_usable[k] or v <= 0:
-            continue
-        lo, hi = _norm_range(k, phase)
-        mid = (lo + hi) / 2; half = max((hi - lo) / 2, 1e-6)
-        term = max(0.0, 1.0 - abs(v - mid) / (half * 2))
-        (trusted_terms if m["trustStatus"] == "trusted" else fallback_terms).append(term)
-    econ_terms = trusted_terms or fallback_terms
-    economy = int(round(100 * (sum(econ_terms) / len(econ_terms)))) if econ_terms else 0
+    # Running form score: deduction-based composite (see _form_score). Usable =
+    # plausible + confident; experimental readings (e.g. temporal below
+    # FPS_TRUST_GATE) only score, at half weight, when NOTHING trusted survived.
+    scorable = [
+        (m["key"], m["measured"]["value"], m["trustStatus"] == "trusted")
+        for m in metrics
+        if per_usable[m["key"]] and m["measured"]["value"] > 0
+    ]
+    economy = _form_score(scorable, phase)
 
     overall = float(np.mean([m["measured"]["confidence"] for m in metrics]))
     nudge = None
@@ -567,11 +616,11 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
         nudge = "Record at 120fps+ for accurate ground-contact and cadence."
 
     if not moving_subject:
-        summary = f"Couldn't get a clear read on a running subject in this clip. Economy {economy}/100."
+        summary = f"Couldn't get a clear read on a running subject in this clip. Form score {economy}/100."
     elif not flaws:
-        summary = f"Clean mechanics — nothing flagged. Economy {economy}/100."
+        summary = f"Clean mechanics — nothing flagged. Form score {economy}/100."
     else:
-        summary = f"{len(flaws)} thing{'s' if len(flaws) > 1 else ''} to work on. Economy {economy}/100."
+        summary = f"{len(flaws)} thing{'s' if len(flaws) > 1 else ''} to work on. Form score {economy}/100."
 
     return {
         "id": f"analysis-{clip_id}", "phase": phase, "economyScore": economy,

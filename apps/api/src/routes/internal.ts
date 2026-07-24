@@ -257,7 +257,11 @@ router.post('/analysis-biomech', verifyInternalSecret, async (req: any, res: Res
 
     validateAnalysisResult(result);
 
-    const overallScore = Math.round(result.captureQuality.overall * 100);
+    // overall_score = the form score users see (falls back to capture quality
+    // only when the engine produced no economyScore).
+    const overallScore = Math.round(
+      (result as { economyScore?: number }).economyScore ?? result.captureQuality.overall * 100,
+    );
     const updatedAnalysis = await updateAnalysisStatus(analysisId, {
       status: 'completed',
       overall_score: overallScore,
