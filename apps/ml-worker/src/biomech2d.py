@@ -289,8 +289,9 @@ def _frame_scalars(k: np.ndarray, vert_down: np.ndarray, up: np.ndarray) -> dict
         "trunk": _angle_between_vectors(mid_sh - mid_hp, up),
         "hip_y": hip_vert,
         "torso_len": float(np.linalg.norm(mid_sh - mid_hp)) or 1e-6,
-        "ank_x_rel": float(ank[0] - mid_hp[0]),                        # foot horizontal vs hip (overstride)
-        "ank_y_rel": float(ank[1] - mid_hp[1]),                        # foot vertical vs hip (contact)
+        # keypoints are [y, x]: index 1 = horizontal (overstride), index 0 = vertical (contact)
+        "ank_x_rel": float(ank[1] - mid_hp[1]),                        # foot horizontal vs hip (overstride)
+        "ank_y_rel": float(ank[0] - mid_hp[0]),                        # foot vertical vs hip (contact)
         "leg_len": leg_len,
         "conf": float(np.mean(k[:, 2])),
     }
@@ -632,10 +633,10 @@ def analyze_2d_sagittal_stream(frame_iter: Iterable[dict], fps: float,
         sc = _frame_scalars(k, vert_down, up)
         for kk in _KEYS:
             S[kk].append(sc[kk])
-        # per-side ankle-rel for gait (independent of which side was "better")
-        hy = (k[KP["left_hip"], 1] + k[KP["right_hip"], 1]) / 2
-        S["l_rel"].append(float(k[KP["left_ankle"], 1] - hy))
-        S["r_rel"].append(float(k[KP["right_ankle"], 1] - hy))
+        # per-side ankle HEIGHT vs hip for gait (index 0 = image y; foot plant = local max)
+        hy = (k[KP["left_hip"], 0] + k[KP["right_hip"], 0]) / 2
+        S["l_rel"].append(float(k[KP["left_ankle"], 0] - hy))
+        S["r_rel"].append(float(k[KP["right_ankle"], 0] - hy))
         fi = int(f["frame_index"])
         idxs.append(fi)
         if estimate_azimuth:

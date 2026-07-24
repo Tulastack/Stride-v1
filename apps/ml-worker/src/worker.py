@@ -15,6 +15,7 @@ import logging
 import os
 import sys
 import tempfile
+import threading
 import time
 import traceback
 import boto3
@@ -97,14 +98,17 @@ def update_analysis_status_in_db(analysis_id: str, status: str, error_message: s
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cursor:
+                # Never resurrect a terminal row: an SQS redelivery of an
+                # already-completed analysis must not flip it back to processing,
+                # and a swept/failed row must not be re-failed over a completion.
                 if status == "processing":
                     cursor.execute(
-                        "UPDATE analyses SET status = %s WHERE id = %s",
+                        "UPDATE analyses SET status = %s WHERE id = %s AND status NOT IN ('completed','failed')",
                         (status, analysis_id),
                     )
                 elif status == "failed":
                     cursor.execute(
-                        "UPDATE analyses SET status = %s, error_message = %s, completed_at = now() WHERE id = %s",
+                        "UPDATE analyses SET status = %s, error_message = %s, completed_at = now() WHERE id = %s AND status <> 'completed'",
                         (status, error_message, analysis_id),
                     )
     except Exception as err:
@@ -130,17 +134,23 @@ def _upload_frames_sidecar(s3_key: str, pipeline_result: dict) -> None:
 
 def _write_overlay(video_path: str, s3_key: str | None, payload: dict) -> None:
     """Persist the per-frame keypoint overlay next to the video so the app can
-    fetch it and draw the skeleton in sync with playback."""
-    body = json.dumps(payload)
-    if LOCAL_STORAGE:
-        path = os.path.splitext(video_path)[0] + ".overlay.json"
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(body)
-        logger.info("Wrote overlay sidecar %s (%d frames)", path, len(payload.get("frames", [])))
-    elif s3_key:
-        key = os.path.splitext(s3_key)[0] + ".overlay.json"
-        s3_client.put_object(Bucket=s3_bucket, Key=key, Body=body, ContentType="application/json")
-        logger.info("Uploaded overlay sidecar s3://%s/%s", s3_bucket, key)
+    fetch it and draw the skeleton in sync with playback.
+
+    Best-effort: the overlay is a playback nice-to-have — a storage hiccup here
+    must never fail an analysis whose metrics are already computed."""
+    try:
+        body = json.dumps(payload)
+        if LOCAL_STORAGE:
+            path = os.path.splitext(video_path)[0] + ".overlay.json"
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(body)
+            logger.info("Wrote overlay sidecar %s (%d frames)", path, len(payload.get("frames", [])))
+        elif s3_key:
+            key = os.path.splitext(s3_key)[0] + ".overlay.json"
+            s3_client.put_object(Bucket=s3_bucket, Key=key, Body=body, ContentType="application/json")
+            logger.info("Uploaded overlay sidecar s3://%s/%s", s3_bucket, key)
+    except Exception as err:
+        logger.warning("Overlay sidecar write failed for %s: %s", s3_key or video_path, err)
 
 
 def _image_down_from_capture(capture: dict) -> tuple[float, float] | None:
@@ -235,6 +245,14 @@ def _run_2d(analysis_id: str, video_path: str, capture: dict, s3_key: str | None
         "height": vh,
         "frames": overlay_frames,
     })
+    # Report the capture quality the phone actually measured, not the assembler's
+    # hardcoded defaults (biomech2d has no access to the capture manifest).
+    cq = result.get("captureQuality")
+    if isinstance(cq, dict):
+        if capture.get("motionBlur"):
+            cq["motionBlur"] = capture["motionBlur"]
+        if capture.get("framing"):
+            cq["framing"] = capture["framing"]
     overall_score = int(round(result["captureQuality"]["overall"] * 100))
 
     # Backend-derived model identity (bug B3): the persisted model version must
@@ -331,16 +349,48 @@ def _process_legacy_llm(analysis_id: str, local_video: str) -> None:
                 )
 
 
-def process_sqs_message(message: dict) -> None:
-    message_body = json.loads(message["Body"])
+# A message is retried (left on the queue) for transient errors until it has
+# been received this many times; after that it is treated as a poison pill.
+MAX_SQS_RECEIVES = int(os.environ.get("MAX_SQS_RECEIVES", "3"))
+
+
+def _cleanup_job_files(local_temp_file: str | None) -> None:
+    """Remove the temp video AND the sidecars written next to it during the job
+    (capture manifest, frames3d) so a long-lived container doesn't fill its disk."""
+    if not local_temp_file:
+        return
+    base = local_temp_file.rsplit(".", 1)[0]
+    for path in (local_temp_file, base + ".capture.json", local_temp_file + ".frames3d.json"):
+        if os.path.exists(path):
+            try:
+                os.remove(path)
+            except Exception as e:
+                logger.error("Failed to delete temp file %s: %s", path, e)
+
+
+def process_sqs_message(message: dict) -> bool:
+    """Process one queued job.
+
+    Returns True when the message should be DELETED (success, or a permanent
+    failure that was recorded); False leaves it on the queue for redelivery so
+    transient infra errors retry and repeated failures land in the DLQ."""
+    try:
+        message_body = json.loads(message["Body"])
+    except Exception:
+        logger.error("Unparseable SQS message body — deleting: %.200s", str(message.get("Body", "")))
+        return True
     analysis_id = message_body.get("analysisId")
     s3_key = message_body.get("s3Key")
 
     if not analysis_id or not s3_key:
         logger.error("SQS message is missing analysisId or s3Key: %s", message_body)
-        return
+        return True
 
-    logger.info("Starting processing for analysis ID: %s (Key: %s)", analysis_id, s3_key)
+    receive_count = int(message.get("Attributes", {}).get("ApproximateReceiveCount", "1"))
+    logger.info(
+        "Starting processing for analysis ID: %s (Key: %s, receive #%d)",
+        analysis_id, s3_key, receive_count,
+    )
     update_analysis_status_in_db(analysis_id, "processing")
 
     local_temp_file = None
@@ -361,20 +411,27 @@ def process_sqs_message(message: dict) -> None:
         else:
             logger.info("Running RTMPose + 2D sagittal biomechanics pipeline")
             _process_2d_sagittal(analysis_id, s3_key, local_temp_file)
+        return True
 
     except Exception as err:
         logger.error("Error processing analysis %s: %s", analysis_id, err)
         traceback.print_exc()
         sentry_sdk.capture_exception(err)
-        update_analysis_status_in_db(analysis_id, "failed", error_message=str(err))
-        notify_analysis_failed(analysis_id, str(err))
+        # ValueError = a pipeline verdict (bad video, no runner, …) — permanent.
+        # Anything else (S3/DB/network) gets retried until MAX_SQS_RECEIVES.
+        permanent = isinstance(err, ValueError) or receive_count >= MAX_SQS_RECEIVES
+        if permanent:
+            update_analysis_status_in_db(analysis_id, "failed", error_message=str(err))
+            notify_analysis_failed(analysis_id, str(err))
+            return True
+        logger.warning(
+            "Transient failure for %s (receive #%d/%d) — leaving message on queue for retry",
+            analysis_id, receive_count, MAX_SQS_RECEIVES,
+        )
+        return False
 
     finally:
-        if local_temp_file and os.path.exists(local_temp_file):
-            try:
-                os.remove(local_temp_file)
-            except Exception as e:
-                logger.error("Failed to delete temp file %s: %s", local_temp_file, e)
+        _cleanup_job_files(local_temp_file)
 
 
 def _read_local_capture(s3_key: str) -> dict:
@@ -389,12 +446,55 @@ def _read_local_capture(s3_key: str) -> dict:
     return {}
 
 
+def _release_claim(analysis_id: str, back_to: str = "pending") -> None:
+    """Undo a premature claim so the row can be retried."""
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE analyses SET status=%s WHERE id=%s AND status='processing'",
+                    (back_to, analysis_id),
+                )
+    except Exception as err:
+        logger.error("Failed to release claim for %s: %s", analysis_id, err)
+
+
+# Local-mode missing-video bookkeeping: analysis_id -> (first_seen_ts, retry_after_ts).
+# Deferred rows are excluded from claiming until retry_after_ts so one stuck
+# upload can't head-of-line-block every newer analysis, and a video that never
+# arrives is failed after MISSING_VIDEO_TIMEOUT_S instead of spinning forever.
+_MISSING_VIDEO: dict[str, tuple[float, float]] = {}
+MISSING_VIDEO_TIMEOUT_S = float(os.environ.get("MISSING_VIDEO_TIMEOUT_S", "600"))
+MISSING_VIDEO_RETRY_S = 5.0
+
+
 def _process_local(analysis_id: str, s3_key: str) -> None:
     """Local mode: the video is already on disk (shared dir); run 2D biomechanics."""
     video_path = os.path.join(LOCAL_STORAGE_DIR, s3_key)
     try:
-        if not os.path.exists(video_path):
-            raise ValueError(f"video not found in local storage: {video_path}")
+        if not os.path.exists(video_path) or os.path.getsize(video_path) == 0:
+            # Race / incomplete upload — defer and retry rather than permanently
+            # failing (finalize should only mark pending after the PUT lands).
+            first_seen, _ = _MISSING_VIDEO.get(analysis_id, (time.time(), 0.0))
+            if time.time() - first_seen > MISSING_VIDEO_TIMEOUT_S:
+                _MISSING_VIDEO.pop(analysis_id, None)
+                msg = "Upload never completed — the video bytes did not arrive. Please upload again."
+                logger.error(
+                    "Giving up on %s after %.0fs without video (%s)",
+                    analysis_id, MISSING_VIDEO_TIMEOUT_S, video_path,
+                )
+                update_analysis_status_in_db(analysis_id, "failed", error_message=msg)
+                notify_analysis_failed(analysis_id, msg)
+                return
+            _MISSING_VIDEO[analysis_id] = (first_seen, time.time() + MISSING_VIDEO_RETRY_S)
+            logger.warning(
+                "Claimed %s but video missing/empty (%s) — deferring retry",
+                analysis_id,
+                video_path,
+            )
+            _release_claim(analysis_id, "pending")
+            return
+        _MISSING_VIDEO.pop(analysis_id, None)
         capture = _read_local_capture(s3_key)
         if PIPELINE == "wham":
             _process_wham_opencap(analysis_id, s3_key, video_path)
@@ -411,7 +511,12 @@ def _process_local(analysis_id: str, s3_key: str) -> None:
 
 
 def _claim_pending():
-    """Atomically claim the next pending analysis (FOR UPDATE SKIP LOCKED)."""
+    """Atomically claim the next pending analysis (FOR UPDATE SKIP LOCKED).
+
+    Rows whose video hasn't arrived yet (_MISSING_VIDEO) are skipped until
+    their retry time so they can't head-of-line-block the queue."""
+    now = time.time()
+    deferred = [aid for aid, (_, retry_at) in _MISSING_VIDEO.items() if retry_at > now]
     with get_db_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -419,10 +524,12 @@ def _claim_pending():
                 UPDATE analyses SET status='processing'
                 WHERE id = (
                     SELECT id FROM analyses WHERE status='pending'
+                      AND NOT (id = ANY(%s::uuid[]))
                     ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED
                 )
                 RETURNING id, s3_key
-                """
+                """,
+                (deferred,),
             )
             return cur.fetchone()
 
@@ -446,6 +553,20 @@ def _start_local_worker() -> None:
             logger.error("Error in DB poll loop: %s", poll_err)
             sentry_sdk.capture_exception(poll_err)
             time.sleep(3)
+
+
+def _visibility_heartbeat(receipt_handle: str, stop: threading.Event) -> None:
+    """Extend the in-flight SQS message's visibility while its job runs."""
+    while not stop.wait(60):
+        try:
+            sqs_client.change_message_visibility(
+                QueueUrl=queue_url,
+                ReceiptHandle=receipt_handle,
+                VisibilityTimeout=180,
+            )
+        except Exception as err:
+            logger.warning("Visibility heartbeat failed: %s", err)
+            return
 
 
 def start_worker() -> None:
@@ -479,10 +600,24 @@ def start_worker() -> None:
 
             for message in response.get("Messages", []):
                 receipt_handle = message["ReceiptHandle"]
+                # Keep the in-flight message invisible while the (possibly
+                # multi-minute) job runs, so SQS doesn't redeliver it to a
+                # second worker mid-processing.
+                stop_heartbeat = threading.Event()
+                heartbeat = threading.Thread(
+                    target=_visibility_heartbeat,
+                    args=(receipt_handle, stop_heartbeat),
+                    daemon=True,
+                )
+                heartbeat.start()
+                should_delete = False
                 try:
-                    process_sqs_message(message)
+                    should_delete = process_sqs_message(message)
                 finally:
-                    sqs_client.delete_message(QueueUrl=queue_url, ReceiptHandle=receipt_handle)
+                    stop_heartbeat.set()
+                    heartbeat.join(timeout=5)
+                    if should_delete:
+                        sqs_client.delete_message(QueueUrl=queue_url, ReceiptHandle=receipt_handle)
 
         except Exception as poll_err:
             logger.error("Error in polling loop: %s", poll_err)

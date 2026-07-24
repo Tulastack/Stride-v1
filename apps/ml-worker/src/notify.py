@@ -12,6 +12,11 @@ logger = logging.getLogger(__name__)
 
 API_SERVER_URL = os.environ.get("API_SERVER_URL", "http://localhost:3000")
 INTERNAL_API_SECRET = os.environ.get("INTERNAL_API_SECRET", "")
+if not INTERNAL_API_SECRET:
+    logger.warning(
+        "INTERNAL_API_SECRET is not set — completion/progress callbacks will be "
+        "rejected by any API running with internal auth enforced."
+    )
 
 
 def notify_progress(analysis_id: str, stage: str, pct: int, message: str = "") -> None:

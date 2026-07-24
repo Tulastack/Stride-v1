@@ -6,4 +6,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends libpq-dev libgl
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir -r requirements.txt
 COPY src/ ./src/
+# Unprivileged runtime user; model weights cache under $HOME/.cache
+RUN useradd -m worker && chown -R worker:worker /app
+USER worker
 CMD ["python", "-u", "src/worker.py"]

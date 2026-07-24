@@ -1,7 +1,7 @@
 """LLM integration module for generating structured biomechanical sprint reports.
 
-Integrates Gemini 1.5 Pro (via google-genai) with Pydantic validation schemas.
-Implements robust fallbacks to Gemini 1.5 Flash and Groq (Llama 3 70B).
+Integrates Gemini 2.5 Pro (via google-genai) with Pydantic validation schemas.
+Implements robust fallbacks to Gemini 2.5 Flash and Groq (Llama 3 70B).
 """
 
 from __future__ import annotations
@@ -102,7 +102,7 @@ def _generate_fallback_groq(prompt: str) -> dict[str, Any]:
     )
 
     chat_completion = client.chat.completions.create(
-        model="llama3-70b-8192",
+        model="llama-3.3-70b-versatile",
         messages=[
             {"role": "system", "content": system_message},
             {"role": "user", "content": prompt},
@@ -122,7 +122,7 @@ def generate_sprint_report(
     analysis_summary: dict[str, Any],
     detected_issues: list[dict[str, Any]],
 ) -> AnalysisResult:
-    """Send biomechanics data to Gemini 1.5 Pro to synthesize structured sprint feedback.
+    """Send biomechanics data to Gemini 2.5 Pro to synthesize structured sprint feedback.
 
     Args:
         analysis_summary: Summary statistics from biomechanics.analyze().
@@ -156,11 +156,11 @@ Reference Sprint Coaching Knowledge Base:
 
     client = genai.Client(api_key=gemini_key)
 
-    # 1. Attempt Gemini 1.5 Pro
+    # 1. Attempt Gemini 2.5 Pro
     try:
-        logger.info("Calling Gemini 1.5 Pro for report generation...")
+        logger.info("Calling Gemini 2.5 Pro for report generation...")
         response = client.models.generate_content(
-            model="gemini-1.5-pro",
+            model="gemini-2.5-pro",
             contents=prompt,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
@@ -171,15 +171,15 @@ Reference Sprint Coaching Knowledge Base:
         if response.text:
             data = json.loads(response.text)
             return AnalysisResult(**data)
-        raise ValueError("Empty response from Gemini 1.5 Pro")
+        raise ValueError("Empty response from Gemini 2.5 Pro")
     except Exception as err:
-        logger.warning("Gemini 1.5 Pro failed: %s. Falling back to Gemini 1.5 Flash...", err)
+        logger.warning("Gemini 2.5 Pro failed: %s. Falling back to Gemini 2.5 Flash...", err)
 
-    # 2. Attempt Gemini 1.5 Flash
+    # 2. Attempt Gemini 2.5 Flash
     try:
-        logger.info("Calling Gemini 1.5 Flash for report generation...")
+        logger.info("Calling Gemini 2.5 Flash for report generation...")
         response = client.models.generate_content(
-            model="gemini-1.5-flash",
+            model="gemini-2.5-flash",
             contents=prompt,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
@@ -190,9 +190,9 @@ Reference Sprint Coaching Knowledge Base:
         if response.text:
             data = json.loads(response.text)
             return AnalysisResult(**data)
-        raise ValueError("Empty response from Gemini 1.5 Flash")
+        raise ValueError("Empty response from Gemini 2.5 Flash")
     except Exception as err:
-        logger.warning("Gemini 1.5 Flash failed: %s. Falling back to Groq...", err)
+        logger.warning("Gemini 2.5 Flash failed: %s. Falling back to Groq...", err)
 
     # 3. Attempt Groq Fallback
     try:
