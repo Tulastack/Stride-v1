@@ -42,6 +42,18 @@ const finalizeSchema = z.object({
   captureManifest: z.record(z.unknown()).optional(),
 });
 
+// JWKS is cached at module scope (lazily) — constructing it per request
+// defeats jose's key cache and turns every blob PUT / stream / SSE connect
+// into a fresh HTTPS fetch of Supabase's JWKS.
+let _jwks: ReturnType<typeof createRemoteJWKSet> | null = null;
+function getJwks(): ReturnType<typeof createRemoteJWKSet> {
+  if (!_jwks) {
+    const SUPABASE_URL = process.env.SUPABASE_URL!;
+    _jwks = createRemoteJWKSet(new URL(`${SUPABASE_URL}/auth/v1/.well-known/jwks.json`));
+  }
+  return _jwks;
+}
+
 // Token auth from a query param OR Authorization header (used by SSE and the
 // local blob-upload endpoint, whose URL carries the token so the client needs
 // no extra headers — the same way S3 presigned URLs are self-authenticating).
@@ -56,8 +68,7 @@ async function authenticateSSE(req: any, res: Response, next: NextFunction): Pro
   }
 
   const SUPABASE_URL = process.env.SUPABASE_URL!;
-  const jwksUrl = new URL(`${SUPABASE_URL}/auth/v1/.well-known/jwks.json`);
-  const JWKS = createRemoteJWKSet(jwksUrl);
+  const JWKS = getJwks();
 
   try {
     const { payload } = await jwtVerify(token, JWKS, {
@@ -167,13 +178,33 @@ router.post('/finalize', authenticate, requireConsent, async (req: any, res: Res
     if (isLocalStorage) {
       // Bytes were already written by PUT /videos/:id/blob. Just drop the
       // capture sidecar next to the video; the worker's DB poller picks it up.
+      const videoPath = localKeyPath(analysis.s3_key);
+      if (!fs.existsSync(videoPath) || fs.statSync(videoPath).size === 0) {
+        res.status(409).json({
+          error: 'Video bytes not on server yet — wait for the upload PUT to finish, then finalize again.',
+        });
+        return;
+      }
       if (captureManifest) {
         await writeLocalJson(
           analysis.s3_key.replace(/\.[^.]+$/, '') + '.capture.json',
           captureManifest,
         );
       }
-      // Still enqueue to SQS so the Docker-based worker picks it up
+      // Promote uploading → pending so the worker can claim it (only now that
+      // the file exists). createAnalysis intentionally starts as 'uploading'.
+      // Idempotency: a retried finalize on a row that's already processing or
+      // terminal matches 0 rows — return current state WITHOUT re-enqueueing.
+      const { pool } = await import('../db/queries.js');
+      const promoted = await pool.query(
+        `UPDATE analyses SET status = 'pending' WHERE id = $1 AND status IN ('uploading','pending')`,
+        [analysisId],
+      );
+      if ((promoted.rowCount ?? 0) === 0) {
+        const fresh = await getAnalysis(analysisId, userId);
+        res.json(fresh ?? analysis);
+        return;
+      }
       await enqueueAnalysis(analysisId, analysis.s3_key);
       res.json({ ...analysis, status: 'pending' });
       return;
@@ -185,6 +216,19 @@ router.post('/finalize', authenticate, requireConsent, async (req: any, res: Res
     // Stage 0 capture sidecar (gyro + intrinsics) for the biomechanics engine
     if (captureManifest) {
       await putJsonSidecar(analysis.s3_key, '.capture.json', captureManifest);
+    }
+
+    // Promote uploading → pending before enqueue (S3 path). Same idempotency
+    // rule as the local branch: never re-enqueue processing/terminal rows.
+    const { pool } = await import('../db/queries.js');
+    const promoted = await pool.query(
+      `UPDATE analyses SET status = 'pending' WHERE id = $1 AND status IN ('uploading','pending')`,
+      [analysisId],
+    );
+    if ((promoted.rowCount ?? 0) === 0) {
+      const fresh = await getAnalysis(analysisId, userId);
+      res.json(fresh ?? analysis);
+      return;
     }
 
     // Enqueue to SQS for processing
@@ -217,6 +261,12 @@ router.put(
       const analysis = await getAnalysis(analysisId, req.userId);
       if (!analysis) {
         res.status(404).json({ error: 'Analysis not found' });
+        return;
+      }
+      // Bytes are only writable while the upload is open — never over a video
+      // that's already processing or has results attached to it.
+      if (analysis.status !== 'uploading' && analysis.status !== 'pending') {
+        res.status(409).json({ error: `Upload window closed (analysis is ${analysis.status})` });
         return;
       }
       const body: Buffer = req.body;

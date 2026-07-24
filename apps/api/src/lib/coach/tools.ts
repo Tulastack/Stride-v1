@@ -234,7 +234,11 @@ export function buildCoachTools(ctx: CoachToolContext) {
           const contra = drill.contraindications
             ? `Contraindications/warnings: ${Array.isArray(drill.contraindications) ? drill.contraindications.join('; ') : drill.contraindications}`
             : 'Contraindications: none listed.';
-          return `Drill: ${drill.name} (key ${drill.key}).\nCue: ${drill.cue ?? drill.default_cue ?? 'n/a'}.\n${contra}`;
+          // Column is `cues` (JSONB array) — there is no `cue`/`default_cue`.
+          const cues = Array.isArray((drill as { cues?: unknown }).cues) && (drill as { cues: unknown[] }).cues.length > 0
+            ? (drill as { cues: unknown[] }).cues.join('; ')
+            : 'n/a';
+          return `Drill: ${drill.name} (key ${drill.key}).\nCue: ${cues}.\n${contra}`;
         }
 
         case 'get_current_plan': {

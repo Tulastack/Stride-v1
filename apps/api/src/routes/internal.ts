@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { timingSafeEqual } from 'node:crypto';
 import type { Response, NextFunction } from 'express';
 import { updateAnalysisStatus, getAnalysisByIdOnly, createDrillSuggestions, createMetricsFromAnalysis } from '../db/queries.js';
 import { sseManager, broadcastProgress } from '../lib/sse.js';
@@ -24,13 +25,17 @@ function verifyInternalSecret(req: any, res: Response, next: NextFunction): void
   const secretHeader = req.headers['x-internal-token'];
   const internalSecret = process.env.INTERNAL_API_SECRET;
 
+  // FAIL CLOSED: /internal/* can forge analysis results for any user. A
+  // missing secret must lock these routes, never open them.
   if (!internalSecret) {
-    console.warn('WARNING: INTERNAL_API_SECRET is not set. Internal routes are unprotected!');
-    next();
+    console.error('INTERNAL_API_SECRET is not set — rejecting internal callback. Configure it on both the API and the ML worker.');
+    res.status(503).json({ error: 'Internal callbacks are not configured' });
     return;
   }
 
-  if (secretHeader !== internalSecret) {
+  const given = Buffer.from(typeof secretHeader === 'string' ? secretHeader : '');
+  const expected = Buffer.from(internalSecret);
+  if (given.length !== expected.length || !timingSafeEqual(given, expected)) {
     res.status(403).json({ error: 'Unauthorized internal callback' });
     return;
   }

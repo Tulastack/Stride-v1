@@ -12,7 +12,8 @@ import {
 
 const router = Router();
 
-const eventTypeSchema = z.enum(['workout', 'rest', 'competition', 'drill']);
+// Keep in sync with the calendar_events.event_type CHECK constraint (schema.sql)
+const eventTypeSchema = z.enum(['workout', 'rest', 'competition', 'drill', 'hydration', 'recovery', 'cross_training']);
 const statusSchema = z.enum(['scheduled', 'completed', 'skipped', 'modified']);
 
 const singleEventSchema = z.object({

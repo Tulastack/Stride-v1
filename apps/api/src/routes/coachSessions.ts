@@ -254,7 +254,10 @@ router.post('/:id/add-to-calendar', authenticate, async (req: any, res: Response
   try {
     const userId = req.userId as string;
     const { id } = req.params;
-    const { history } = req.body || {};
+    // Validate the free-form body: a non-array history would crash .map below.
+    const { history } = z.object({
+      history: z.array(z.object({ role: z.enum(['user', 'assistant']), content: z.string() })).max(50).optional(),
+    }).parse(req.body ?? {});
 
     const session = await getCoachSession(id, userId);
     if (!session) { res.status(404).json({ error: 'Session not found' }); return; }
@@ -302,13 +305,22 @@ Output ONLY the raw JSON array. No markdown. No explanation. Just [ ... ]`;
       return;
     }
 
+    // Validate the LLM's output before it reaches SQL: bad event types or
+    // malformed dates must 422 with a readable message, not 500 on a pg error.
+    const VALID_EVENT_TYPES = new Set(['workout', 'rest', 'competition', 'drill', 'hydration', 'recovery', 'cross_training']);
     const { createCalendarEvents } = await import('../db/queries.js');
-    const dbEvents = events.map((e: any) => ({
-      title: e.title || 'Workout',
-      event_type: e.eventType || 'drill',
-      scheduled_date: e.scheduledDate,
-      details: e.details || {},
-    }));
+    const dbEvents = events
+      .filter((e: any) => typeof e?.scheduledDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(e.scheduledDate))
+      .map((e: any) => ({
+        title: String(e.title || 'Workout').slice(0, 200),
+        event_type: VALID_EVENT_TYPES.has(e.eventType) ? e.eventType : 'workout',
+        scheduled_date: e.scheduledDate,
+        details: e.details && typeof e.details === 'object' ? e.details : {},
+      }));
+    if (dbEvents.length === 0) {
+      res.status(422).json({ error: 'Could not generate calendar plan. Try asking for a specific workout plan first.' });
+      return;
+    }
 
     const created = await createCalendarEvents(userId, dbEvents);
     res.json({ created: created.length, events: created });

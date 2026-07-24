@@ -23,7 +23,7 @@ export interface Analysis {
   id: string;
   user_id: string;
   s3_key: string;
-  status: 'pending' | 'processing' | 'completed' | 'failed';
+  status: 'uploading' | 'pending' | 'processing' | 'completed' | 'failed';
   movenet_version: string | null;
   overall_score: number | null;
   result_json: Record<string, unknown> | null;

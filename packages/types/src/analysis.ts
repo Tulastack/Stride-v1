@@ -10,7 +10,8 @@
 // The real 3D engine (Stages 2–3) lands in the ML/AWS phase; this contract
 // is built now so every feature is confidence-aware from day one.
 
-export type Phase = 'acceleration' | 'max_velocity' | 'general';
+// 'static' = the locked target wasn't running (standing bystander guard).
+export type Phase = 'acceleration' | 'max_velocity' | 'general' | 'static';
 
 /** How the 3D body was reconstructed for this result. */
 export type ReconstructionMethod = '2d' | '3d-mono' | '3d-multi';
@@ -126,7 +127,7 @@ export interface AthleteContext {
 
 // ─── Platform / infra types (transport & persistence, not the contract) ──
 
-export type AnalysisStatus = 'pending' | 'processing' | 'completed' | 'failed';
+export type AnalysisStatus = 'uploading' | 'pending' | 'processing' | 'completed' | 'failed';
 
 export interface Analysis {
   id: string;

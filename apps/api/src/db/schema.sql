@@ -24,8 +24,10 @@ CREATE TABLE analyses (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     s3_key TEXT NOT NULL,
-    status VARCHAR(20) NOT NULL DEFAULT 'pending'
-        CHECK (status IN ('pending','processing','completed','failed')),
+    -- 'uploading' = row created at /upload-url; bytes not ready yet.
+    -- 'pending'   = finalize done; safe for the ML worker to claim.
+    status VARCHAR(20) NOT NULL DEFAULT 'uploading'
+        CHECK (status IN ('uploading','pending','processing','completed','failed')),
     movenet_version VARCHAR(50),
     overall_score SMALLINT CHECK (overall_score BETWEEN 0 AND 100),
     result_json JSONB,
@@ -132,3 +134,6 @@ CREATE TABLE metrics_timeline (
 );
 CREATE INDEX idx_metrics_user_key ON metrics_timeline(user_id, metric_key, measured_at DESC);
 CREATE INDEX idx_metrics_analysis ON metrics_timeline(analysis_id);
+-- Idempotent reprocessing: one row per metric per analysis (SQS redelivery /
+-- finalize retries must not stack duplicates that skew trend averages).
+CREATE UNIQUE INDEX idx_metrics_analysis_metric ON metrics_timeline(analysis_id, metric_key);

@@ -43,8 +43,10 @@ CREATE TABLE IF NOT EXISTS analyses (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL,
     s3_key TEXT NOT NULL,
-    status VARCHAR(20) NOT NULL DEFAULT 'pending'
-        CHECK (status IN ('pending','processing','completed','failed')),
+    -- 'uploading' = row created at /upload-url; bytes not ready yet.
+    -- 'pending'   = finalize done; safe for the ML worker to claim.
+    status VARCHAR(20) NOT NULL DEFAULT 'uploading'
+        CHECK (status IN ('uploading','pending','processing','completed','failed')),
     movenet_version VARCHAR(50),
     overall_score SMALLINT CHECK (overall_score BETWEEN 0 AND 100),
     result_json JSONB,
@@ -64,7 +66,7 @@ CREATE TABLE IF NOT EXISTS calendar_events (
     user_id UUID NOT NULL,
     title VARCHAR(200) NOT NULL,
     event_type VARCHAR(20) NOT NULL
-        CHECK (event_type IN ('workout','rest','competition','drill')),
+        CHECK (event_type IN ('workout','rest','competition','drill','hydration','recovery','cross_training')),
     scheduled_date DATE NOT NULL,
     details JSONB,
     status VARCHAR(20) DEFAULT 'scheduled'
@@ -136,3 +138,5 @@ CREATE TABLE IF NOT EXISTS metrics_timeline (
 );
 CREATE INDEX ASYNC IF NOT EXISTS idx_metrics_user_key ON metrics_timeline(user_id, metric_key, measured_at DESC);
 CREATE INDEX ASYNC IF NOT EXISTS idx_metrics_analysis ON metrics_timeline(analysis_id);
+-- Idempotent reprocessing: one row per metric per analysis.
+CREATE UNIQUE INDEX ASYNC IF NOT EXISTS idx_metrics_analysis_metric ON metrics_timeline(analysis_id, metric_key);

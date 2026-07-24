@@ -5,6 +5,8 @@ import {
   UploadPartCommand,
   HeadBucketCommand,
   PutObjectCommand,
+  ListObjectsV2Command,
+  DeleteObjectsCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
@@ -26,6 +28,32 @@ export const s3Client = new S3Client({
 
 const BUCKET = process.env.S3_BUCKET!;
 const PRESIGN_EXPIRY = 7200; // 2 hours
+
+/**
+ * Delete every object under a prefix (account deletion: uploads/{userId}/).
+ * Paginates; each page deletes up to 1000 keys.
+ */
+export async function deletePrefix(prefix: string): Promise<number> {
+  let deleted = 0;
+  let continuationToken: string | undefined;
+  do {
+    const listed = await s3Client.send(new ListObjectsV2Command({
+      Bucket: BUCKET,
+      Prefix: prefix,
+      ContinuationToken: continuationToken,
+    }));
+    const keys = (listed.Contents ?? []).map((o) => ({ Key: o.Key! }));
+    if (keys.length > 0) {
+      await s3Client.send(new DeleteObjectsCommand({
+        Bucket: BUCKET,
+        Delete: { Objects: keys },
+      }));
+      deleted += keys.length;
+    }
+    continuationToken = listed.IsTruncated ? listed.NextContinuationToken : undefined;
+  } while (continuationToken);
+  return deleted;
+}
 
 /**
  * Initiate a multipart upload and return the uploadId

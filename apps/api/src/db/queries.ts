@@ -28,14 +28,28 @@ export async function getUserBySupabaseUid(supabaseUid: string): Promise<User | 
 }
 
 export async function createUser(supabaseUid: string, email: string): Promise<User> {
-  const { rows } = await pool.query<User>(
-    `INSERT INTO users (supabase_uid, email)
-     VALUES ($1, $2)
-     ON CONFLICT (supabase_uid) DO UPDATE SET email = EXCLUDED.email
-     RETURNING *`,
-    [supabaseUid, email],
-  );
-  return rows[0]!;
+  try {
+    const { rows } = await pool.query<User>(
+      `INSERT INTO users (supabase_uid, email)
+       VALUES ($1, $2)
+       ON CONFLICT (supabase_uid) DO UPDATE SET email = EXCLUDED.email
+       RETURNING *`,
+      [supabaseUid, email],
+    );
+    return rows[0]!;
+  } catch (err) {
+    // users.email is UNIQUE. A user who deleted their auth account and signed
+    // up again arrives with a NEW supabase_uid + the SAME email; re-link the
+    // existing row instead of failing every request with a 401 forever.
+    if ((err as { code?: string }).code === '23505' && email) {
+      const { rows } = await pool.query<User>(
+        `UPDATE users SET supabase_uid = $1 WHERE email = $2 RETURNING *`,
+        [supabaseUid, email],
+      );
+      if (rows[0]) return rows[0];
+    }
+    throw err;
+  }
 }
 
 export async function updateUser(
@@ -123,9 +137,12 @@ export async function updateInjuryStatus(userId: string, is_injured: boolean): P
 // ─── Analyses ─────────────────────────────────────────────────────
 
 export async function createAnalysis(userId: string, s3Key: string): Promise<Analysis> {
+  // 'uploading' — NOT 'pending'. The ML worker claims pending rows; if we mark
+  // pending at upload-url time it races the phone's PUT and fails with
+  // "video not found in local storage". Finalize promotes to pending.
   const { rows } = await pool.query<Analysis>(
     `INSERT INTO analyses (user_id, s3_key, status)
-     VALUES ($1, $2, 'pending')
+     VALUES ($1, $2, 'uploading')
      RETURNING *`,
     [userId, s3Key],
   );
@@ -142,20 +159,22 @@ export async function updateAnalysisStatus(
     movenet_version?: string | null;
   },
 ): Promise<Analysis | null> {
-  const completedAt = update.status === 'completed' || update.status === 'failed' ? 'now()' : null;
+  const isTerminal = update.status === 'completed' || update.status === 'failed';
   const { rows } = await pool.query<Analysis>(
     `UPDATE analyses
-     SET status = $1,
+     SET status = $1::text,
          overall_score = COALESCE($2, overall_score),
          result_json = COALESCE($3, result_json),
-         error_message = COALESCE($4, error_message),
+         error_message = CASE WHEN $1::text = 'completed' THEN NULL ELSE COALESCE($4, error_message) END,
          movenet_version = COALESCE($5, movenet_version),
-         completed_at = COALESCE(${completedAt ? `now()` : `$6`}, completed_at)
-     WHERE id = ${completedAt ? '$6' : '$7'}
+         completed_at = ${isTerminal ? 'now()' : 'completed_at'}
+     WHERE id = $6
+       AND status NOT IN ('completed','failed')
      RETURNING *`,
-    completedAt
-      ? [update.status, update.overall_score ?? null, update.result_json ? JSON.stringify(update.result_json) : null, update.error_message ?? null, update.movenet_version ?? null, analysisId]
-      : [update.status, update.overall_score ?? null, update.result_json ? JSON.stringify(update.result_json) : null, update.error_message ?? null, update.movenet_version ?? null, null, analysisId],
+    // Terminal rows are immutable: a duplicate/late worker callback or an SQS
+    // redelivery must never overwrite a completed/failed verdict (e.g. a swept
+    // 'failed' row silently flipping to 'completed' after the user saw failure).
+    [update.status, update.overall_score ?? null, update.result_json ? JSON.stringify(update.result_json) : null, update.error_message ?? null, update.movenet_version ?? null, analysisId],
   );
   return rows[0] ?? null;
 }
@@ -408,7 +427,9 @@ export async function approveSuggestion(
       return null;
     }
 
-    // Idempotent: if already approved, return existing calendar_event
+    // Idempotent: if already approved, return the existing calendar_event.
+    // When the event is missing (title/date drift), fall through and recreate
+    // it INSIDE this transaction — without re-approving or adding audit rows.
     if (suggestion.status === 'approved') {
       const { rows: evtRows } = await client.query<CalendarEvent>(
         `SELECT ce.* FROM calendar_events ce
@@ -418,25 +439,28 @@ export async function approveSuggestion(
          LIMIT 1`,
         [id, userId, suggestion.suggested_date, suggestion.drill_name],
       );
-      await client.query('COMMIT');
-      const calendarEvent = evtRows[0];
-      if (calendarEvent) {
-        return { suggestion, calendarEvent };
+      const existingEvent = evtRows[0];
+      if (existingEvent) {
+        await client.query('COMMIT');
+        return { suggestion, calendarEvent: existingEvent };
       }
     }
 
-    // Update suggestion status
-    const { rows: updatedSuggRows } = await client.query<DrillSuggestion>(
-      `UPDATE drill_suggestions SET status = 'approved' WHERE id = $1 RETURNING *`,
-      [id],
-    );
-    const updatedSuggestion = updatedSuggRows[0]!;
+    let updatedSuggestion = suggestion;
+    if (suggestion.status !== 'approved') {
+      // Update suggestion status
+      const { rows: updatedSuggRows } = await client.query<DrillSuggestion>(
+        `UPDATE drill_suggestions SET status = 'approved' WHERE id = $1 RETURNING *`,
+        [id],
+      );
+      updatedSuggestion = updatedSuggRows[0]!;
 
-    // Write audit record
-    await client.query(
-      `INSERT INTO suggestion_audit (suggestion_id, user_id, action) VALUES ($1, $2, 'approved')`,
-      [id, userId],
-    );
+      // Write audit record
+      await client.query(
+        `INSERT INTO suggestion_audit (suggestion_id, user_id, action) VALUES ($1, $2, 'approved')`,
+        [id, userId],
+      );
+    }
 
     // Pull sets/reps/cue for this drill from the source analysis's recommendations
     // (already computed by the analysis engine) so the plan shows real, structured
@@ -686,11 +710,20 @@ export async function createMetricsFromAnalysis(
 
   if (rowsToInsert.length === 0) return [];
 
+  // One row per metric per analysis: dedupe within the batch (a metric can
+  // arrive via both metrics[] and primary_issues[]), and ON CONFLICT makes
+  // reprocessing (SQS redelivery / finalize retry) idempotent instead of
+  // stacking duplicate rows that skew trend averages.
+  const byKey = new Map<string, (typeof rowsToInsert)[number]>();
+  for (const row of rowsToInsert) {
+    if (!byKey.has(row.metricKey)) byKey.set(row.metricKey, row);
+  }
+
   const valueClauses: string[] = [];
   const values: unknown[] = [];
   let paramIndex = 1;
 
-  for (const row of rowsToInsert) {
+  for (const row of byKey.values()) {
     valueClauses.push(
       `($${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++})`,
     );
@@ -700,6 +733,7 @@ export async function createMetricsFromAnalysis(
   const { rows } = await pool.query<MetricsTimelineRow>(
     `INSERT INTO metrics_timeline (user_id, analysis_id, metric_key, value, unit, optimal_min, optimal_max)
      VALUES ${valueClauses.join(', ')}
+     ON CONFLICT (analysis_id, metric_key) DO NOTHING
      RETURNING *`,
     values,
   );
@@ -741,15 +775,38 @@ export async function getMetricsTrend(
 }
 
 // ─── Sweep stuck analyses ─────────────────────────────────────────
+// Every non-terminal state needs a timeout, or a crash at the wrong moment
+// leaves the user staring at a spinner forever:
+//   uploading  — client died before finalize (generous window for slow LTE)
+//   pending    — queued but never claimed (worker down / backlog)
+//   processing — worker died mid-job (OOM, deploy) and never released the row
 
 export async function sweepStuckAnalyses(): Promise<number> {
   const { rowCount } = await pool.query(
     `UPDATE analyses
      SET status = 'failed',
-         error_message = 'analysis_timeout',
+         error_message = CASE
+           WHEN status = 'uploading' THEN 'upload_abandoned'
+           WHEN status = 'processing' THEN 'worker_timeout'
+           ELSE 'analysis_timeout'
+         END,
          completed_at = now()
-     WHERE status = 'pending'
-       AND created_at < now() - INTERVAL '10 minutes'`,
+     WHERE (status = 'pending'    AND created_at < now() - INTERVAL '30 minutes')
+        OR (status = 'processing' AND created_at < now() - INTERVAL '45 minutes')
+        OR (status = 'uploading'  AND created_at < now() - INTERVAL '6 hours')`,
   );
   return rowCount ?? 0;
+}
+
+// ─── Account deletion (App Store 5.1.1(v)) ────────────────────────
+// Deleting the users row cascades through analyses, calendar_events,
+// coach_sessions, drill_suggestions, suggestion_audit and metrics_timeline
+// (all FK ON DELETE CASCADE).
+
+export async function deleteUserAccount(userId: string): Promise<string | null> {
+  const { rows } = await pool.query<{ supabase_uid: string }>(
+    'DELETE FROM users WHERE id = $1 RETURNING supabase_uid',
+    [userId],
+  );
+  return rows[0]?.supabase_uid ?? null;
 }

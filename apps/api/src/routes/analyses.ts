@@ -9,6 +9,17 @@ const router = Router();
 /**
  * SSE-compatible JWT auth via query token (same pattern as videos.ts /stream)
  */
+// Module-scoped lazy JWKS: constructing per request defeats jose's cache and
+// re-fetches Supabase's JWKS on every SSE connect.
+let _jwks: ReturnType<typeof createRemoteJWKSet> | null = null;
+function getJwks(): ReturnType<typeof createRemoteJWKSet> {
+  if (!_jwks) {
+    const SUPABASE_URL = process.env.SUPABASE_URL!;
+    _jwks = createRemoteJWKSet(new URL(`${SUPABASE_URL}/auth/v1/.well-known/jwks.json`));
+  }
+  return _jwks;
+}
+
 async function authenticateSSE(req: any, res: Response, next: NextFunction): Promise<void> {
   const token = req.query.token as string;
   if (!token) {
@@ -17,8 +28,7 @@ async function authenticateSSE(req: any, res: Response, next: NextFunction): Pro
   }
 
   const SUPABASE_URL = process.env.SUPABASE_URL!;
-  const jwksUrl = new URL(`${SUPABASE_URL}/auth/v1/.well-known/jwks.json`);
-  const JWKS = createRemoteJWKSet(jwksUrl);
+  const JWKS = getJwks();
 
   try {
     const { payload } = await jwtVerify(token, JWKS, {
@@ -107,6 +117,22 @@ router.get('/:analysisId/progress', authenticateSSE, async (req: any, res: Respo
 
   // Still in progress — subscribe client to SSE updates
   sseManager.addConnection(userId, res);
+
+  // Close the race: if the analysis reached a terminal state between the
+  // status check above and addConnection, the broadcast already happened and
+  // this client would hang on heartbeats forever. Re-check once.
+  try {
+    const fresh = await getAnalysis(analysisId, userId);
+    if (fresh?.status === 'completed') {
+      res.write(`event: progress\ndata: ${JSON.stringify({ analysisId, stage: 'complete', pct: 100 })}\n\n`);
+      res.end();
+    } else if (fresh?.status === 'failed') {
+      res.write(`event: progress\ndata: ${JSON.stringify({ analysisId, stage: 'failed', pct: 0, message: fresh.error_message ?? 'Analysis failed' })}\n\n`);
+      res.end();
+    }
+  } catch {
+    // best-effort re-check only; the subscription itself is already in place
+  }
 });
 
 export default router;

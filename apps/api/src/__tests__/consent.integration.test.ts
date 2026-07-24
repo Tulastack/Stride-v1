@@ -224,7 +224,8 @@ async function buildConsentGatedApp(testUser: Record<string, any>) {
 
     expect(res.status).toBe(202);
     expect(res.body).toHaveProperty('id');
-    expect(res.body.status).toBe('pending');
+    // Rows are born 'uploading' (finalize promotes to 'pending' once bytes exist)
+    expect(res.body.status).toBe('uploading');
 
     // Analysis row was created in DB
     const { rows } = await pool.query('SELECT * FROM analyses WHERE user_id = $1', [user.id]);

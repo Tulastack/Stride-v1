@@ -2,7 +2,8 @@
 // Kept local so screens/components are self-contained under metro/jest without
 // cross-package runtime resolution. Shape MUST match packages/types/src/analysis.ts.
 
-export type Phase = 'acceleration' | 'max_velocity' | 'general';
+// 'static' = the locked target wasn't running (standing bystander guard).
+export type Phase = 'acceleration' | 'max_velocity' | 'general' | 'static';
 export type ReconstructionMethod = '2d' | '3d-mono' | '3d-multi';
 export type Severity = 1 | 2 | 3;
 
