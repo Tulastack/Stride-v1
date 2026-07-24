@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useStrideStore } from '../../src/store/useStrideStore';
+import { strideApi } from '../../src/services/api';
+import { supabase, isSupabaseConfigured } from '../../src/lib/supabase';
 import { useTheme } from '../../src/context/ThemeContext';
 import { space, radius, type as typo } from '../../src/theme';
 
@@ -26,17 +28,43 @@ export default function RegisterScreen() {
     setError('');
 
     try {
-      // Mock registration
-      const mockToken = 'mock_jwt_token_stripe_user';
-      setToken(mockToken);
-      setUser({
-        id: 'new_athlete_uuid',
-        email,
-        display_name: null,
-        event_specialty: null,
-        experience_level: null,
-        personal_best_seconds: null,
-      });
+      if (!isSupabaseConfigured || !supabase) {
+        setError('Sign-up requires the backend to be configured');
+        return;
+      }
+
+      // Real auth: create the account and exchange it for a Supabase JWT.
+      const { data, error: authError } = await supabase.auth.signUp({ email, password });
+      if (authError) throw authError;
+
+      const token = data.session?.access_token;
+      if (!token) {
+        // Email confirmation is enabled — no session until they confirm.
+        Alert.alert(
+          'Confirm your email',
+          'Account created! Check your inbox to confirm your email, then sign in.',
+          [{ text: 'OK', onPress: () => router.replace('/(auth)/login') }],
+        );
+        return;
+      }
+
+      setToken(token);
+      // Profile comes from the local API. If it's unreachable, still let them
+      // in with a minimal profile so registration isn't blocked (like login).
+      try {
+        const profile = await strideApi.getProfile(token);
+        setUser(profile);
+      } catch (profileErr: any) {
+        console.warn('getProfile after sign-up failed:', profileErr?.message ?? profileErr);
+        setUser({
+          id: data.user?.id ?? 'unknown',
+          email: data.user?.email ?? email,
+          display_name: data.user?.user_metadata?.display_name ?? null,
+          event_specialty: null,
+          experience_level: null,
+          personal_best_seconds: null,
+        });
+      }
 
       // Redirect to consent screen before onboarding flow
       router.replace('/(onboarding)/consent');

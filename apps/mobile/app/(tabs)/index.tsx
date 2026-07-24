@@ -41,16 +41,25 @@ export default function UploadScreen() {
         gyro: gyroSamples,
         accelerometer: accelSamples,
         durationMs,
-        fps: slowMo ? CAPTURE_PREFS.preferredFps : 60,
+        // TODO: high-fps capture needs react-native-vision-camera or native
+        // camera config — CameraView records at the platform default (~30fps).
+        fps: 30,
         preferredFps: CAPTURE_PREFS.preferredFps,
         sloMoRequested: slowMo,
       });
       if (target) manifest.target = target;
       setProgressStep('ANALYZING SPRINT');
-      const { analysisId } = await uploadCaptureVideo(uri, manifest, strideApi);
+      const { analysisId } = await uploadCaptureVideo(uri, manifest, strideApi, {
+        apiBaseUrl: useStrideStore.getState().apiBaseUrl,
+        token: useStrideStore.getState().token,
+      });
       setUploading(false); setProgressStep(null);
       router.push({ pathname: '/(tabs)/analysis', params: { analysisId } });
-    } catch (err: any) { setUploading(false); setProgressStep(null); Alert.alert('Failed', err.message || 'Error.'); }
+    } catch (err: any) {
+      setUploading(false); setProgressStep(null);
+      if (err?.code === 'CONSENT_REQUIRED') { router.push('/(onboarding)/consent'); return; }
+      Alert.alert('Failed', err.message || 'Error.');
+    }
   };
 
   const handleSelectVideo = async () => {
@@ -72,11 +81,14 @@ export default function UploadScreen() {
     setRecording(true);
     await Promise.all([gyroRef.current.start(), accelRef.current.start()]);
     try {
+      // Real duration from wall-clock timestamps — recordAsync resolves on stop.
+      const startedAt = Date.now();
       const video = await cameraRef.current.recordAsync({ maxDuration: 12 });
+      const durationMs = Date.now() - startedAt;
       const gyro = gyroRef.current.stop();
       const accel = accelRef.current.stop();
       setRecording(false); setShowCamera(false);
-      if (video?.uri) setPending({ uri: video.uri, gyro, accel, durationMs: 12000 });
+      if (video?.uri) setPending({ uri: video.uri, gyro, accel, durationMs });
     } catch {
       gyroRef.current.stop();
       accelRef.current.stop();
@@ -92,7 +104,7 @@ export default function UploadScreen() {
             <Pressable style={styles.closeBtn} onPress={() => { setRecording(false); setShowCamera(false); }}>
               <Text style={styles.closeBtnText}>✕</Text>
             </Pressable>
-            <Text style={styles.cameraHint}>{slowMo ? CAPTURE_PREFS.sloMoLabel : '60fps'} · Handheld OK</Text>
+            <Text style={styles.cameraHint}>{slowMo ? CAPTURE_PREFS.sloMoLabel : 'Standard capture'} · Handheld OK</Text>
             <Pressable style={[styles.camBtn, recording && { borderColor: colors.error }]} onPress={recording ? () => cameraRef.current?.stopRecording() : handleRecord}>
               <View style={[styles.camInner, recording && { width: 20, height: 20, borderRadius: 4 }]} />
             </Pressable>
@@ -146,7 +158,7 @@ export default function UploadScreen() {
         </View>
 
         <View style={[styles.settingRow, { borderTopColor: colors.border }]}>
-          <Text style={[styles.settingLabel, { color: colors.text }]}>240fps slow motion</Text>
+          <Text style={[styles.settingLabel, { color: colors.text }]}>High frame rate when available</Text>
           <Switch value={slowMo} onValueChange={setSlowMo} trackColor={{ false: colors.border, true: colors.accent }} thumbColor={colors.card} />
         </View>
       </ScrollView>

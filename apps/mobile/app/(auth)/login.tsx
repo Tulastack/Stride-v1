@@ -35,48 +35,36 @@ export default function LoginScreen() {
         const token = data.session?.access_token;
         if (!token) throw new Error('No session returned from Supabase');
         setToken(token);
-        const profile = await strideApi.getProfile(token);
-        setUser(profile);
-        router.replace('/(tabs)');
+        // Profile comes from the local API. If the Mac API is down / unreachable
+        // (common when LAN IP drifts or ./scripts/dev-local.sh isn't running),
+        // still let them in with a minimal profile so login isn't blocked.
+        try {
+          const profile = await strideApi.getProfile(token);
+          setUser(profile);
+          // Returning users who never completed consent go back through it.
+          const needsConsent = profile?.consent_given_at == null || (profile?.consent_version ?? 0) < 1;
+          router.replace(needsConsent ? '/(onboarding)/consent' : '/(tabs)');
+        } catch (profileErr: any) {
+          console.warn('getProfile after login failed:', profileErr?.message ?? profileErr);
+          setUser({
+            id: data.user?.id ?? 'unknown',
+            email: data.user?.email ?? email,
+            display_name: data.user?.user_metadata?.display_name ?? null,
+            event_specialty: null,
+            experience_level: null,
+            personal_best_seconds: null,
+          });
+          router.replace('/(tabs)');
+        }
         return;
       }
 
-      // No Supabase configured — dev/demo fallback (UI exploration only).
-      const mockToken = 'mock_jwt_token_stripe_user';
-      setToken(mockToken);
-      try {
-        const profile = await strideApi.getProfile(mockToken);
-        setUser(profile);
-      } catch (profileErr) {
-        setUser({
-          id: 'dev_user_uuid',
-          email,
-          display_name: 'Solo Sprinter',
-          event_specialty: '100m',
-          experience_level: 'intermediate',
-          personal_best_seconds: 10.85,
-        });
-      }
-      router.replace('/(tabs)');
+      setError('Backend not configured — set EXPO_PUBLIC_SUPABASE_URL / EXPO_PUBLIC_SUPABASE_ANON_KEY');
     } catch (err: any) {
       setError(err.message || 'Authentication failed');
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleQuickDemo = () => {
-    // Quick demo login to easily bypass auth setup during testing
-    setToken('mock_jwt_token_stripe_user');
-    setUser({
-      id: 'demo_athlete_uuid',
-      email: 'demo@stride.ai',
-      display_name: 'Usain Bolt Jr.',
-      event_specialty: '100m',
-      experience_level: 'advanced',
-      personal_best_seconds: 9.81,
-    });
-    router.replace('/(tabs)');
   };
 
   return (
@@ -126,10 +114,6 @@ export default function LoginScreen() {
             <Text style={[styles.loginButtonText, { color: colors.accentText }]}>{loading ? 'Authenticating...' : 'Sign In'}</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={[styles.demoButton, { borderColor: colors.border }]} onPress={handleQuickDemo}>
-            <Text style={[styles.demoButtonText, { color: colors.accent }]}>Quick Demo Login (Bypass)</Text>
-          </TouchableOpacity>
-
           <View style={styles.footer}>
             <Text style={[styles.footerText, { color: colors.muted }]}>Don't have an account? </Text>
             <TouchableOpacity onPress={() => router.push('/(auth)/register')}>
@@ -157,8 +141,6 @@ const styles = StyleSheet.create({
   input: { borderWidth: 1, borderRadius: radius.md, paddingHorizontal: space.lg, paddingVertical: space.md, fontSize: 16 },
   loginButton: { borderRadius: radius.md, paddingVertical: space.lg, alignItems: 'center', marginTop: space.sm },
   loginButtonText: { fontSize: 16, fontWeight: '700', letterSpacing: 0.5 },
-  demoButton: { borderWidth: 1, borderRadius: radius.md, paddingVertical: space.md, alignItems: 'center', marginTop: space.lg },
-  demoButtonText: { fontSize: 14, fontWeight: '700' },
   footer: { flexDirection: 'row', justifyContent: 'center', marginTop: space.xl },
   footerText: { fontSize: 14 },
   registerLink: { fontSize: 14, fontWeight: '700' },

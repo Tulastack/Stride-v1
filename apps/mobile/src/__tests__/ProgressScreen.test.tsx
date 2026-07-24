@@ -8,6 +8,11 @@ jest.mock('expo-router', () => ({
   useLocalSearchParams: () => ({}),
   useRouter: () => ({ push: jest.fn() }),
   router: { push: jest.fn() },
+  // Run focus effects like a plain effect — the screen is "focused" in tests.
+  useFocusEffect: (cb: () => void | (() => void)) => {
+    const { useEffect } = require('react');
+    useEffect(cb, [cb]);
+  },
 }));
 
 jest.mock('../lib/analysisApi', () => ({

@@ -1,7 +1,7 @@
 // Mobile capture pipeline — gyro + accelerometer recording, intrinsics, capture manifest.
 // Stage 0 sidecar consumed by the biomechanics engine (PRD v2.2-B addendum).
 
-import { Dimensions, Platform } from 'react-native';
+import { Dimensions } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import { Accelerometer, Gyroscope } from 'expo-sensors';
 
@@ -183,7 +183,12 @@ export async function writeCaptureSidecar(videoUri: string, manifest: CaptureMan
   }
 }
 
-/** Upload a local video blob via presigned multipart + capture manifest. */
+/** Upload a local video via the API blob PUT (or S3 part URL).
+ *
+ * Two iOS/RN footguns this avoids:
+ * 1) `fetch(file://…).blob()` → "Network request failed"
+ * 2) Server-built blob URLs that don't match the phone's working `apiBaseUrl`
+ */
 export async function uploadCaptureVideo(
   videoUri: string,
   manifest: CaptureManifest,
@@ -195,19 +200,86 @@ export async function uploadCaptureVideo(
       parts: { partNumber: number; etag: string }[],
       captureManifest?: CaptureManifest
     ) => Promise<{ analysisId: string }>;
-  }
+  },
+  opts?: { apiBaseUrl?: string; token?: string | null },
 ): Promise<{ analysisId: string }> {
-  const blob = await fetch(videoUri).then((r) => r.blob());
   const { analysisId, uploadId, parts } = await api.requestUploadUrls(1);
   const part = parts[0];
-  const put = await fetch(part.url, { method: 'PUT', body: blob, headers: { 'Content-Type': 'video/mp4' } });
-  if (!put.ok) throw new Error(`Video upload failed (${put.status})`);
+  if (!part?.url) throw new Error('Upload URL missing from server response');
+
+  // Local-storage mode echoes an API blob URL whose host can be stale — rewrite
+  // it to the host the app already talks to. Real presigned URLs (e.g. S3) are
+  // used exactly as signed.
+  const uploadUrl = rewriteUploadUrl(part.url, analysisId, opts?.apiBaseUrl, opts?.token);
+
+  const fileBlob = await readLocalFileAsBlob(videoUri);
+  let put: Response;
+  try {
+    put = await fetch(uploadUrl, {
+      method: 'PUT',
+      body: fileBlob,
+      // For S3 presigned PUTs this header must match what was signed — the
+      // server signs 'video/mp4', which is also what the API blob PUT expects.
+      headers: { 'Content-Type': 'video/mp4' },
+    });
+  } catch (err: any) {
+    const host = (() => { try { return new URL(uploadUrl).host; } catch { return uploadUrl.slice(0, 40); } })();
+    throw new Error(
+      `Video upload network failed (${host}): ${err?.message ?? err}`,
+    );
+  }
+  if (!put.ok) {
+    const body = await put.text().catch(() => '');
+    throw new Error(`Video upload failed (${put.status})${body ? `: ${body.slice(0, 120)}` : ''}`);
+  }
   const etag = put.headers.get('ETag')?.replace(/"/g, '') ?? `"part-${part.partNumber}"`;
   await api.finalizeUpload(analysisId, uploadId, [{ partNumber: part.partNumber, etag }], manifest);
   return { analysisId };
 }
 
+/** Rewrite ONLY the API's local-storage blob URL (…/videos/:id/blob) to the
+ * app's known API base + fresh token — that URL's host can be a stale LAN IP.
+ * Anything else (e.g. an amazonaws.com presigned URL) is returned unchanged:
+ * rewriting it would 404 and break the signature. */
+function rewriteUploadUrl(
+  serverUrl: string,
+  analysisId: string,
+  apiBaseUrl?: string,
+  token?: string | null,
+): string {
+  if (!apiBaseUrl) return serverUrl;
+  let parsed: URL;
+  try {
+    parsed = new URL(serverUrl);
+  } catch {
+    return serverUrl;
+  }
+  const isApiBlobUrl = parsed.pathname.includes('/videos/') && parsed.pathname.endsWith('/blob');
+  if (!isApiBlobUrl) return serverUrl;
+  const tok = token || parsed.searchParams.get('token') || '';
+  return `${apiBaseUrl.replace(/\/$/, '')}/videos/${analysisId}/blob?token=${encodeURIComponent(tok)}`;
+}
+
+/** Read a local video URI into a Blob without `fetch(file://).blob()` (broken on iOS). */
+function readLocalFileAsBlob(videoUri: string): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('GET', videoUri, true);
+    xhr.responseType = 'blob';
+    xhr.onload = () => {
+      if (xhr.status === 0 || (xhr.status >= 200 && xhr.status < 300)) {
+        resolve(xhr.response as Blob);
+      } else {
+        reject(new Error(`Could not read video file (status ${xhr.status})`));
+      }
+    };
+    xhr.onerror = () => reject(new Error('Could not read local video file'));
+    xhr.send(null);
+  });
+}
+
 export const CAPTURE_PREFS = {
   preferredFps: 120,
-  sloMoLabel: Platform.OS === 'ios' ? '120fps slo-mo when available' : 'High-speed capture when available',
+  // Honest copy: CameraView records at the platform default (~30fps) today.
+  sloMoLabel: 'High frame rate when available',
 };

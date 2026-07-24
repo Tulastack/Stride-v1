@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { View, Text, Pressable, Switch, StyleSheet, SafeAreaView, ScrollView, Alert } from 'react-native';
-import { Settings as SettingsIcon, Sun, Moon, LogOut, ChevronRight } from 'lucide-react-native';
+import { Settings as SettingsIcon, Sun, Moon, LogOut, Trash2, ChevronRight } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { useTheme } from '../../src/context/ThemeContext';
 import { useStrideStore } from '../../src/store/useStrideStore';
+import { strideApi } from '../../src/services/api';
+import { supabase } from '../../src/lib/supabase';
 import { space, radius, type as typo, iconStroke } from '../../src/theme';
 
 export default function SettingsScreen() {
@@ -16,8 +18,41 @@ export default function SettingsScreen() {
   const handleLogout = () => {
     Alert.alert('Sign Out', 'Are you sure?', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Sign Out', style: 'destructive', onPress: () => { logout(); router.replace('/(auth)/login'); } },
+      {
+        text: 'Sign Out',
+        style: 'destructive',
+        onPress: async () => {
+          // End the Supabase session too, or a refresh resurrects the login.
+          await supabase?.auth.signOut().catch(() => {});
+          logout();
+          router.replace('/(auth)/login');
+        },
+      },
     ]);
+  };
+
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      'Delete Account',
+      'This permanently deletes your account and all of your videos, analyses, and coaching history. This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await strideApi.deleteAccount();
+              await supabase?.auth.signOut().catch(() => {});
+              logout();
+              router.replace('/(auth)/login');
+            } catch (err: any) {
+              Alert.alert('Delete Failed', err?.message || 'Could not delete your account. Please try again.');
+            }
+          },
+        },
+      ],
+    );
   };
 
   return (
@@ -89,6 +124,12 @@ export default function SettingsScreen() {
           <Text style={[styles.logoutText, { color: colors.error }]}>Log out</Text>
         </Pressable>
 
+        {/* Delete account (App Store 5.1.1(v)) */}
+        <Pressable style={[styles.deleteBtn, { backgroundColor: colors.error }]} onPress={handleDeleteAccount}>
+          <Trash2 size={16} color="#FFFFFF" strokeWidth={iconStroke} />
+          <Text style={styles.deleteText}>Delete Account</Text>
+        </Pressable>
+
         <Text style={[styles.version, { color: colors.muted }]}>STRIDE v1.0.0</Text>
       </ScrollView>
     </SafeAreaView>
@@ -111,5 +152,7 @@ const styles = StyleSheet.create({
   iconWrap: { width: 32, height: 32, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center' },
   logoutBtn: { flexDirection: 'row', gap: space.sm, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderRadius: radius.md, paddingVertical: space.md, marginTop: space.xl },
   logoutText: { fontSize: 15, fontWeight: '700' },
+  deleteBtn: { flexDirection: 'row', gap: space.sm, alignItems: 'center', justifyContent: 'center', borderRadius: radius.md, paddingVertical: space.md, marginTop: space.md },
+  deleteText: { fontSize: 15, fontWeight: '700', color: '#FFFFFF' },
   version: { fontSize: 12, textAlign: 'center', marginTop: space.xl },
 });

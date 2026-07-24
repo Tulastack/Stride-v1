@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert,
 import { useRouter } from 'expo-router';
 import { useStrideStore } from '../../src/store/useStrideStore';
 import { strideApi } from '../../src/services/api';
+import { supabase } from '../../src/lib/supabase';
 import { User, LogOut, Save, ShieldCheck } from 'lucide-react-native';
 
 export default function ProfileScreen() {
@@ -60,7 +61,9 @@ export default function ProfileScreen() {
       {
         text: 'Sign Out',
         style: 'destructive',
-        onPress: () => {
+        onPress: async () => {
+          // End the Supabase session too, or a refresh resurrects the login.
+          await supabase?.auth.signOut().catch(() => {});
           logout();
           router.replace('/(auth)/login');
         },

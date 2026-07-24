@@ -5,7 +5,7 @@ import { strideApi } from '../services/api';
 
 export interface AnalysisRow {
   id: string;
-  status: 'pending' | 'processing' | 'completed' | 'failed';
+  status: 'uploading' | 'pending' | 'processing' | 'completed' | 'failed';
   result_json?: AnalysisResult | null;
   error_message?: string | null;
   created_at?: string;
@@ -50,17 +50,28 @@ export async function fetchAnalysisHistory(): Promise<AnalysisResult[]> {
   return results;
 }
 
-/** Poll until analysis completes or fails. */
+/** Thrown when a caller cancels waitForAnalysisResult (e.g. screen unmounted). */
+export class CancelledError extends Error {
+  constructor() {
+    super('Polling cancelled');
+    this.name = 'CancelledError';
+  }
+}
+
+/** Poll until analysis completes or fails. Pass `isCancelled` to stop the loop
+ * early (a CancelledError is thrown so callers can bail silently). */
 export async function waitForAnalysisResult(
   analysisId: string,
-  opts: { intervalMs?: number; timeoutMs?: number } = {}
+  opts: { intervalMs?: number; timeoutMs?: number; isCancelled?: () => boolean } = {}
 ): Promise<{ status: AnalysisRow['status']; result?: AnalysisResult; error?: string }> {
   const intervalMs = opts.intervalMs ?? 2000;
   const timeoutMs = opts.timeoutMs ?? 120_000;
   const deadline = Date.now() + timeoutMs;
 
   while (Date.now() < deadline) {
+    if (opts.isCancelled?.()) throw new CancelledError();
     const row = (await strideApi.getAnalysis(analysisId)) as AnalysisRow;
+    if (opts.isCancelled?.()) throw new CancelledError();
     if (row.status === 'failed') {
       return { status: 'failed', error: row.error_message ?? 'Analysis failed' };
     }

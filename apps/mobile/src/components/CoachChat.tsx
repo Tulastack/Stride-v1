@@ -9,6 +9,7 @@ import {
 } from 'lucide-react-native';
 import { strideApi } from '../services/api';
 import { getAccessToken as getToken } from '../lib/supabase';
+import { useStrideStore } from '../store/useStrideStore';
 import { useTheme } from '../context/ThemeContext';
 import { space, radius, iconStroke, type as typo } from '../theme';
 import { parseCoachReply, detectMetricForDiagram, type CoachSection } from '../lib/parseCoachReply';
@@ -128,8 +129,10 @@ export function CoachChat({ analysisId }: { analysisId?: string } = {}) {
     if (!sessionId.current) { Alert.alert('Error', 'Ask for a plan first.'); return; }
     setLoading(true);
     try {
-      const token = await getToken();
-      const baseUrl = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://localhost:3000';
+      // Same base URL + token resolution as every other API call (see api.ts).
+      const state = useStrideStore.getState();
+      const token = (await getToken()) ?? state.token;
+      const baseUrl = state.apiBaseUrl;
       const resp = await fetch(`${baseUrl}/coach-sessions/${sessionId.current}/add-to-calendar`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },

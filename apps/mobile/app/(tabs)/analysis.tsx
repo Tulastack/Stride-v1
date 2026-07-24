@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, SafeAreaView, Pressable } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { CalendarPlus, Check, X, ChevronRight, Target, ArrowRight } from 'lucide-react-native';
@@ -83,7 +83,14 @@ export default function AnalysisScreen() {
     }
   }, []);
 
+  // Each load bumps the generation; stale loops (unmount, analysisId change,
+  // retry) see a newer generation, stop polling, and never setState again.
+  const loadGenRef = useRef(0);
+
   const load = useCallback(async (id?: string) => {
+    const gen = ++loadGenRef.current;
+    const isCancelled = () => loadGenRef.current !== gen;
+
     if (!id) { setStatus('failed'); setError('No analysis ID provided.'); return; }
     setStatus('pending');
     setError(null);
@@ -91,6 +98,7 @@ export default function AnalysisScreen() {
 
     try {
       const row = (await strideApi.getAnalysis(id)) as AnalysisRow;
+      if (isCancelled()) return;
       if (row.status === 'failed') { setStatus('failed'); setError(row.error_message ?? 'Analysis failed.'); return; }
       if (row.status === 'completed') {
         const parsed = parseAnalysisResult(row);
@@ -98,16 +106,22 @@ export default function AnalysisScreen() {
         setResult(parsed); setStatus('done'); loadSuggestions(id); return;
       }
       setStatus('processing');
-      const outcome = await waitForAnalysisResult(id, { intervalMs: 2000, timeoutMs: 180_000 });
+      const outcome = await waitForAnalysisResult(id, { intervalMs: 2000, timeoutMs: 180_000, isCancelled });
+      if (isCancelled()) return;
       if (outcome.status === 'completed' && outcome.result) { setResult(outcome.result); setStatus('done'); loadSuggestions(id); }
       else { setStatus('failed'); setError(outcome.error ?? 'Analysis did not complete.'); }
     } catch (e: unknown) {
+      if (isCancelled() || (e instanceof Error && e.name === 'CancelledError')) return;
       setStatus('failed');
       setError(e instanceof Error ? e.message : 'Could not load analysis.');
     }
   }, [loadSuggestions]);
 
-  useEffect(() => { load(analysisId); }, [analysisId, load]);
+  useEffect(() => {
+    load(analysisId);
+    // Cancel the in-flight poll loop when leaving or switching analyses.
+    return () => { loadGenRef.current++; };
+  }, [analysisId, load]);
 
   const setBusy = (id: string, on: boolean) =>
     setBusyIds((prev) => { const next = new Set(prev); on ? next.add(id) : next.delete(id); return next; });

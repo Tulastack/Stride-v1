@@ -25,6 +25,7 @@ const CHIP_LABELS: Record<CoachActionChip, string> = {
 async function request<T>(path: string, options: FetchOptions = {}): Promise<T> {
   const state = useStrideStore.getState();
   const baseUrl = state.apiBaseUrl;
+  if (!baseUrl) throw new Error('API URL not configured — set EXPO_PUBLIC_API_BASE_URL');
 
   const doFetch = async (token?: string | null) => {
     const headers = new Headers(options.headers);
@@ -36,7 +37,17 @@ async function request<T>(path: string, options: FetchOptions = {}): Promise<T> 
   // Fast path: the stored token is kept fresh by Supabase autoRefresh +
   // onAuthStateChange (see app/_layout.tsx), so we skip a per-request getSession().
   let token = options.token ?? state.token;
-  let response = await doFetch(token);
+  let response: Response;
+  try {
+    response = await doFetch(token);
+  } catch (netErr: any) {
+    const msg = netErr?.message ?? String(netErr);
+    throw new Error(
+      msg.includes('Network request failed')
+        ? `Network request failed talking to ${baseUrl}`
+        : msg,
+    );
+  }
 
   // If it 401s, the token may be stale — force a fresh session token and retry once.
   if (response.status === 401 && !options.token) {
@@ -48,9 +59,13 @@ async function request<T>(path: string, options: FetchOptions = {}): Promise<T> 
   }
 
   if (!response.ok) {
-    const errorJson = await response.json().catch(() => ({}));
-    const err = new Error(errorJson.error || `HTTP error! status: ${response.status}`) as Error & { status?: number };
+    const errorJson = await response.json().catch(() => ({} as Record<string, unknown>));
+    const err = new Error(
+      errorJson.message || errorJson.error || `HTTP error! status: ${response.status}`,
+    ) as Error & { status?: number; code?: string };
     err.status = response.status;
+    // Machine-readable error code (e.g. CONSENT_REQUIRED) for callers to branch on.
+    if (errorJson.code) err.code = errorJson.code;
     throw err;
   }
 
@@ -79,6 +94,11 @@ export const strideApi = {
       method: 'PATCH',
       body: JSON.stringify(profile),
     });
+  },
+
+  // Permanently deletes the account and all associated data (App Store 5.1.1(v)).
+  deleteAccount: async () => {
+    return request<any>('/users/me', { method: 'DELETE' });
   },
 
   // --- Analyses & Video ---

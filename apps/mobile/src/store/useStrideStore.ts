@@ -15,7 +15,10 @@ function resolveApiBaseUrl(): string {
   } catch {
     /* not in a dev client (e.g. production build) — fall through */
   }
-  return process.env.EXPO_PUBLIC_API_BASE_URL || 'http://localhost:3000';
+  if (process.env.EXPO_PUBLIC_API_BASE_URL) return process.env.EXPO_PUBLIC_API_BASE_URL;
+  // Never silently point a release build at localhost — leave it empty so
+  // request() throws a self-explanatory "API URL not configured" error.
+  return __DEV__ ? 'http://localhost:3000' : '';
 }
 
 interface UserProfile {
@@ -31,11 +34,14 @@ interface StrideState {
   token: string | null;
   user: UserProfile | null;
   apiBaseUrl: string;
+  /** True once the initial Supabase getSession() has resolved (success or failure). */
+  authHydrated: boolean;
   consentGiven: boolean;
   isInjured: boolean;
   drillIntensityCap: 'moderate' | 'full' | null;
   setToken: (token: string | null) => void;
   setUser: (user: UserProfile | null) => void;
+  setAuthHydrated: (v: boolean) => void;
   logout: () => void;
   setConsentGiven: (v: boolean) => void;
   setIsInjured: (v: boolean) => void;
@@ -48,11 +54,13 @@ export const useStrideStore = create<StrideState>((set) => ({
   // Auto-derived from the Metro host in dev (self-heals when the LAN IP changes);
   // env var / localhost otherwise.
   apiBaseUrl: resolveApiBaseUrl(),
+  authHydrated: false,
   consentGiven: false,
   isInjured: false,
   drillIntensityCap: null,
   setToken: (token) => set({ token }),
   setUser: (user) => set({ user }),
+  setAuthHydrated: (v) => set({ authHydrated: v }),
   logout: () => set({ token: null, user: null }),
   setConsentGiven: (v) => set({ consentGiven: v }),
   setIsInjured: (v) => set({ isInjured: v }),

@@ -18,18 +18,47 @@ const queryClient = new QueryClient({
 
 function InnerLayout() {
   const setToken = useStrideStore((s) => s.setToken);
+  const setUser = useStrideStore((s) => s.setUser);
+  const setAuthHydrated = useStrideStore((s) => s.setAuthHydrated);
   const { colors, mode } = useTheme();
 
   useEffect(() => {
-    if (!supabase) return;
-    supabase.auth.getSession().then(({ data }) => {
-      if (data.session?.access_token) setToken(data.session.access_token);
-    });
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+    if (!supabase) {
+      // No Supabase configured — nothing to restore, unblock the index gate.
+      setAuthHydrated(true);
+      return;
+    }
+    supabase.auth
+      .getSession()
+      .then(({ data }) => {
+        const session = data.session;
+        if (!session?.access_token) return;
+        setToken(session.access_token);
+        // Minimal profile from the restored session so screens aren't blank;
+        // the API profile replaces it after the next login/profile fetch.
+        if (!useStrideStore.getState().user && session.user) {
+          setUser({
+            id: session.user.id,
+            email: session.user.email ?? '',
+            display_name: session.user.user_metadata?.display_name ?? null,
+            event_specialty: null,
+            experience_level: null,
+            personal_best_seconds: null,
+          });
+        }
+      })
+      .catch(() => {})
+      .finally(() => setAuthHydrated(true));
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT') {
+        // Explicitly drop the token so a refresh can't resurrect the session.
+        setToken(null);
+        return;
+      }
       setToken(session?.access_token ?? null);
     });
     return () => sub.subscription.unsubscribe();
-  }, [setToken]);
+  }, [setToken, setUser, setAuthHydrated]);
 
   return (
     <>

@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, SafeAreaView, ActivityIndicator, Pressable, Modal, Animated } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { TrendingUp, X, Users, AlertTriangle } from 'lucide-react-native';
 import { fetchAnalysisHistory } from '../../src/lib/analysisApi';
 import { strideApi } from '../../src/services/api';
@@ -70,18 +70,29 @@ export default function ProgressScreen() {
   const [view, setView] = useState<'history' | 'insights'>('history');
   const [metrics, setMetrics] = useState<Record<string, { value: number }[]> | null>(null);
 
-  useEffect(() => {
-    fetchAnalysisHistory()
-      .then(setHistory)
-      .catch(() => setHistory([]))
-      .finally(() => setLoading(false));
-  }, []);
+  const metricsLoaded = useRef(false);
+
+  // Refetch whenever the tab regains focus (tab screens stay mounted, so a
+  // mount-only effect would never show newly analyzed sprints).
+  useFocusEffect(
+    useCallback(() => {
+      fetchAnalysisHistory()
+        .then(setHistory)
+        .catch(() => setHistory([]))
+        .finally(() => setLoading(false));
+      // Refresh metric trends too, once Insights has loaded them before.
+      if (metricsLoaded.current) {
+        strideApi.getMetrics(90).then(setMetrics).catch(() => {});
+      }
+    }, [])
+  );
 
   // Lazy-load metric trend data the first time Insights is opened.
   useEffect(() => {
-    if (view !== 'insights' || metrics) return;
+    if (view !== 'insights' || metricsLoaded.current) return;
+    metricsLoaded.current = true;
     strideApi.getMetrics(90).then(setMetrics).catch(() => setMetrics({}));
-  }, [view, metrics]);
+  }, [view]);
 
   if (loading) {
     return (

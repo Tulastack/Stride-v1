@@ -8,12 +8,15 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  Modal,
+  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useStrideStore } from '../../src/store/useStrideStore';
 import { strideApi } from '../../src/services/api';
 import { useTheme } from '../../src/context/ThemeContext';
 import { space, radius, type as typo } from '../../src/theme';
+import { TERMS_AND_CONDITIONS, PRIVACY_POLICY, type LegalDoc } from '../../src/content/legal';
 
 function Checkbox({
   checked,
@@ -55,6 +58,7 @@ export default function ConsentScreen() {
   const [parentalConsent, setParentalConsent] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [legalDoc, setLegalDoc] = useState<LegalDoc | null>(null);
 
   const canContinue = termsAccepted && medicalAccepted;
 
@@ -84,9 +88,8 @@ export default function ConsentScreen() {
 
       router.replace('/(onboarding)/welcome');
     } catch (err: any) {
-      // Offline fallback — still proceed
-      setConsentGiven(true);
-      router.replace('/(onboarding)/welcome');
+      // Consent MUST be recorded server-side — never proceed silently.
+      Alert.alert('Could not save consent', err?.message || 'Please check your connection and try again.');
     } finally {
       setLoading(false);
     }
@@ -137,8 +140,21 @@ export default function ConsentScreen() {
             />
             <Text style={[styles.checkboxLabel, { color: colors.text }]}>
               I accept the{' '}
-              <Text style={[styles.linkText, { color: colors.accent }]}>Terms & Conditions</Text> and{' '}
-              <Text style={[styles.linkText, { color: colors.accent }]}>Privacy Policy</Text>
+              <Text
+                testID="terms-link"
+                style={[styles.linkText, { color: colors.accent }]}
+                onPress={() => setLegalDoc(TERMS_AND_CONDITIONS)}
+              >
+                Terms & Conditions
+              </Text>{' '}
+              and{' '}
+              <Text
+                testID="privacy-link"
+                style={[styles.linkText, { color: colors.accent }]}
+                onPress={() => setLegalDoc(PRIVACY_POLICY)}
+              >
+                Privacy Policy
+              </Text>
             </Text>
           </TouchableOpacity>
 
@@ -224,6 +240,28 @@ export default function ConsentScreen() {
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      {/* Legal document viewer (Terms / Privacy) */}
+      <Modal visible={!!legalDoc} animationType="slide" transparent onRequestClose={() => setLegalDoc(null)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>{legalDoc?.title}</Text>
+              <TouchableOpacity testID="legal-close-btn" onPress={() => setLegalDoc(null)} hitSlop={12}>
+                <Text style={[styles.modalClose, { color: colors.muted }]}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            <ScrollView showsVerticalScrollIndicator>
+              {legalDoc?.sections.map((section) => (
+                <View key={section.heading} style={styles.legalSection}>
+                  <Text style={[styles.legalHeading, { color: colors.text }]}>{section.heading}</Text>
+                  <Text style={[styles.legalBody, { color: colors.muted }]}>{section.body}</Text>
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -268,4 +306,12 @@ const styles = StyleSheet.create({
   errorText: { ...typo.bodyMedium, marginBottom: space.lg },
   continueButton: { borderRadius: radius.md, paddingVertical: space.lg, alignItems: 'center', marginTop: space.xs },
   continueButtonText: { fontSize: 16, fontWeight: '700', letterSpacing: 0.5 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
+  modalContent: { borderTopLeftRadius: radius.md, borderTopRightRadius: radius.md, maxHeight: '85%', padding: space.xl },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: space.lg },
+  modalTitle: { fontSize: 18, fontWeight: '800' },
+  modalClose: { fontSize: 18, fontWeight: '700' },
+  legalSection: { marginBottom: space.lg },
+  legalHeading: { fontSize: 14, fontWeight: '800', marginBottom: space.xs },
+  legalBody: { fontSize: 13, lineHeight: 19 },
 });
