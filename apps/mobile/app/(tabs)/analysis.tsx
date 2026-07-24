@@ -191,10 +191,13 @@ export default function AnalysisScreen() {
           <PoseVideoPlayer analysisId={analysisId} seekToMs={topFlaws[0]?.evidence?.frameTimestampMs} />
         ) : null}
 
-        {/* Score */}
+        {/* Score — ink, not accent: the number is the fact, gold is for actions */}
         <View style={styles.scoreSection}>
-          <Text style={[styles.scoreNumber, { color: colors.accent }]}>{formScore}</Text>
           <Text style={[styles.scoreLabel, { color: colors.muted }]}>FORM SCORE</Text>
+          <View style={styles.scoreRow}>
+            <Text style={[styles.scoreNumber, { color: colors.text }]}>{formScore}</Text>
+            <Text style={[styles.scoreOutOf, { color: colors.muted }]}>/100</Text>
+          </View>
         </View>
 
         <Text style={[styles.summary, { color: colors.text }]}>{result.summary}</Text>
@@ -365,9 +368,11 @@ const styles = StyleSheet.create({
   retryBtn: { borderWidth: 1, paddingVertical: 12, paddingHorizontal: 24, marginTop: 12, borderRadius: radius.sm },
   retryText: { fontSize: 14, fontWeight: '800' },
   scroll: { padding: space.xl, paddingBottom: 48 },
-  scoreSection: { alignItems: 'center', marginBottom: space.xl },
-  scoreNumber: { fontSize: 64, fontWeight: '900' },
-  scoreLabel: { fontSize: 12, fontWeight: '700', letterSpacing: 2 },
+  scoreSection: { marginBottom: space.xl },
+  scoreRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 6 },
+  scoreNumber: { fontSize: 72, fontWeight: '800', letterSpacing: -2, lineHeight: 74, fontVariant: ['tabular-nums'] },
+  scoreOutOf: { fontSize: 16, fontWeight: '700', marginBottom: 12 },
+  scoreLabel: { fontSize: 12, fontWeight: '700', letterSpacing: 1.6 },
   summary: { fontSize: 15, lineHeight: 22, marginBottom: space.xl },
   section: { marginBottom: space.xl },
   sectionTitle: { fontSize: 12, fontWeight: '900', letterSpacing: 1.5, marginBottom: space.sm },

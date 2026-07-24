@@ -22,7 +22,7 @@ export const primitive = {
     improve: '#5BE5A0', // measured improvement ONLY
   },
   space: { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32, xxxl: 48 } as const,
-  radius: { sm: 8, md: 12 } as const, // 8 default, 12 max
+  radius: { sm: 4, md: 8 } as const, // sharp: 4 default, 8 max
   border: { hairline: 1 } as const,
   font: {
     display: 'Archivo', // headers/display — weights 600/700

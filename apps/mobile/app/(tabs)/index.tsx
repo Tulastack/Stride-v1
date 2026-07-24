@@ -146,14 +146,14 @@ export default function UploadScreen() {
         </View>
 
         <View style={styles.hero}>
-          <View style={[styles.outerRing, { backgroundColor: colors.cardAlt }]}>
-            <Pressable style={({ pressed }) => [styles.recordBtn, { backgroundColor: colors.accent }, pressed && { opacity: 0.85 }]} onPress={handleStartRecord}>
-              <Camera size={30} color={colors.accentText} strokeWidth={2} />
-            </Pressable>
-          </View>
-          <Text style={[styles.recordLabel, { color: colors.muted }]}>TAP TO RECORD</Text>
-          <Pressable hitSlop={8} onPress={handleSelectVideo}>
-            <Text style={[styles.importLink, { color: colors.accent }]}>or import video from library</Text>
+          <Text style={[styles.heroTitle, { color: colors.text }]}>Film a sprint.{'\n'}Get it scored.</Text>
+          <Text style={[styles.heroSub, { color: colors.muted }]}>Side-on, 10–20 m away · 12 seconds max</Text>
+          <Pressable style={({ pressed }) => [styles.recordBtn, { backgroundColor: colors.accent }, pressed && { opacity: 0.85 }]} onPress={handleStartRecord}>
+            <Camera size={20} color={colors.accentText} strokeWidth={2.25} />
+            <Text style={[styles.recordBtnText, { color: colors.accentText }]}>Record sprint</Text>
+          </Pressable>
+          <Pressable style={({ pressed }) => [styles.importBtn, { borderColor: colors.border }, pressed && { opacity: 0.7 }]} hitSlop={8} onPress={handleSelectVideo}>
+            <Text style={[styles.importText, { color: colors.text }]}>Import from library</Text>
           </Pressable>
         </View>
 
@@ -170,13 +170,15 @@ const styles = StyleSheet.create({
   safe: { flex: 1 },
   scroll: { flexGrow: 1, paddingHorizontal: space.xl, paddingTop: space.lg, paddingBottom: space.xl, justifyContent: 'space-between' },
   headerRow: { marginBottom: space.md },
-  wordmark: { fontSize: 42, fontWeight: '900', letterSpacing: 2 },
-  tagline: { fontSize: 14, marginTop: 4, letterSpacing: 0.5 },
-  hero: { alignItems: 'center', justifyContent: 'center', gap: space.lg, paddingVertical: space.xxl },
-  outerRing: { width: 110, height: 110, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' },
-  recordBtn: { width: 80, height: 80, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' },
-  recordLabel: { fontSize: 12, fontWeight: '600', letterSpacing: 1.1 },
-  importLink: { fontSize: 15, fontWeight: '500', textDecorationLine: 'underline' },
+  wordmark: { fontSize: 24, fontWeight: '900', letterSpacing: 3 },
+  tagline: { fontSize: 13, marginTop: 2, letterSpacing: 0.4 },
+  hero: { justifyContent: 'center', gap: space.sm, paddingVertical: space.xxl },
+  heroTitle: { fontSize: 34, fontWeight: '800', letterSpacing: -0.8, lineHeight: 38 },
+  heroSub: { fontSize: 13, fontWeight: '500', letterSpacing: 0.2, marginBottom: space.lg },
+  recordBtn: { flexDirection: 'row', gap: 10, alignItems: 'center', justifyContent: 'center', paddingVertical: 16, borderRadius: radius.sm },
+  recordBtnText: { fontSize: 16, fontWeight: '800', letterSpacing: 0.3 },
+  importBtn: { borderWidth: 1, paddingVertical: 14, alignItems: 'center', borderRadius: radius.sm, marginTop: space.sm },
+  importText: { fontSize: 14, fontWeight: '600' },
   settingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderTopWidth: 1, paddingTop: space.lg },
   settingLabel: { fontSize: 15, fontWeight: '500' },
   uploadWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: space.xl },

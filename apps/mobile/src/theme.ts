@@ -6,11 +6,11 @@ export const palettes = {
     bg: '#F7F5EF',
     card: '#FFFFFF',
     cardAlt: '#F1EEE3',
-    border: '#E4E0D2',
-    text: '#1C1B17',
-    muted: '#79766A',
-    accent: '#CDA84E',
-    accentText: '#1C1B17',
+    border: '#D9D3C0',   // stronger rules — surfaces read as drawn, not floating
+    text: '#191813',
+    muted: '#6B6859',    // darker muted: secondary text stays legible outdoors
+    accent: '#C8A140',
+    accentText: '#191813',
     error: '#C1432B',
     success: '#2E8F63',
   },
@@ -18,9 +18,9 @@ export const palettes = {
     bg: '#141310',
     card: '#1D1B16',
     cardAlt: '#252219',
-    border: '#37342A',
+    border: '#423D2E',
     text: '#F3F0E4',
-    muted: '#948F7D',
+    muted: '#A29D89',
     accent: '#DEC178',
     accentText: '#141310',
     error: '#E2604A',
@@ -35,15 +35,16 @@ export type Palette = { [K in keyof typeof palettes.light]: string };
 export type Mode = 'light' | 'dark';
 
 export const space = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32, xxxl: 48 } as const;
-export const radius = { sm: 8, md: 12, pill: 999 } as const;
+// Sharp corners are part of the identity: 4/6, never soft 12+ cards.
+export const radius = { sm: 4, md: 6, pill: 999 } as const;
 
 export const type = {
-  display: { fontSize: 32, fontWeight: '700' as const, letterSpacing: -0.5 },
-  h1: { fontSize: 22, fontWeight: '700' as const, letterSpacing: -0.2 },
-  h2: { fontSize: 17, fontWeight: '600' as const, letterSpacing: -0.1 },
+  display: { fontSize: 34, fontWeight: '800' as const, letterSpacing: -0.8 },
+  h1: { fontSize: 22, fontWeight: '800' as const, letterSpacing: -0.4 },
+  h2: { fontSize: 17, fontWeight: '700' as const, letterSpacing: -0.2 },
   body: { fontSize: 15, fontWeight: '400' as const },
   bodyMedium: { fontSize: 15, fontWeight: '500' as const },
-  label: { fontSize: 12, fontWeight: '600' as const, letterSpacing: 1.1 },
+  label: { fontSize: 12, fontWeight: '600' as const, letterSpacing: 1.2 },
   caption: { fontSize: 12, fontWeight: '400' as const },
   tiny: { fontSize: 10, fontWeight: '600' as const, letterSpacing: 0.5 },
 } as const;
