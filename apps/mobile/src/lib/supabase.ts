@@ -4,8 +4,8 @@
 //   EXPO_PUBLIC_SUPABASE_URL       = https://<project>.supabase.co
 //   EXPO_PUBLIC_SUPABASE_ANON_KEY  = <public anon/publishable key>  (NOT the JWT secret)
 //
-// If either is absent, `supabase` is null and the app falls back to the
-// Quick-Demo path — so a missing config never breaks the build.
+// If either is absent, `supabase` is null and the auth screens surface a
+// configuration error — there is no demo/mock fallback in the app.
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
@@ -29,7 +29,7 @@ export const supabase: SupabaseClient | null = isSupabaseConfigured
 /**
  * Always return a VALID access token. `getSession()` transparently refreshes an
  * expired token (autoRefreshToken), so callers never send a stale JWT. Returns
- * null when Supabase isn't configured (demo mode) so the caller can fall back.
+ * null when Supabase isn't configured.
  */
 export async function getAccessToken(): Promise<string | null> {
   if (!supabase) return null;

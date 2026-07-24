@@ -3,7 +3,7 @@
 // Every DrillRec MUST resolve to a demoAssetId — an orphan rec is a bug.
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { PlayCircle, User } from 'lucide-react-native';
+import { Dumbbell, User } from 'lucide-react-native';
 import { semantic, spacing, radius, borderWidth, typography } from '../../ui/theme';
 import { resolveDemoAsset } from '@stride/content';
 import type { DrillRec } from '../../types/analysis';
@@ -36,11 +36,13 @@ export function DrillCard({
           <Text style={styles.frameLabel}>your form</Text>
         </View>
         <View style={styles.frameCol}>
+          {/* No playable demo clips yet — a drill icon, never a play button
+              that goes nowhere. Swap in a video thumbnail when assets land. */}
           <View style={[styles.frame, styles.demoFrame]} accessibilityLabel={`demo-${rec.demoAssetId}`} testID={`demo-${rec.demoAssetId}`}>
-            <PlayCircle size={22} color={semantic.action.primary} />
+            <Dumbbell size={22} color={semantic.action.primary} />
           </View>
           <Text style={[styles.frameLabel, { color: semantic.action.primary }]}>
-            {asset ? 'correct form' : 'reference'}
+            {asset ? 'the drill' : 'reference'}
           </Text>
         </View>
       </View>

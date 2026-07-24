@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { View, Text, Pressable, Switch, StyleSheet, SafeAreaView, ScrollView, Alert } from 'react-native';
 import { Settings as SettingsIcon, Sun, Moon, LogOut, Trash2, ChevronRight } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
@@ -13,7 +13,6 @@ export default function SettingsScreen() {
   const router = useRouter();
   const user = useStrideStore((s) => s.user);
   const logout = useStrideStore((s) => s.logout);
-  const [notifications, setNotifications] = useState(true);
 
   const handleLogout = () => {
     Alert.alert('Sign Out', 'Are you sure?', [
@@ -95,23 +94,6 @@ export default function SettingsScreen() {
             <Switch
               value={mode === 'dark'}
               onValueChange={toggleMode}
-              trackColor={{ false: colors.border, true: colors.accent }}
-              thumbColor={colors.card}
-            />
-          </View>
-        </View>
-
-        {/* Preferences */}
-        <Text style={[styles.sectionLabel, { color: colors.muted }]}>PREFERENCES</Text>
-        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <View style={[styles.row, { borderBottomWidth: 1, borderBottomColor: colors.border }]}>
-            <View style={styles.rowBody}>
-              <Text style={[styles.rowTitle, { color: colors.text }]}>Notifications</Text>
-              <Text style={[styles.rowSub, { color: colors.muted }]}>Training reminders</Text>
-            </View>
-            <Switch
-              value={notifications}
-              onValueChange={setNotifications}
               trackColor={{ false: colors.border, true: colors.accent }}
               thumbColor={colors.card}
             />

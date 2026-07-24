@@ -1,5 +1,5 @@
-// Deterministic AnalysisResult fixtures for the mobile UI (offline fallback + tests).
-// Mirrors apps/api/src/analysis/fixtures.ts: one HIGH-quality side capture and one
+// TEST-ONLY deterministic AnalysisResult fixtures (imported by src/__tests__ only —
+// never rendered to users). Mirrors apps/api/src/analysis/fixtures.ts: one
 // LOW-quality head-on capture (hip low-confidence + a single nudge).
 import type { AnalysisResult } from '../types/analysis';
 

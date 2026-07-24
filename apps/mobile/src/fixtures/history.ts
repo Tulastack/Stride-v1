@@ -1,6 +1,6 @@
-// Multi-upload history fixture (PROMPT F.5 briefing + F.6 progress).
-// Same metric keys across uploads so deltas/trends compute. Designed so knee_drive
-// improves, trunk_lean regresses, and one upload's hip is low-confidence (gated).
+// TEST-ONLY multi-upload history fixture (imported by src/__tests__ only — never
+// rendered to users). Same metric keys across uploads so deltas/trends compute.
+// Designed so knee_drive improves, trunk_lean regresses, and one hip is low-confidence.
 import type { AnalysisResult } from '../types/analysis';
 
 function band(value: number, conf: number, half = 2) {

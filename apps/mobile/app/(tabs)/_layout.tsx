@@ -69,10 +69,6 @@ export default function TabsLayout() {
           tabBarIcon: ({ color }) => <Settings color={color} size={21} strokeWidth={iconStroke} />,
         }}
       />
-      <Tabs.Screen
-        name="profile"
-        options={{ href: null }}
-      />
     </Tabs>
   );
 }
