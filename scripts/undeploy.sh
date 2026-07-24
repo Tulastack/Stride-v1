@@ -5,10 +5,11 @@
 
 set -e
 
-REGION="us-east-1"
-CLUSTER="default"
-API_SERVICE="stride-api"
-FRONTEND_SERVICE="stride-frontend"
+REGION="${AWS_REGION:-us-east-1}"
+ENVIRONMENT="${STRIDE_ENV:-production}"
+CLUSTER="${STRIDE_CLUSTER:-stride-cluster-${ENVIRONMENT}}"
+API_SERVICE="${STRIDE_API_SERVICE:-stride-api-${ENVIRONMENT}}"
+ML_WORKER_SERVICE="${STRIDE_ML_WORKER_SERVICE:-stride-ml-worker-${ENVIRONMENT}}"
 
 log() { echo -e "\n\033[1;34m▶ $1\033[0m"; }
 success() { echo -e "\033[1;32m✔ $1\033[0m"; }
@@ -22,15 +23,15 @@ aws ecs update-service \
   --service "$API_SERVICE" \
   --desired-count 0 \
   --region "$REGION" \
-  --no-cli-pager
+  --no-cli-pager >/dev/null
 
-log "Scaling frontend service to 0..."
+log "Scaling ML worker service to 0..."
 aws ecs update-service \
   --cluster "$CLUSTER" \
-  --service "$FRONTEND_SERVICE" \
+  --service "$ML_WORKER_SERVICE" \
   --desired-count 0 \
   --region "$REGION" \
-  --no-cli-pager
+  --no-cli-pager >/dev/null
 
 echo ""
 success "All services scaled to 0. No tasks are running."

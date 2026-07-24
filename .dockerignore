@@ -1,0 +1,16 @@
+# Keep Docker build contexts lean — the API image builds from the repo root.
+.git
+node_modules
+**/node_modules
+**/.expo
+**/dist
+**/.turbo
+test-videos
+apps/ml-worker/.venv312
+apps/ml-worker/.pytest_cache
+apps/mobile/ios
+apps/mobile/android
+docs
+*.env
+.env*
+!*.env.example

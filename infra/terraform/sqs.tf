@@ -36,8 +36,32 @@ resource "aws_cloudwatch_metric_alarm" "dlq_depth" {
     QueueName = aws_sqs_queue.analysis_dlq.name
   }
 
-  # TODO: Add SNS topic ARN for on-call notification
-  # alarm_actions = [aws_sns_topic.oncall.arn]
+  alarm_actions = [aws_sns_topic.alerts.arn]
+  ok_actions    = [aws_sns_topic.alerts.arn]
+}
+
+# ─── CloudWatch Alarm: Queue Age ──────────────────────────────────
+# Fires when the oldest queued analysis has waited >10 min — the worker is
+# down, wedged, or drowning. This is the "user staring at a spinner" alarm.
+
+resource "aws_cloudwatch_metric_alarm" "queue_age" {
+  alarm_name          = "stride-analysis-queue-age-${var.environment}"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 2
+  metric_name         = "ApproximateAgeOfOldestMessage"
+  namespace           = "AWS/SQS"
+  period              = 300
+  statistic           = "Maximum"
+  threshold           = 600
+  alarm_description   = "Analyses are queueing for >10 min — ML worker down or overloaded"
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    QueueName = aws_sqs_queue.analysis.name
+  }
+
+  alarm_actions = [aws_sns_topic.alerts.arn]
+  ok_actions    = [aws_sns_topic.alerts.arn]
 }
 
 # ─── Outputs ──────────────────────────────────────────────────────

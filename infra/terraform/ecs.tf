@@ -103,9 +103,13 @@ resource "aws_ecs_task_definition" "api" {
         { name = "SQS_QUEUE_URL", value = aws_sqs_queue.analysis.url },
         { name = "AWS_REGION", value = var.aws_region },
         { name = "SUPABASE_URL", value = var.supabase_url },
-        { name = "INTERNAL_API_SECRET", value = var.internal_secret },
         { name = "DSQL_ENDPOINT", value = aws_dsql_cluster.main.endpoint },
         { name = "SENTRY_DSN", value = var.sentry_dsn_api },
+      ]
+      # Injected at launch from Secrets Manager — never plaintext in the task def.
+      secrets = [
+        { name = "INTERNAL_API_SECRET", valueFrom = aws_secretsmanager_secret.internal_api_secret.arn },
+        { name = "GROQ_API_KEY", valueFrom = aws_secretsmanager_secret.groq_api_key.arn },
       ]
     }
   ])
@@ -138,11 +142,14 @@ resource "aws_ecs_task_definition" "ml_worker" {
         { name = "NODE_ENV", value = "production" },
         { name = "S3_BUCKET", value = aws_s3_bucket.videos.id },
         { name = "SQS_QUEUE_URL", value = aws_sqs_queue.analysis.url },
-        { name = "API_SERVER_URL", value = "http://${aws_lb.api.dns_name}" },
+        # Uses HTTPS automatically once acm_certificate_arn is set (see alb.tf).
+        { name = "API_SERVER_URL", value = var.acm_certificate_arn != "" ? "https://${aws_lb.api.dns_name}" : "http://${aws_lb.api.dns_name}" },
         { name = "AWS_REGION", value = var.aws_region },
-        { name = "INTERNAL_API_SECRET", value = var.internal_secret },
         { name = "SENTRY_DSN", value = var.sentry_dsn_worker },
         { name = "DSQL_ENDPOINT", value = aws_dsql_cluster.main.endpoint },
+      ]
+      secrets = [
+        { name = "INTERNAL_API_SECRET", valueFrom = aws_secretsmanager_secret.internal_api_secret.arn },
       ]
     }
   ])

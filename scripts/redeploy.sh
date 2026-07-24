@@ -5,12 +5,13 @@
 
 set -e
 
-REGION="us-east-1"
-CLUSTER="default"
-API_SERVICE="stride-api"
-FRONTEND_SERVICE="stride-frontend"
-API_COUNT=1
-FRONTEND_COUNT=1
+REGION="${AWS_REGION:-us-east-1}"
+ENVIRONMENT="${STRIDE_ENV:-production}"
+CLUSTER="${STRIDE_CLUSTER:-stride-cluster-${ENVIRONMENT}}"
+API_SERVICE="${STRIDE_API_SERVICE:-stride-api-${ENVIRONMENT}}"
+ML_WORKER_SERVICE="${STRIDE_ML_WORKER_SERVICE:-stride-ml-worker-${ENVIRONMENT}}"
+API_COUNT="${STRIDE_API_COUNT:-2}"   # PRD minimum: 2 API tasks
+ML_WORKER_COUNT="${STRIDE_ML_WORKER_COUNT:-1}"
 
 log() { echo -e "\n\033[1;34m▶ $1\033[0m"; }
 success() { echo -e "\033[1;32m✔ $1\033[0m"; }
@@ -24,17 +25,16 @@ aws ecs update-service \
   --service "$API_SERVICE" \
   --desired-count "$API_COUNT" \
   --region "$REGION" \
-  --no-cli-pager
+  --no-cli-pager >/dev/null
 
-log "Scaling frontend service to ${FRONTEND_COUNT}..."
+log "Scaling ML worker service to ${ML_WORKER_COUNT}..."
 aws ecs update-service \
   --cluster "$CLUSTER" \
-  --service "$FRONTEND_SERVICE" \
-  --desired-count "$FRONTEND_COUNT" \
+  --service "$ML_WORKER_SERVICE" \
+  --desired-count "$ML_WORKER_COUNT" \
   --region "$REGION" \
-  --no-cli-pager
+  --no-cli-pager >/dev/null
 
 echo ""
 success "Services are scaling back up."
 echo "It may take 1-2 minutes for tasks to reach RUNNING state."
-echo "ALB URL: http://stride-alb-1962699315.us-east-1.elb.amazonaws.com"

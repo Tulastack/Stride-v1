@@ -87,12 +87,45 @@ resource "aws_lb_target_group" "api" {
   }
 }
 
+# HTTP listener: forwards only while no ACM cert is configured; once
+# acm_certificate_arn is set it becomes a permanent redirect to HTTPS.
 resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.api.arn
   port              = "80"
   protocol          = "HTTP"
 
-  # Redirect to HTTPS in production, or forward directly for dev/staging without SSL certs setup
+  dynamic "default_action" {
+    for_each = var.acm_certificate_arn == "" ? [1] : []
+    content {
+      type             = "forward"
+      target_group_arn = aws_lb_target_group.api.arn
+    }
+  }
+
+  dynamic "default_action" {
+    for_each = var.acm_certificate_arn != "" ? [1] : []
+    content {
+      type = "redirect"
+      redirect {
+        port        = "443"
+        protocol    = "HTTPS"
+        status_code = "HTTP_301"
+      }
+    }
+  }
+}
+
+# HTTPS listener — created as soon as acm_certificate_arn is provided.
+# LAUNCH BLOCKER until then: JWTs and biometric data must not transit plain HTTP,
+# and iOS ATS rejects http:// APIs in store builds.
+resource "aws_lb_listener" "https" {
+  count             = var.acm_certificate_arn != "" ? 1 : 0
+  load_balancer_arn = aws_lb.api.arn
+  port              = "443"
+  protocol          = "HTTPS"
+  ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
+  certificate_arn   = var.acm_certificate_arn
+
   default_action {
     type             = "forward"
     target_group_arn = aws_lb_target_group.api.arn
@@ -118,6 +151,6 @@ resource "aws_cloudwatch_metric_alarm" "api_unhealthy" {
     LoadBalancer = aws_lb.api.arn_suffix
   }
 
-  # TODO: Add SNS topic ARN for notifications
-  # alarm_actions = [aws_sns_topic.oncall.arn]
+  alarm_actions = [aws_sns_topic.alerts.arn]
+  ok_actions    = [aws_sns_topic.alerts.arn]
 }

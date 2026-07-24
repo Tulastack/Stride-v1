@@ -18,3 +18,9 @@ google_api_key  = "your-google-api-key"
 groq_api_key    = "your-groq-api-key"
 sentry_dsn_api  = ""
 sentry_dsn_worker = ""
+
+# ─── TLS + alerting (REQUIRED before real launch) ─────────────────
+# ACM cert for the ALB HTTPS listener; empty keeps HTTP-only dev mode.
+acm_certificate_arn = ""
+# Email that receives CloudWatch alarm pages (confirm the SNS subscription).
+alert_email = ""

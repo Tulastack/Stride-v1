@@ -67,7 +67,8 @@ services:
       DATABASE_URL: postgres://stride:stride_dev@postgres:5432/stride
       STORAGE_DRIVER: local
       LOCAL_STORAGE_DIR: /tmp/stride-local-storage
-      PUBLIC_API_URL: http://192.168.0.140:3000
+      # Set PUBLIC_API_URL to your machine's LAN IP so phones can reach blob URLs
+      PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:3000}
       AWS_ENDPOINT: http://localstack:4566
       AWS_REGION: us-east-1
       AWS_ACCESS_KEY_ID: test

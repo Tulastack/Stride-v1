@@ -4,16 +4,25 @@
 #   api        — deploy only the API service
 #   ml-worker  — deploy only the ML worker service
 #   all        — deploy both (default)
+#
+# Cluster/service names match infra/terraform (stride-cluster-<env> etc.).
+# Override via env vars for a non-terraform environment:
+#   STRIDE_ENV, STRIDE_CLUSTER, STRIDE_API_SERVICE, STRIDE_ML_WORKER_SERVICE
 
 set -e
 
-REGION="us-east-1"
-ACCOUNT_ID="442004016139"
+REGION="${AWS_REGION:-us-east-1}"
+ACCOUNT_ID="${AWS_ACCOUNT_ID:-442004016139}"
 ECR_BASE="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com"
-CLUSTER="default"
-API_SERVICE="stride-api"
-ML_WORKER_SERVICE="stride-ml-worker"
+ENVIRONMENT="${STRIDE_ENV:-production}"
+CLUSTER="${STRIDE_CLUSTER:-stride-cluster-${ENVIRONMENT}}"
+API_SERVICE="${STRIDE_API_SERVICE:-stride-api-${ENVIRONMENT}}"
+ML_WORKER_SERVICE="${STRIDE_ML_WORKER_SERVICE:-stride-ml-worker-${ENVIRONMENT}}"
 TARGET="${1:-all}"
+
+# Repo root — Docker build contexts MUST be the repo root: the API image copies
+# turbo.json + packages/* (monorepo workspaces), which don't exist under apps/.
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # --- Helpers ---
 
@@ -33,38 +42,44 @@ ecr_login() {
     docker login --username AWS --password-stdin "${ECR_BASE}"
 }
 
+update_service() {
+  local service="$1"
+  aws ecs update-service \
+    --cluster "$CLUSTER" \
+    --service "$service" \
+    --force-new-deployment \
+    --region "$REGION" \
+    --no-cli-pager >/dev/null
+}
+
 deploy_api() {
   log "Building API image (linux/amd64)..."
-  docker build --platform linux/amd64 -t "${ECR_BASE}/stride:api-latest" ./apps/api
+  docker build --platform linux/amd64 \
+    -f "${REPO_ROOT}/apps/api/Dockerfile" \
+    -t "${ECR_BASE}/stride:api-latest" \
+    "${REPO_ROOT}"
 
   log "Pushing API image to ECR..."
   docker push "${ECR_BASE}/stride:api-latest"
 
-  log "Updating ECS API service..."
-  aws ecs update-service \
-    --cluster "$CLUSTER" \
-    --service "$API_SERVICE" \
-    --force-new-deployment \
-    --region "$REGION" \
-    --no-cli-pager
+  log "Updating ECS API service (${CLUSTER}/${API_SERVICE})..."
+  update_service "$API_SERVICE"
 
   success "API deployed"
 }
 
 deploy_ml_worker() {
   log "Building ML worker image (linux/amd64)..."
-  docker build --platform linux/amd64 -t "${ECR_BASE}/stride:ml-worker-latest" ./apps/ml-worker
+  docker build --platform linux/amd64 \
+    -f "${REPO_ROOT}/apps/ml-worker/Dockerfile" \
+    -t "${ECR_BASE}/stride:ml-worker-latest" \
+    "${REPO_ROOT}/apps/ml-worker"
 
   log "Pushing ML worker image to ECR..."
   docker push "${ECR_BASE}/stride:ml-worker-latest"
 
-  log "Updating ECS ML worker service..."
-  aws ecs update-service \
-    --cluster "$CLUSTER" \
-    --service "$ML_WORKER_SERVICE" \
-    --force-new-deployment \
-    --region "$REGION" \
-    --no-cli-pager
+  log "Updating ECS ML worker service (${CLUSTER}/${ML_WORKER_SERVICE})..."
+  update_service "$ML_WORKER_SERVICE"
 
   success "ML worker deployed"
 }
@@ -83,4 +98,5 @@ esac
 
 echo ""
 success "Deployment complete!"
-echo "ALB URL: http://stride-alb-1962699315.us-east-1.elb.amazonaws.com"
+echo "ALB URL: $(aws elbv2 describe-load-balancers --names "stride-api-alb-${ENVIRONMENT}" \
+  --query 'LoadBalancers[0].DNSName' --output text --region "$REGION" 2>/dev/null || echo '<run terraform output>')"
