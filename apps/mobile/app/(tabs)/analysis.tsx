@@ -73,6 +73,9 @@ export default function AnalysisScreen() {
   // Approval-gate state
   const [suggestions, setSuggestions] = useState<DrillSuggestion[]>([]);
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
+  // How many sessions the approved program actually created, keyed by suggestion id
+  // — lets the confirmation row say "6 sessions over 3 weeks" instead of "added".
+  const [planSizes, setPlanSizes] = useState<Record<string, number>>({});
 
   const loadSuggestions = useCallback(async (id: string) => {
     try {
@@ -129,7 +132,9 @@ export default function AnalysisScreen() {
   const approve = useCallback(async (s: DrillSuggestion) => {
     setBusy(s.id, true);
     try {
-      await strideApi.approveSuggestion(s.id);
+      const result = await strideApi.approveSuggestion(s.id);
+      const sessionCount = Array.isArray(result?.plan) ? result.plan.length : 1;
+      setPlanSizes((prev) => ({ ...prev, [s.id]: sessionCount }));
       setSuggestions((prev) => prev.map((x) => (x.id === s.id ? { ...x, status: 'approved' } : x)));
     } catch {
       // leave as pending so the user can retry
@@ -268,7 +273,7 @@ export default function AnalysisScreen() {
           <View style={styles.section}>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>ADD TO YOUR PLAN</Text>
             <Text style={[styles.sectionHint, { color: colors.muted }]}>
-              You choose what gets scheduled — nothing is added automatically.
+              You choose what gets scheduled. Approving builds a multi-week program targeting this issue — not a single session.
             </Text>
 
             {pending.map((s) => {
@@ -277,7 +282,7 @@ export default function AnalysisScreen() {
                 <View key={s.id} style={[styles.suggCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                   <View style={styles.suggInfo}>
                     <Text style={[styles.suggName, { color: colors.text }]}>{s.drill_name}</Text>
-                    <Text style={[styles.suggDate, { color: colors.muted }]}>Suggested for {formatDay(s.suggested_date)}</Text>
+                    <Text style={[styles.suggDate, { color: colors.muted }]}>3-week program, starting {formatDay(s.suggested_date)}</Text>
                   </View>
                   <View style={styles.suggActions}>
                     <Pressable
@@ -312,7 +317,7 @@ export default function AnalysisScreen() {
               <View key={s.id} style={[styles.approvedRow]}>
                 <Check size={16} color={colors.success} strokeWidth={2.5} />
                 <Text style={[styles.approvedText, { color: colors.muted }]}>
-                  {s.drill_name} — added for {formatDay(s.suggested_date)}
+                  {s.drill_name} — {planSizes[s.id] ?? 6} sessions added, starting {formatDay(s.suggested_date)}
                 </Text>
               </View>
             ))}

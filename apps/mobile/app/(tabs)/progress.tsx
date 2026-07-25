@@ -225,41 +225,48 @@ export default function ProgressScreen() {
             >
               <Text style={[styles.retestCtaText, { color: colors.accentText }]}>Record another sprint</Text>
             </Pressable>
-            {history.map((analysis, index) => {
-              const score = scoreFor(analysis);
-              const barWidth = `${(score / maxScore) * 100}%`;
-              const date = new Date(analysis.createdAt || Date.now());
-              const prev = index > 0 ? scoreFor(history[index - 1]) : score;
-              const delta = score - prev;
+            {/* history is stored oldest-first (needed for the delta math below,
+                which compares each sprint to the one chronologically before it);
+                reverse only for display so the most recent sprint shows first. */}
+            {history
+              .map((analysis, index) => {
+                const score = scoreFor(analysis);
+                const prev = index > 0 ? scoreFor(history[index - 1]) : score;
+                return { analysis, score, delta: score - prev, hasPrev: index > 0 };
+              })
+              .reverse()
+              .map(({ analysis, score, delta, hasPrev }, displayIndex) => {
+                const barWidth = `${(score / maxScore) * 100}%`;
+                const date = new Date(analysis.createdAt || Date.now());
 
-              return (
-                <Pressable
-                  key={analysis.id || index}
-                  accessibilityLabel={`progress-log-${analysis.id || index}`}
-                  style={[styles.logCard, { backgroundColor: colors.card, borderColor: colors.border }]}
-                  onPress={() => setSelectedAnalysis(analysis)}
-                >
-                  <View style={styles.logTop}>
-                    <Text style={[styles.logDate, { color: colors.text }]}>
-                      {date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                    </Text>
-                    <View style={styles.logScoreRow}>
-                      <Text style={[styles.logScore, { color: colors.accent }]}>{score}</Text>
-                      {delta !== 0 && index > 0 && (
-                        <Text style={[styles.logDelta, delta > 0 ? { color: colors.success } : { color: colors.error }]}>
-                          {delta > 0 ? '+' : ''}{delta}
-                        </Text>
-                      )}
+                return (
+                  <Pressable
+                    key={analysis.id || displayIndex}
+                    accessibilityLabel={`progress-log-${analysis.id || displayIndex}`}
+                    style={[styles.logCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+                    onPress={() => setSelectedAnalysis(analysis)}
+                  >
+                    <View style={styles.logTop}>
+                      <Text style={[styles.logDate, { color: colors.text }]}>
+                        {date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                      </Text>
+                      <View style={styles.logScoreRow}>
+                        <Text style={[styles.logScore, { color: colors.accent }]}>{score}</Text>
+                        {delta !== 0 && hasPrev && (
+                          <Text style={[styles.logDelta, delta > 0 ? { color: colors.success } : { color: colors.error }]}>
+                            {delta > 0 ? '+' : ''}{delta}
+                          </Text>
+                        )}
+                      </View>
                     </View>
-                  </View>
-                  {/* Score bar */}
-                  <View style={[styles.barBg, { backgroundColor: colors.cardAlt }]}>
-                    <View style={[styles.barFill, { width: barWidth as any, backgroundColor: colors.accent }]} />
-                  </View>
-                  <Text style={[styles.logIssues, { color: colors.muted }]}>{analysis.flaws.length} issue{analysis.flaws.length !== 1 ? 's' : ''} detected</Text>
-                </Pressable>
-              );
-            })}
+                    {/* Score bar */}
+                    <View style={[styles.barBg, { backgroundColor: colors.cardAlt }]}>
+                      <View style={[styles.barFill, { width: barWidth as any, backgroundColor: colors.accent }]} />
+                    </View>
+                    <Text style={[styles.logIssues, { color: colors.muted }]}>{analysis.flaws.length} issue{analysis.flaws.length !== 1 ? 's' : ''} detected</Text>
+                  </Pressable>
+                );
+              })}
           </View>
         )}
       </ScrollView>

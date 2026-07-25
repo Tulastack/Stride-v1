@@ -1,6 +1,7 @@
 import pg from 'pg';
 import type { User, Analysis, CalendarEvent, CoachSession, DrillSuggestion, ReferenceDrill, MetricsTimelineRow } from '../types.js';
 import { dbConnectionConfig } from './dsql.js';
+import { generateDrillProgram } from '../calendar/trainingPlan.js';
 
 const { Pool } = pg;
 
@@ -412,7 +413,7 @@ export async function getSuggestionsByAnalysis(analysisId: string, userId: strin
 export async function approveSuggestion(
   id: string,
   userId: string,
-): Promise<{ suggestion: DrillSuggestion; calendarEvent: CalendarEvent } | null> {
+): Promise<{ suggestion: DrillSuggestion; calendarEvent: CalendarEvent; plan: CalendarEvent[] } | null> {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -427,22 +428,16 @@ export async function approveSuggestion(
       return null;
     }
 
-    // Idempotent: if already approved, return the existing calendar_event.
-    // When the event is missing (title/date drift), fall through and recreate
-    // it INSIDE this transaction — without re-approving or adding audit rows.
+    // Idempotent: if already approved, return the existing program (every
+    // session tagged with this suggestion's id) instead of building a second one.
     if (suggestion.status === 'approved') {
-      const { rows: evtRows } = await client.query<CalendarEvent>(
-        `SELECT ce.* FROM calendar_events ce
-         JOIN suggestion_audit sa ON sa.suggestion_id = $1
-         WHERE ce.user_id = $2 AND ce.scheduled_date = $3
-           AND ce.title = $4
-         LIMIT 1`,
-        [id, userId, suggestion.suggested_date, suggestion.drill_name],
+      const { rows: planRows } = await client.query<CalendarEvent>(
+        `SELECT * FROM calendar_events WHERE user_id = $1 AND details->>'drill_suggestion_id' = $2 ORDER BY scheduled_date ASC`,
+        [userId, id],
       );
-      const existingEvent = evtRows[0];
-      if (existingEvent) {
+      if (planRows.length > 0) {
         await client.query('COMMIT');
-        return { suggestion, calendarEvent: existingEvent };
+        return { suggestion, calendarEvent: planRows[0]!, plan: planRows };
       }
     }
 
@@ -463,9 +458,8 @@ export async function approveSuggestion(
     }
 
     // Pull sets/reps/cue for this drill from the source analysis's recommendations
-    // (already computed by the analysis engine) so the plan shows real, structured
-    // set/rep detail instead of just the drill's name.
-    let details: Record<string, unknown> = { drill_key: updatedSuggestion.drill_key };
+    // (already computed by the analysis engine) so the program uses real,
+    // structured volume instead of guessed numbers.
     const { rows: analysisRows } = await client.query<{ result_json: Record<string, unknown> | null }>(
       'SELECT result_json FROM analyses WHERE id = $1',
       [updatedSuggestion.analysis_id],
@@ -474,21 +468,40 @@ export async function approveSuggestion(
       | { drillId: string; sets?: number; reps?: number; cue?: string }[]
       | undefined;
     const rec = recommendations?.find((r) => r.drillId === updatedSuggestion.drill_key);
-    if (rec) {
-      details = { drill_key: updatedSuggestion.drill_key, sets: rec.sets, reps: rec.reps, cue: rec.cue };
+
+    // Build the full progressive program (multiple sessions spread over
+    // several weeks, volume increasing) instead of a single occurrence — see
+    // calendar/trainingPlan.ts. This is what makes approving a suggestion
+    // commit to an actual training block rather than a one-off activity.
+    const sessions = generateDrillProgram(
+      {
+        drillKey: updatedSuggestion.drill_key,
+        drillName: updatedSuggestion.drill_name,
+        cue: rec?.cue ?? '',
+        sets: rec?.sets ?? 3,
+        reps: rec?.reps ?? 10,
+      },
+      updatedSuggestion.id,
+      updatedSuggestion.suggested_date,
+    );
+
+    const valueClauses: string[] = [];
+    const values: unknown[] = [];
+    let paramIndex = 1;
+    for (const s of sessions) {
+      valueClauses.push(`($${paramIndex++}, $${paramIndex++}, 'drill', $${paramIndex++}, $${paramIndex++})`);
+      values.push(userId, s.title, s.scheduledDate, JSON.stringify(s.details));
     }
 
-    // Create calendar event
     const { rows: evtRows } = await client.query<CalendarEvent>(
       `INSERT INTO calendar_events (user_id, title, event_type, scheduled_date, details)
-       VALUES ($1, $2, 'drill', $3, $4)
+       VALUES ${valueClauses.join(', ')}
        RETURNING *`,
-      [userId, updatedSuggestion.drill_name, updatedSuggestion.suggested_date, JSON.stringify(details)],
+      values,
     );
-    const calendarEvent = evtRows[0]!;
 
     await client.query('COMMIT');
-    return { suggestion: updatedSuggestion, calendarEvent };
+    return { suggestion: updatedSuggestion, calendarEvent: evtRows[0]!, plan: evtRows };
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;

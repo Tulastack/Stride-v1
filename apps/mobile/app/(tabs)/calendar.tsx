@@ -145,14 +145,18 @@ export default function CalendarScreen() {
     return formatDate(d);
   };
 
-  // Find primary event type for the dot color
+  // Find primary event type for the dot color. A day where everything is
+  // already completed shouldn't still read as "something to do" — only
+  // outstanding events light up the dot.
   const getDotColor = (dateStr: string): string | null => {
     const dayEvts = eventsByDate.get(dateStr);
     if (!dayEvts || dayEvts.length === 0) return null;
+    const outstanding = dayEvts.filter((e) => e.status !== 'completed');
+    if (outstanding.length === 0) return null;
     // Priority: competition > drill > workout > cross-training > recovery > hydration > rest
     const priority = ['competition', 'drill', 'workout', 'cross_training', 'recovery', 'hydration', 'rest'];
     for (const p of priority) {
-      if (dayEvts.some((e) => e.event_type === p)) return EVENT_TYPE_COLORS[p];
+      if (outstanding.some((e) => e.event_type === p)) return EVENT_TYPE_COLORS[p];
     }
     return EVENT_TYPE_COLORS.rest;
   };

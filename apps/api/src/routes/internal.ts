@@ -96,7 +96,14 @@ router.post('/analysis-completed', verifyInternalSecret, async (req: any, res: R
       }
     }
 
-    // Auto-create drill suggestions from result_json (no calendar_events)
+    // Auto-create drill suggestions from result_json (no calendar_events).
+    // Capped to the worst couple of issues — a plan targeting everything at
+    // once targets nothing; this mirrors the coach's own "top 1-2, worst
+    // first" prioritization (see lib/coach/agent.ts). Each approved suggestion
+    // becomes a full multi-week program (see calendar/trainingPlan.ts), so
+    // fewer, more targeted suggestions is what makes the plan real rather
+    // than overwhelming.
+    const MAX_TARGETED_ISSUES = 2;
     if (status === 'completed' && resultJson) {
       try {
         const result = resultJson as any;
@@ -109,6 +116,8 @@ router.post('/analysis-completed', verifyInternalSecret, async (req: any, res: R
         }[] = [];
 
         const today = new Date();
+        // Start anchors spaced a few days apart so two different drills'
+        // programs don't both land their first session on the same day.
         let dayOffset = 1;
         const pushSuggestion = (drillKey: string, drillName: string) => {
           const suggestedDate = new Date(today);
@@ -120,19 +129,30 @@ router.post('/analysis-completed', verifyInternalSecret, async (req: any, res: R
             drill_name: drillName,
             suggested_date: suggestedDate.toISOString().split('T')[0]!,
           });
-          dayOffset++;
+          dayOffset += 2;
         };
 
-        // 2D sagittal pipeline shape: result.recommendations (DrillRec[]).
-        for (const rec of (result.recommendations ?? []) as any[]) {
+        // 2D sagittal pipeline shape: result.recommendations (DrillRec[]),
+        // ranked by the severity of the flaw each drill addresses (worst
+        // first) and capped to the top issues.
+        const flawSeverity = new Map<string, number>(
+          ((result.flaws ?? []) as any[]).map((f) => [f.id, f.severity ?? 0]),
+        );
+        const rankedRecs = [...((result.recommendations ?? []) as any[])].sort(
+          (a, b) => (flawSeverity.get(b.flawId) ?? 0) - (flawSeverity.get(a.flawId) ?? 0),
+        );
+        for (const rec of rankedRecs.slice(0, MAX_TARGETED_ISSUES)) {
           pushSuggestion(
             rec.drillId ?? rec.drillName?.toLowerCase().replace(/\s+/g, '_') ?? `drill_${dayOffset}`,
             rec.drillName ?? 'Drill',
           );
         }
-        // Legacy 3D shape: result.primary_issues[].drills.
-        for (const issue of (result.primary_issues ?? []) as any[]) {
-          for (const drill of (issue.drills ?? []) as any[]) {
+        // Legacy 3D shape: result.primary_issues[].drills, already ranked
+        // worst-first and capped to 2 by the LLM prompt — take the top drill
+        // per issue so it stays targeted rather than exhaustive.
+        for (const issue of ((result.primary_issues ?? []) as any[]).slice(0, MAX_TARGETED_ISSUES)) {
+          const drill = ((issue.drills ?? []) as any[])[0];
+          if (drill) {
             pushSuggestion(
               drill.key ?? drill.name?.toLowerCase().replace(/\s+/g, '_') ?? `drill_${dayOffset}`,
               drill.name ?? 'Drill',
@@ -291,9 +311,15 @@ router.post('/analysis-biomech', verifyInternalSecret, async (req: any, res: Res
     }
 
     try {
-      const suggestions = result.recommendations.map((rec, i) => {
+      // Capped to the top targeted issues (worst first) — see the matching
+      // comment on /analysis-completed above for why.
+      const flawSeverity = new Map(result.flaws.map((f) => [f.id, f.severity ?? 0]));
+      const rankedRecs = [...result.recommendations].sort(
+        (a, b) => (flawSeverity.get(b.flawId) ?? 0) - (flawSeverity.get(a.flawId) ?? 0),
+      );
+      const suggestions = rankedRecs.slice(0, 2).map((rec, i) => {
         const d = new Date();
-        d.setDate(d.getDate() + i + 1);
+        d.setDate(d.getDate() + i * 2 + 1);
         return {
           analysis_id: analysisId,
           user_id: updatedAnalysis.user_id,
