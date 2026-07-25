@@ -28,7 +28,7 @@ export function EventDetailModal({
   onComplete,
 }: {
   event: DetailEvent | null;
-  colors: { bg: string; text: string; muted: string; border: string; card: string; accent: string; success: string };
+  colors: { bg: string; text: string; muted: string; border: string; card: string; accent: string; accentText: string; success: string };
   onClose: () => void;
   onComplete: (event: DetailEvent) => void;
 }) {
@@ -89,8 +89,8 @@ export function EventDetailModal({
                 testID="event-detail-complete"
                 accessibilityLabel="event-detail-complete"
               >
-                <CheckCircle2 size={18} color="#FFFFFF" />
-                <Text style={styles.completeText}>Mark complete</Text>
+                <CheckCircle2 size={18} color={colors.accentText} />
+                <Text style={[styles.completeText, { color: colors.accentText }]}>Mark complete</Text>
               </Pressable>
             </>
           )}
@@ -130,5 +130,5 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     marginTop: space.sm,
   },
-  completeText: { fontSize: 15, fontWeight: '800', color: '#FFFFFF' },
+  completeText: { fontSize: 15, fontWeight: '800' },
 });

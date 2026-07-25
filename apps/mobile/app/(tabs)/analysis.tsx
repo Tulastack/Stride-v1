@@ -268,6 +268,29 @@ export default function AnalysisScreen() {
           </View>
         )}
 
+        {/* Focus areas — measured but non-authoritative: unconfirmed reads and
+            near-edge refinements. Never mixed into AREAS TO IMPROVE, which is
+            reserved for faults we stand behind. */}
+        {result.focusAreas && result.focusAreas.length > 0 && (
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>REFINE NEXT</Text>
+            {result.focusAreas.map((fa) => (
+              <View key={fa.id} style={[styles.issueCard, { backgroundColor: colors.card, borderLeftColor: colors.border }]}>
+                <Text style={[styles.focusKind, { color: colors.muted }]}>
+                  {fa.kind === 'unconfirmed' ? 'UNCONFIRMED READ' : 'CLOSE TO THE EDGE'}
+                </Text>
+                <Text style={[styles.issueTitle, { color: colors.text }]}>{fa.name.replace(/_/g, ' ')}</Text>
+                <Text style={[styles.issueDesc, { color: colors.muted }]}>{fa.plainExplanation}</Text>
+                {fa.drill ? (
+                  <Text style={[styles.focusDrill, { color: colors.muted }]}>
+                    Drill: {fa.drill.drillName} — {fa.drill.sets} sets × {fa.drill.reps} reps
+                  </Text>
+                ) : null}
+              </View>
+            ))}
+          </View>
+        )}
+
         {/* Approval gate — Add to your plan / Skip. Nothing is auto-scheduled. */}
         {(pending.length > 0 || approved.length > 0) && (
           <View style={styles.section}>
@@ -282,7 +305,7 @@ export default function AnalysisScreen() {
                 <View key={s.id} style={[styles.suggCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                   <View style={styles.suggInfo}>
                     <Text style={[styles.suggName, { color: colors.text }]}>{s.drill_name}</Text>
-                    <Text style={[styles.suggDate, { color: colors.muted }]}>3-week program, starting {formatDay(s.suggested_date)}</Text>
+                    <Text style={[styles.suggDate, { color: colors.muted }]}>Progressive program, starting {formatDay(s.suggested_date)}</Text>
                   </View>
                   <View style={styles.suggActions}>
                     <Pressable
@@ -317,7 +340,9 @@ export default function AnalysisScreen() {
               <View key={s.id} style={[styles.approvedRow]}>
                 <Check size={16} color={colors.success} strokeWidth={2.5} />
                 <Text style={[styles.approvedText, { color: colors.muted }]}>
-                  {s.drill_name} — {planSizes[s.id] ?? 6} sessions added, starting {formatDay(s.suggested_date)}
+                  {/* Session count is only known for approvals made this session —
+                      plan length varies per athlete, so never guess a number. */}
+                  {s.drill_name} — {planSizes[s.id] ? `${planSizes[s.id]} sessions added` : 'program scheduled'}, starting {formatDay(s.suggested_date)}
                 </Text>
               </View>
             ))}
@@ -388,6 +413,8 @@ const styles = StyleSheet.create({
   severityText: { fontSize: 10, fontWeight: '900', letterSpacing: 1, color: '#FFFFFF' },
   issueTitle: { fontSize: 16, fontWeight: '700', textTransform: 'capitalize', marginBottom: 4 },
   issueDesc: { fontSize: 13, lineHeight: 19 },
+  focusKind: { fontSize: 10, fontWeight: '800', letterSpacing: 1, marginBottom: 4 },
+  focusDrill: { fontSize: 12, fontWeight: '600', marginTop: 6 },
   // measurements breakdown
   metricRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1 },
   metricLeft: { flex: 1, gap: 2 },

@@ -439,6 +439,20 @@ export async function approveSuggestion(
         await client.query('COMMIT');
         return { suggestion, calendarEvent: planRows[0]!, plan: planRows };
       }
+      // Legacy approvals predate program tagging: their single event matches
+      // on title/date instead of drill_suggestion_id. Return it rather than
+      // silently stacking a whole new program on top of it — only a true
+      // drift (no event at all) falls through to the rebuild below.
+      const { rows: legacyRows } = await client.query<CalendarEvent>(
+        `SELECT * FROM calendar_events
+         WHERE user_id = $1 AND scheduled_date = $2 AND title = $3
+         LIMIT 1`,
+        [userId, suggestion.suggested_date, suggestion.drill_name],
+      );
+      if (legacyRows.length > 0) {
+        await client.query('COMMIT');
+        return { suggestion, calendarEvent: legacyRows[0]!, plan: legacyRows };
+      }
     }
 
     let updatedSuggestion = suggestion;

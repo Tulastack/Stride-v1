@@ -62,6 +62,26 @@ export interface CaptureQuality {
   primaryNudge?: string;
 }
 
+/**
+ * Measured, non-authoritative improvement target — flaws stay trusted-only.
+ * 'unconfirmed' = experimental reading outside its healthy band;
+ * 'refinement' = in-band value close to the band edge.
+ */
+export interface FocusArea {
+  id: string;
+  key: string;
+  name: string;
+  kind: 'unconfirmed' | 'refinement';
+  plainExplanation: string;
+  evidence: {
+    frameTimestampMs: number;
+    measured: ConfidenceBand;
+    normalRange: [number, number];
+    viewpointPenalty: number;
+  };
+  drill?: Omit<DrillRec, 'flawId'>;
+}
+
 export interface AnalysisResult {
   id: string;
   phase: Phase;
@@ -74,6 +94,8 @@ export interface AnalysisResult {
   createdAt: string;
   /** Composite running-economy index (0–100). */
   economyScore?: number;
+  /** Secondary targets (capped with flaws at 5 total); absent on legacy results. */
+  focusAreas?: FocusArea[];
 }
 
 /** Confidence tier for UI demotion: low-confidence metrics are muted + labeled. */

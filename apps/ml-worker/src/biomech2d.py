@@ -152,19 +152,22 @@ TIER = {
 # pose subsampling also limits temporal resolution. Report capture fps separately.
 FPS_TRUST_GATE = 120.0
 # Confidence/viewpoint tolerance for a metric to be certified "trusted" rather
-# than "experimental". Loosened a second time (0.5 conf / 0.6 viewpoint-penalty →
-# 0.4 / 0.7), the same size step as the original loosening from 0.6/0.5 — real
-# phone footage rarely clears a strict bar, and with experimental metrics now
-# also counting toward the score and flaws (see EXPERIMENTAL_FORM_WEIGHT and the
-# flaw loop below), being too strict here just meant fewer confident results,
-# not safer ones.
-TRUST_CONF_MIN = 0.4
-TRUST_VP_MAX = 0.7
+# than "experimental". These stay STRICT on purpose: experimental metrics now
+# participate in the score (EXPERIMENTAL_FORM_WEIGHT) and surface as focus
+# areas (FOCUS_TARGET), so a borderline measurement is never silently dropped —
+# which removes the only argument for loosening the badge itself. "Trusted" is
+# the app's word to the athlete that we'd stand behind the number; a penalty
+# above 0.5 means more than half the plane's signal is corrupted.
+TRUST_CONF_MIN = 0.6
+TRUST_VP_MAX = 0.5
 # Overstride (tier 3) is translation-dependent, so it gets a tighter viewpoint
 # cap than tier-2's TRUST_VP_MAX rather than being permanently barred from
 # trust: vp = sin(azimuth)² for sagittal metrics, so vp<=0.3 means the camera
 # is within ~33° of pure side-on — the actual geometric condition under which
-# this measurement is sound. Outside that window it stays "experimental".
+# this measurement is sound. Gated on the RAW keypoint confidence (mean_conf):
+# the displayed tier-3 confidence carries a fixed 0.6 translation discount that
+# would make TRUST_CONF_MIN unreachable by construction, which is a statement
+# about the formula, not the clip. Outside that window it stays "experimental".
 OVERSTRIDE_VP_MAX = 0.3
 # Perspective/scale corrupt vertical CoM off-axis and it is unmeasured on runners
 # (honesty ledger #9) — keep it a candidate, never headline-trusted yet.
@@ -192,23 +195,21 @@ FORM_WEIGHT: dict[str, float] = {
 # dev=0.5 → ~28% of the weight, dev=1.5 → ~63%, dev=3+ → ~86-100% (saturates).
 FORM_SCORE_DECAY = 1.5
 # Experimental (usable but not confident-enough-to-certify) metrics still
-# deduct — just at a fraction of a trusted metric's weight. Excluding them
-# entirely let a single clean trusted metric mask a pile of bad experimental
-# ones (e.g. one fine cadence reading + a genuinely bad-form clip → ~82).
-EXPERIMENTAL_FORM_WEIGHT = 0.75
-# When most of a clip's usable metrics can't be certified trusted, "experimental"
-# describes most of the picture, not a side note — discounting it further would
-# mean mostly ignoring the clip. Below this trusted fraction, experimental
-# metrics score at full weight instead of EXPERIMENTAL_FORM_WEIGHT for that
-# clip. Needs a real sample to mean anything, hence THIN_COVERAGE_MIN_METRICS.
-THIN_COVERAGE_TRUSTED_FRAC = 1.0 / 3.0
-THIN_COVERAGE_MIN_METRICS = 3
+# deduct — at half a trusted metric's weight, the same uncertainty discount
+# used everywhere else in this module. Excluding them entirely let a single
+# clean trusted metric mask a pile of bad experimental ones (e.g. one fine
+# cadence reading + a genuinely bad-form clip → ~82). The discount does NOT
+# escalate when trusted coverage is thin: uncertainty doesn't shrink because
+# it is widespread, and the sparse-coverage caps already stop a thin clip
+# from claiming a great score.
+EXPERIMENTAL_FORM_WEIGHT = 0.5
+# Ceiling on flaws + focus areas surfaced per clip (see _focus_candidates):
+# enough targets to build a plan from, few enough to stay a priority list.
+FOCUS_TARGET = 5
 
 
 def _form_score(scorable: list[tuple[str, float, bool]], phase: str) -> int:
-    """Running form score, 0-100: start at 100 and deduct per demonstrated
-    fault. No coverage cap or floor — the score is exactly what the
-    deductions say it is.
+    """Running form score, 0-100: start at 100 and deduct per demonstrated fault.
 
     `scorable` is (metric_key, value, trusted) for USABLE metrics (plausible +
     confident enough to report at all). Scoring rules:
@@ -220,27 +221,16 @@ def _form_score(scorable: list[tuple[str, float, bool]], phase: str) -> int:
       * Outside the band the deduction rises smoothly and saturates at the
         metric's FORM_WEIGHT: weight * (1 - exp(-dev/FORM_SCORE_DECAY)), where
         dev = distance outside the band in band-half-widths.
-      * TRUSTED metrics deduct at full weight. EXPERIMENTAL metrics deduct
-        too — at EXPERIMENTAL_FORM_WEIGHT of a trusted metric's weight — so a
-        clip with thin trusted coverage can't dodge every real fault just
-        because most of the measurements landed as "experimental" rather than
-        "trusted." Only the CONFIDENCE in the deduction changes, never
-        whether it counts.
-      * If fewer than THIN_COVERAGE_TRUSTED_FRAC of a clip's usable metrics
-        are trusted (and there are at least THIN_COVERAGE_MIN_METRICS of them
-        to judge coverage by), experimental metrics deduct at FULL weight for
-        that clip instead of EXPERIMENTAL_FORM_WEIGHT: at that point
-        "experimental" is most of the picture, not a side note, so
-        discounting it further would mean mostly ignoring the clip.
+      * EVERY usable metric scores — trusted at full weight, experimental at
+        EXPERIMENTAL_FORM_WEIGHT (uncertainty discount). Excluding
+        experimental metrics whenever anything trusted survived let one clean
+        trusted reading mask a pile of genuinely bad experimental ones; only
+        the CONFIDENCE in a deduction changes, never whether it counts.
+      * Sparse-coverage cap: 1 scored metric caps at 80, 2 cap at 90 — a clip
+        where almost nothing was measurable can't claim a perfect 100.
     """
     if not scorable:
         return 0
-
-    exp_weight = EXPERIMENTAL_FORM_WEIGHT
-    if len(scorable) >= THIN_COVERAGE_MIN_METRICS:
-        trusted_frac = sum(1 for _, _, trusted in scorable if trusted) / len(scorable)
-        if trusted_frac < THIN_COVERAGE_TRUSTED_FRAC:
-            exp_weight = 1.0
 
     total = 0.0
     for k, v, trusted in scorable:
@@ -249,10 +239,44 @@ def _form_score(scorable: list[tuple[str, float, bool]], phase: str) -> int:
         dev = (lo - v) / half if v < lo else (v - hi) / half if v > hi else 0.0
         if dev <= 0:
             continue
-        weight = FORM_WEIGHT.get(k, 8.0) * (1.0 if trusted else exp_weight)
+        weight = FORM_WEIGHT.get(k, 8.0) * (1.0 if trusted else EXPERIMENTAL_FORM_WEIGHT)
         total += weight * (1.0 - math.exp(-dev / FORM_SCORE_DECAY))
 
-    return int(round(max(0.0, min(100.0, 100.0 - total))))
+    cap = 100.0 if len(scorable) >= 3 else 90.0 if len(scorable) == 2 else 80.0
+    return int(round(max(0.0, min(cap, 100.0 - total))))
+
+
+def _focus_candidates(values: dict[str, tuple[float, int]], per_usable: dict[str, bool],
+                      flagged_keys: set[str], phase: str, need: int) -> list[tuple[str, str]]:
+    """Pick up to `need` focus-area targets from the usable, un-flagged metrics.
+
+    Two honest kinds, in priority order (see the focus-area block in _assemble):
+      * "unconfirmed" — outside the healthy band but not certified trusted
+        (trusted deviations already raised flaws): a real measured deviation
+        we won't state as fact, largest deviation first;
+      * "refinement" — inside the band but closest to its edge: not a fault,
+        a sharpening candidate, smallest margin first.
+    Pure and deterministic; returns [(metric_key, kind)].
+    """
+    if need <= 0:
+        return []
+    unconfirmed: list[tuple[float, str]] = []
+    refinements: list[tuple[float, str]] = []
+    for key, (val, _evi) in values.items():
+        if key in flagged_keys or not per_usable.get(key) or val <= 0:
+            continue
+        lo, hi = _norm_range(key, phase)
+        half = max((hi - lo) / 2.0, 1e-6)
+        if val < lo or val > hi:
+            dev = (lo - val if val < lo else val - hi) / half
+            unconfirmed.append((dev, key))
+        else:
+            margin = min(val - lo, hi - val) / half
+            refinements.append((margin, key))
+    unconfirmed.sort(key=lambda c: (-c[0], c[1]))
+    refinements.sort(key=lambda c: (c[0], c[1]))
+    picks = [(k, "unconfirmed") for _, k in unconfirmed] + [(k, "refinement") for _, k in refinements]
+    return picks[:need]
 
 _UNIT_SUFFIXES = ("_ms", "_spm")
 
@@ -587,10 +611,11 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
             trust = "trusted" if (conf >= TRUST_CONF_MIN and temporal_fps >= FPS_TRUST_GATE and key not in CANDIDATE) else "experimental"
         elif tier == 3:
             # rebinned / translation-dependent → trusted only from a near-pure
-            # side view (see OVERSTRIDE_VP_MAX), never from an off-axis one.
+            # side view with confident keypoints (see OVERSTRIDE_VP_MAX), never
+            # from an off-axis one.
             vp = _viewpoint_penalty(azimuth_deg, "sagittal")
             conf = mean_conf * (1 - vp) * 0.6
-            trust = "trusted" if (conf >= TRUST_CONF_MIN and vp <= OVERSTRIDE_VP_MAX) else "experimental"
+            trust = "trusted" if (mean_conf >= TRUST_CONF_MIN and vp <= OVERSTRIDE_VP_MAX) else "experimental"
         else:
             # Tier 2 → best in its own plane, degraded (not zeroed) off-axis. Sagittal
             # metrics trust a SIDE view; frontal metrics (valgus, hip drop) trust a
@@ -616,14 +641,15 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
                         "normalRange": list(_norm_range(key, phase)), "comparableAcrossViews": True,
                         "trustStatus": trust, "tier": tier})
         lo, hi = _norm_range(key, phase)
-        # Any USABLE (plausible + confident enough to report) metric outside
-        # the healthy band raises a flaw — trusted or experimental. Excluding
-        # experimental deviations entirely used to mean a clip could measure
-        # 5+ real problems and report 0-1 of them just because trust coverage
-        # was thin. Experimental flaws get an honest hedge in the copy instead
-        # of being silently dropped. A non-moving (static-lock) subject never
-        # raises a flaw at all.
-        if moving_subject and usable and (val < lo or val > hi):
+        # Only a TRUSTED, plausible metric may raise an authoritative flaw +
+        # drill. Experimental/descriptive readings are never flagged as faults
+        # — that is the honesty fix for the "garbage wearing a trusted badge /
+        # false-flaw every clip" failures found in the baseline — but they are
+        # no longer silently dropped either: usable experimental deviations
+        # surface as hedged FOCUS AREAS below, and deduct (discounted) from
+        # the form score. A non-moving (static-lock) subject never raises a
+        # flaw at all.
+        if moving_subject and trust == "trusted" and usable and (val < lo or val > hi):
             dev = (lo - val if val < lo else val - hi) / max(hi - lo, 1)
             sev = 3 if dev > 0.5 else 2 if dev > 0.2 else 1
             fid = f"flaw-{key.replace('_', '-')}"
@@ -631,51 +657,55 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
             # Map source frame_index → video wall-clock ms (NOT pose sample rate).
             frame_i = idxs[evi] if evi < len(idxs) else 0
             ts = int(frame_i / max(src_fps, 1e-6) * 1000)
-            hedge = " (a lower-confidence read — worth confirming on a re-film.)" if trust != "trusted" else ""
             flaws.append({
                 "id": fid, "name": NAMES[key], "phase": phase, "severity": sev,
-                "plainExplanation": f"{WHY[key]} Your {_metric_label(key)} is {direction} typical — {_fmt_value(val, UNIT[key])} vs. {_fmt_value(lo, UNIT[key])}–{_fmt_value(hi, UNIT[key])}.{hedge}",
+                "plainExplanation": f"{WHY[key]} Your {_metric_label(key)} is {direction} typical — {_fmt_value(val, UNIT[key])} vs. {_fmt_value(lo, UNIT[key])}–{_fmt_value(hi, UNIT[key])}.",
                 "evidence": {"frameTimestampMs": ts,
                              "jointAngles3D": {"knee_drive": round(values['knee_drive'][0], 1), "hip_extension": round(values['hip_extension'][0], 1), "trunk_lean": round(values['trunk_lean'][0], 1)},
                              "measured": band, "normalRange": list(_norm_range(key, phase)), "viewpointPenalty": round(vp, 2)},
             })
             recs.append({"flawId": fid, **DRILLS[key]})
 
-    # A plan needs enough real targets to build a program from. Requiring a
-    # trusted, out-of-band reading for every flaw can legitimately leave a
-    # clip with 0-2 flaws even when 5+ metrics were measured. Backfill up to
-    # MIN_FLAWS with the usable metrics sitting CLOSEST to the edge of their
-    # healthy band — real measurements, honestly framed as refinement areas
-    # (severity 1, "within range but close") rather than invented faults.
-    MIN_FLAWS = 5
-    if moving_subject and len(flaws) < MIN_FLAWS:
+    # ── Focus areas: honest secondary targets, NOT flaws ──────────────────────
+    # A plan needs targets even when few authoritative faults survive the trust
+    # gate, but inventing flaws (or loosening the gate) would spend the app's
+    # honesty to get them. Instead, a separate channel with hedged copy:
+    # experimental out-of-band deviations first ("unconfirmed" — real readings
+    # we won't state as fact), then in-band values nearest their band edge
+    # ("refinement"). Flaw + focus-area count is capped at FOCUS_TARGET; each
+    # carries its drill inline so the coach/plan surfaces can use it WITHOUT
+    # entering the drill-suggestion approval pipeline (suggestions stay
+    # reserved for authoritative faults).
+    focus_areas: list[dict] = []
+    if moving_subject:
         flagged_keys = {f["id"][len("flaw-"):].replace('-', '_') for f in flaws}
-        candidates = []
-        for key, (val, evi) in values.items():
-            if key in flagged_keys or not per_usable.get(key):
-                continue
+        for key, kind in _focus_candidates(values, per_usable, flagged_keys, phase,
+                                           FOCUS_TARGET - len(flaws)):
+            val, evi = values[key]
             lo, hi = _norm_range(key, phase)
-            half = max((hi - lo) / 2.0, 1e-6)
-            margin = min(val - lo, hi - val) / half  # smaller = closer to the edge
-            candidates.append((margin, key, val, evi))
-        candidates.sort(key=lambda c: c[0])
-        for _margin, key, val, evi in candidates[: MIN_FLAWS - len(flaws)]:
-            lo, hi = _norm_range(key, phase)
-            fid = f"flaw-{key.replace('_', '-')}"
             frame_i = idxs[evi] if evi < len(idxs) else 0
-            ts = int(frame_i / max(src_fps, 1e-6) * 1000)
             band = next(m["measured"] for m in metrics if m["key"] == key)
-            trust = next(m["trustStatus"] for m in metrics if m["key"] == key)
-            hedge = " (a lower-confidence read.)" if trust != "trusted" else ""
-            flaws.append({
-                "id": fid, "name": NAMES[key], "phase": phase, "severity": 1,
-                "plainExplanation": f"{WHY[key]} Your {_metric_label(key)} is inside the healthy range but close to the edge — {_fmt_value(val, UNIT[key])} vs. {_fmt_value(lo, UNIT[key])}–{_fmt_value(hi, UNIT[key])}. Worth tightening up next.{hedge}",
-                "evidence": {"frameTimestampMs": ts,
-                             "jointAngles3D": {"knee_drive": round(values['knee_drive'][0], 1), "hip_extension": round(values['hip_extension'][0], 1), "trunk_lean": round(values['trunk_lean'][0], 1)},
-                             "measured": band, "normalRange": list(_norm_range(key, phase)), "viewpointPenalty": round(vp_by_key.get(key, 0.0), 2)},
+            if kind == "unconfirmed":
+                direction = "below" if val < lo else "above"
+                explanation = (
+                    f"{WHY[key]} This clip reads your {_metric_label(key)} {direction} typical — "
+                    f"{_fmt_value(val, UNIT[key])} vs. {_fmt_value(lo, UNIT[key])}–{_fmt_value(hi, UNIT[key])} — "
+                    "but the capture wasn't clean enough to call it a fault. Worth confirming on a re-film."
+                )
+            else:
+                explanation = (
+                    f"{WHY[key]} Your {_metric_label(key)} is inside the healthy range but close to the edge — "
+                    f"{_fmt_value(val, UNIT[key])} vs. {_fmt_value(lo, UNIT[key])}–{_fmt_value(hi, UNIT[key])}. "
+                    "Not a fault — a sharpening candidate."
+                )
+            focus_areas.append({
+                "id": f"focus-{key.replace('_', '-')}", "key": key, "name": NAMES[key],
+                "kind": kind, "plainExplanation": explanation,
+                "evidence": {"frameTimestampMs": int(frame_i / max(src_fps, 1e-6) * 1000),
+                             "measured": band, "normalRange": [lo, hi],
+                             "viewpointPenalty": round(vp_by_key.get(key, 0.0), 2)},
+                **({"drill": dict(DRILLS[key])} if key in DRILLS else {}),
             })
-            if key in DRILLS:
-                recs.append({"flawId": fid, **DRILLS[key]})
 
     # Running form score: deduction-based composite (see _form_score). Usable =
     # plausible + confident. Every usable metric scores — trusted at full
@@ -708,6 +738,7 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
         "id": f"analysis-{clip_id}", "phase": phase, "economyScore": economy,
         "summary": summary,
         "flaws": flaws, "recommendations": recs, "metrics": metrics,
+        "focusAreas": focus_areas,
         "captureQuality": {"overall": round(overall, 2), "fps": round(cap_fps, 1),
                            "poseFps": round(pose_fps, 1), "motionBlur": "low",
                            "framing": "full", "perMetricUsable": per_usable,

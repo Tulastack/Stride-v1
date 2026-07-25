@@ -91,6 +91,30 @@ export interface CaptureQuality {
   primaryNudge?: string; // single most useful capture tip, or undefined if fine
 }
 
+/**
+ * A measured, non-authoritative improvement target. Flaws stay trusted-only;
+ * a FocusArea is the honest channel for everything else worth acting on:
+ * 'unconfirmed' = a usable but experimental reading outside its healthy band
+ * (real deviation we won't state as fact); 'refinement' = an in-band value
+ * sitting close to its band edge (not a fault — a sharpening candidate).
+ * Carries its drill inline; focus areas never enter the drill-suggestion
+ * approval pipeline.
+ */
+export interface FocusArea {
+  id: string;
+  key: string; // Metric.key this target was derived from
+  name: string;
+  kind: 'unconfirmed' | 'refinement';
+  plainExplanation: string;
+  evidence: {
+    frameTimestampMs: number;
+    measured: ConfidenceBand;
+    normalRange: [number, number];
+    viewpointPenalty: number;
+  };
+  drill?: Omit<DrillRec, 'flawId'>;
+}
+
 export interface AnalysisResult {
   id: string;
   phase: Phase;
@@ -103,6 +127,8 @@ export interface AnalysisResult {
   createdAt: string; // ISO 8601
   /** Composite running-economy index (0–100) across the usable metrics. */
   economyScore?: number;
+  /** Secondary targets (capped with flaws at 5 total); absent on legacy results. */
+  focusAreas?: FocusArea[];
 }
 
 // ─── Capture inputs & athlete context (the seam's request side) ───────

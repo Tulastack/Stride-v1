@@ -6,7 +6,13 @@ formula: (1) perfect "lower is better" values (0% overstride, 0 valgus) scored
 band were penalized for not being at the exact band midpoint. Both meant
 accurate form could never score well.
 """
-from src.biomech2d import _form_score, FORM_WEIGHT, NORMAL_RANGE, EXPERIMENTAL_FORM_WEIGHT
+from src.biomech2d import (
+    _focus_candidates,
+    _form_score,
+    EXPERIMENTAL_FORM_WEIGHT,
+    FORM_WEIGHT,
+    NORMAL_RANGE,
+)
 
 
 def test_all_metrics_inside_healthy_band_score_100():
@@ -61,24 +67,28 @@ def test_worse_deviation_scores_lower_monotonically():
     assert inside > mild > severe
 
 
-def test_no_artificial_cap_clean_scores_regardless_of_how_much_was_measured():
-    # No coverage-based ceiling: 1, 2, or 3 clean trusted metrics all score
-    # 100 — the score is exactly what the deductions say, nothing else.
+def test_sparse_coverage_caps_the_score():
+    # A clip where almost nothing was measurable can't claim perfection —
+    # 1 scored metric caps at 80, 2 at 90, 3+ can reach 100.
     one = _form_score([("trunk_lean", 15.0, True)], "max_velocity")
     two = _form_score([("trunk_lean", 15.0, True), ("knee_drive", 95.0, True)], "max_velocity")
     three = _form_score(
         [("trunk_lean", 15.0, True), ("knee_drive", 95.0, True), ("hip_extension", 172.0, True)],
         "max_velocity",
     )
-    assert one == two == three == 100
+    assert one == 80
+    assert two == 90
+    assert three == 100
 
 
 def test_experimental_faults_deduct_at_half_the_weight_of_trusted_ones():
     # Same fault, same value — only the trust flag differs. An experimental
     # reading still moves the score (it is not silently dropped), just less
-    # than an identical trusted reading would.
-    trusted_fault = _form_score([("knee_drive", 22.0, True)], "max_velocity")
-    experimental_fault = _form_score([("knee_drive", 22.0, False)], "max_velocity")
+    # than an identical trusted reading would. Three metrics so the sparse-
+    # coverage cap doesn't bind and the deduction ratio is visible.
+    base = [("trunk_lean", 15.0, True), ("hip_extension", 172.0, True)]
+    trusted_fault = _form_score(base + [("knee_drive", 22.0, True)], "max_velocity")
+    experimental_fault = _form_score(base + [("knee_drive", 22.0, False)], "max_velocity")
     assert trusted_fault < experimental_fault < 100
     trusted_deduction = 100 - trusted_fault
     experimental_deduction = 100 - experimental_fault
@@ -126,3 +136,53 @@ def test_band_midpoint_and_band_edge_score_identically():
     edge = _form_score([("knee_drive", lo + 0.1, True), ("trunk_lean", 15.0, True),
                         ("hip_extension", 172.0, True)], "max_velocity")
     assert mid == edge == 100
+
+
+# ── Focus areas (_focus_candidates): honest secondary targets, never flaws ────
+
+def test_focus_candidates_prefer_unconfirmed_deviations_over_refinements():
+    # trunk_lean is OUTSIDE its band (8-22) and unflagged (i.e. experimental) —
+    # it must outrank every in-band refinement candidate.
+    values = {
+        "trunk_lean": (30.0, 0),     # out of band → unconfirmed
+        "knee_drive": (95.0, 0),     # mid-band
+        "hip_extension": (161.0, 0), # in band (160-185) but hugging the edge
+    }
+    usable = {k: True for k in values}
+    picks = _focus_candidates(values, usable, set(), "max_velocity", 3)
+    assert picks[0] == ("trunk_lean", "unconfirmed")
+    kinds = dict(picks)
+    assert kinds["hip_extension"] == "refinement"
+
+
+def test_focus_candidates_exclude_flagged_and_unusable_metrics():
+    values = {
+        "trunk_lean": (30.0, 0),    # already raised a real flaw → excluded
+        "knee_drive": (40.0, 0),    # out of band but NOT usable → excluded
+        "arm_swing": (88.0, 0),     # usable, in band → refinement
+    }
+    usable = {"trunk_lean": True, "knee_drive": False, "arm_swing": True}
+    picks = _focus_candidates(values, usable, {"trunk_lean"}, "max_velocity", 5)
+    assert picks == [("arm_swing", "refinement")]
+
+
+def test_focus_candidates_respect_the_remaining_budget():
+    values = {
+        "trunk_lean": (15.0, 0),
+        "knee_drive": (95.0, 0),
+        "hip_extension": (172.0, 0),
+        "arm_swing": (88.0, 0),
+    }
+    usable = {k: True for k in values}
+    assert len(_focus_candidates(values, usable, set(), "max_velocity", 2)) == 2
+    assert _focus_candidates(values, usable, set(), "max_velocity", 0) == []
+    assert _focus_candidates(values, usable, set(), "max_velocity", -3) == []
+
+
+def test_focus_candidates_rank_refinements_by_distance_to_band_edge():
+    # hip_extension at 161 sits 1/12.5 half-widths from its band edge;
+    # knee_drive at 95 sits dead-center — the edge-hugger comes first.
+    values = {"knee_drive": (95.0, 0), "hip_extension": (161.0, 0)}
+    usable = {k: True for k in values}
+    picks = _focus_candidates(values, usable, set(), "max_velocity", 2)
+    assert picks[0][0] == "hip_extension"
