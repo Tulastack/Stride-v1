@@ -5,6 +5,7 @@ import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, CheckCircle2, Circ
 import { strideApi } from '../../src/services/api';
 import { useTheme } from '../../src/context/ThemeContext';
 import { space, radius, iconStroke } from '../../src/theme';
+import { EventDetailModal } from '../../src/components/EventDetailModal';
 
 type CalendarEvent = {
   id: string;
@@ -18,6 +19,8 @@ type CalendarEvent = {
     volume?: string;
     cue?: string;
     drill_key?: string;
+    why?: string;
+    cues?: string[];
   };
 };
 
@@ -78,6 +81,7 @@ export default function CalendarScreen() {
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<string>(formatDate(new Date()));
   const [completingId, setCompletingId] = useState<string | null>(null);
+  const [detailEvent, setDetailEvent] = useState<CalendarEvent | null>(null);
   const checkAnim = useRef(new Animated.Value(0)).current;
 
   const now = new Date();
@@ -124,8 +128,9 @@ export default function CalendarScreen() {
   const dayEvents = events.filter((e) => e.scheduled_date === selectedDate && e.status !== 'completed');
 
   // Every event visible in dayEvents is always 'scheduled' (completed ones are
-  // filtered out), so tapping only ever means "mark complete." Plays a brief
-  // checkmark pop before the item actually leaves the list.
+  // filtered out). Called from the detail modal's "Mark complete" action —
+  // plays a brief checkmark pop on the underlying card before the item
+  // actually leaves the list.
   const completeWithAnimation = (event: CalendarEvent) => {
     if (completingId) return; // one at a time
     setCompletingId(event.id);
@@ -247,7 +252,7 @@ export default function CalendarScreen() {
                       <Pressable
                         key={event.id}
                         style={[styles.eventCard, { backgroundColor: colors.card, borderColor: colors.border }]}
-                        onPress={() => completeWithAnimation(event)}
+                        onPress={() => setDetailEvent(event)}
                         disabled={completing}
                       >
                         <View style={styles.eventLeft}>
@@ -293,6 +298,16 @@ export default function CalendarScreen() {
           </View>
         )}
       </ScrollView>
+
+      <EventDetailModal
+        event={detailEvent}
+        colors={colors}
+        onClose={() => setDetailEvent(null)}
+        onComplete={(event) => {
+          setDetailEvent(null);
+          completeWithAnimation(event as CalendarEvent);
+        }}
+      />
     </SafeAreaView>
   );
 }

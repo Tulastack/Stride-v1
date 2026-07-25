@@ -219,12 +219,15 @@ export function CoachChat({ analysisId }: { analysisId?: string } = {}) {
                   ))}
                   {(() => {
                     const metricKey = detectMetricForDiagram(m.sections!);
-                    if (!metricKey) return null;
-                    return <CoachMetricDiagram metricKey={metricKey} />;
+                    const showsForm = m.sections!.some((s) => s.type === 'form');
+                    if (!metricKey && !showsForm) return null;
+                    // Prefer the athlete's own pose data whenever a run is linked to
+                    // this session — a generic stick figure only when none is.
+                    if (effectiveAnalysisId) {
+                      return <PoseLoop analysisId={effectiveAnalysisId} highlightMetricKey={metricKey ?? undefined} />;
+                    }
+                    return metricKey ? <CoachMetricDiagram metricKey={metricKey} /> : null;
                   })()}
-                  {m.sections!.some((s) => s.type === 'form') && effectiveAnalysisId && (
-                    <PoseLoop analysisId={effectiveAnalysisId} />
-                  )}
                 </View>
               ) : (
                 <View style={[styles.assistantBubble, { backgroundColor: colors.cardAlt }]}>

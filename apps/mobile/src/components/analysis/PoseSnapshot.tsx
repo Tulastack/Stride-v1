@@ -46,12 +46,12 @@ export function PoseSnapshot({ analysisId, tMs }: { analysisId: string; tMs: num
           {EDGES.map(([a, b], i) => {
             const p = toPx(frame.kp[a]); const q = toPx(frame.kp[b]);
             if (p.c < CONF || q.c < CONF) return null;
-            return <Line key={i} x1={p.x} y1={p.y} x2={q.x} y2={q.y} stroke={ACCENT} strokeWidth={2} strokeOpacity={0.9} strokeLinecap="round" />;
+            return <Line key={i} x1={p.x} y1={p.y} x2={q.x} y2={q.y} stroke={ACCENT} strokeWidth={1.5} strokeOpacity={0.9} strokeLinecap="round" />;
           })}
           {frame.kp.map((kp, i) => {
             if (i < 5 || kp[2] < CONF) return null;
             const p = toPx(kp);
-            return <Circle key={i} cx={p.x} cy={p.y} r={2.5} fill="#FFFFFF" />;
+            return <Circle key={i} cx={p.x} cy={p.y} r={2} fill="#FFFFFF" />;
           })}
         </Svg>
       )}

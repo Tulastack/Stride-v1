@@ -140,7 +140,7 @@ WHY = {
 # ── Trust tiers (docs/research/angle-agnostic-kinematics.md) ──────────────────
 # Trust by variable TYPE, not by azimuth. Tier 1 = angle-robust but frame-rate-
 # gated; Tier 2 = sagittal (best side-on, degraded off-axis); Tier 3 = rebinned /
-# translation-dependent → descriptive only, never "trusted".
+# translation-dependent — narrower trust window than tier 2 (see OVERSTRIDE_VP_MAX).
 TIER = {
     "cadence_spm": 1, "contact_time_ms": 1, "vertical_oscillation": 1,
     "trunk_lean": 2, "knee_drive": 2, "hip_extension": 2, "knee_flexion": 2, "arm_swing": 2,
@@ -152,13 +152,20 @@ TIER = {
 # pose subsampling also limits temporal resolution. Report capture fps separately.
 FPS_TRUST_GATE = 120.0
 # Confidence/viewpoint tolerance for a metric to be certified "trusted" rather
-# than "experimental". Loosened a medium amount from the original (0.6 conf /
-# 0.5 viewpoint-penalty) — real phone footage rarely clears a strict bar, and
-# with experimental metrics now also counting toward the score and flaws (see
-# EXPERIMENTAL_FORM_WEIGHT and the flaw loop below), being too strict here
-# just meant fewer confident results, not safer ones.
-TRUST_CONF_MIN = 0.5
-TRUST_VP_MAX = 0.6
+# than "experimental". Loosened a second time (0.5 conf / 0.6 viewpoint-penalty →
+# 0.4 / 0.7), the same size step as the original loosening from 0.6/0.5 — real
+# phone footage rarely clears a strict bar, and with experimental metrics now
+# also counting toward the score and flaws (see EXPERIMENTAL_FORM_WEIGHT and the
+# flaw loop below), being too strict here just meant fewer confident results,
+# not safer ones.
+TRUST_CONF_MIN = 0.4
+TRUST_VP_MAX = 0.7
+# Overstride (tier 3) is translation-dependent, so it gets a tighter viewpoint
+# cap than tier-2's TRUST_VP_MAX rather than being permanently barred from
+# trust: vp = sin(azimuth)² for sagittal metrics, so vp<=0.3 means the camera
+# is within ~33° of pure side-on — the actual geometric condition under which
+# this measurement is sound. Outside that window it stays "experimental".
+OVERSTRIDE_VP_MAX = 0.3
 # Perspective/scale corrupt vertical CoM off-axis and it is unmeasured on runners
 # (honesty ledger #9) — keep it a candidate, never headline-trusted yet.
 CANDIDATE = {"vertical_oscillation"}
@@ -188,7 +195,14 @@ FORM_SCORE_DECAY = 1.5
 # deduct — just at a fraction of a trusted metric's weight. Excluding them
 # entirely let a single clean trusted metric mask a pile of bad experimental
 # ones (e.g. one fine cadence reading + a genuinely bad-form clip → ~82).
-EXPERIMENTAL_FORM_WEIGHT = 0.5
+EXPERIMENTAL_FORM_WEIGHT = 0.75
+# When most of a clip's usable metrics can't be certified trusted, "experimental"
+# describes most of the picture, not a side note — discounting it further would
+# mean mostly ignoring the clip. Below this trusted fraction, experimental
+# metrics score at full weight instead of EXPERIMENTAL_FORM_WEIGHT for that
+# clip. Needs a real sample to mean anything, hence THIN_COVERAGE_MIN_METRICS.
+THIN_COVERAGE_TRUSTED_FRAC = 1.0 / 3.0
+THIN_COVERAGE_MIN_METRICS = 3
 
 
 def _form_score(scorable: list[tuple[str, float, bool]], phase: str) -> int:
@@ -212,9 +226,21 @@ def _form_score(scorable: list[tuple[str, float, bool]], phase: str) -> int:
         because most of the measurements landed as "experimental" rather than
         "trusted." Only the CONFIDENCE in the deduction changes, never
         whether it counts.
+      * If fewer than THIN_COVERAGE_TRUSTED_FRAC of a clip's usable metrics
+        are trusted (and there are at least THIN_COVERAGE_MIN_METRICS of them
+        to judge coverage by), experimental metrics deduct at FULL weight for
+        that clip instead of EXPERIMENTAL_FORM_WEIGHT: at that point
+        "experimental" is most of the picture, not a side note, so
+        discounting it further would mean mostly ignoring the clip.
     """
     if not scorable:
         return 0
+
+    exp_weight = EXPERIMENTAL_FORM_WEIGHT
+    if len(scorable) >= THIN_COVERAGE_MIN_METRICS:
+        trusted_frac = sum(1 for _, _, trusted in scorable if trusted) / len(scorable)
+        if trusted_frac < THIN_COVERAGE_TRUSTED_FRAC:
+            exp_weight = 1.0
 
     total = 0.0
     for k, v, trusted in scorable:
@@ -223,7 +249,7 @@ def _form_score(scorable: list[tuple[str, float, bool]], phase: str) -> int:
         dev = (lo - v) / half if v < lo else (v - hi) / half if v > hi else 0.0
         if dev <= 0:
             continue
-        weight = FORM_WEIGHT.get(k, 8.0) * (1.0 if trusted else EXPERIMENTAL_FORM_WEIGHT)
+        weight = FORM_WEIGHT.get(k, 8.0) * (1.0 if trusted else exp_weight)
         total += weight * (1.0 - math.exp(-dev / FORM_SCORE_DECAY))
 
     return int(round(max(0.0, min(100.0, 100.0 - total))))
@@ -560,10 +586,11 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
             conf = mean_conf
             trust = "trusted" if (conf >= TRUST_CONF_MIN and temporal_fps >= FPS_TRUST_GATE and key not in CANDIDATE) else "experimental"
         elif tier == 3:
-            # rebinned / translation-dependent → descriptive, never "trusted".
+            # rebinned / translation-dependent → trusted only from a near-pure
+            # side view (see OVERSTRIDE_VP_MAX), never from an off-axis one.
             vp = _viewpoint_penalty(azimuth_deg, "sagittal")
             conf = mean_conf * (1 - vp) * 0.6
-            trust = "experimental"
+            trust = "trusted" if (conf >= TRUST_CONF_MIN and vp <= OVERSTRIDE_VP_MAX) else "experimental"
         else:
             # Tier 2 → best in its own plane, degraded (not zeroed) off-axis. Sagittal
             # metrics trust a SIDE view; frontal metrics (valgus, hip drop) trust a

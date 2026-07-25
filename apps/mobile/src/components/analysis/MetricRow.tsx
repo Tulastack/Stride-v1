@@ -12,7 +12,17 @@ export function MetricRow({ metric, usable, testID }: { metric: Metric; usable?:
   const tier = confidenceTier(metric.measured.confidence);
   const low = tier === 'low' || usable === false;
   const experimental = isExperimentalMetric(metric.key, metric.trustStatus);
-  const valueColor = low ? semantic.text.muted : semantic.text.primary;
+  const [rangeLow, rangeHigh] = metric.normalRange ?? [];
+  const inRange = rangeLow != null && rangeHigh != null
+    ? metric.measured.value >= rangeLow && metric.measured.value <= rangeHigh
+    : null;
+  const valueColor = low
+    ? semantic.text.muted
+    : inRange === true
+    ? semantic.status.improve
+    : inRange === false
+    ? semantic.status.flaw
+    : semantic.text.primary;
 
   return (
     <View style={styles.row} testID={testID} accessibilityLabel={`metric-${metric.key}`}>

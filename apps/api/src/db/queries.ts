@@ -459,20 +459,55 @@ export async function approveSuggestion(
 
     // Pull sets/reps/cue for this drill from the source analysis's recommendations
     // (already computed by the analysis engine) so the program uses real,
-    // structured volume instead of guessed numbers.
+    // structured volume instead of guessed numbers. Also pull the source
+    // flaw's severity (via the recommendation's flawId) so plan frequency can
+    // react to how big this specific fault is.
     const { rows: analysisRows } = await client.query<{ result_json: Record<string, unknown> | null }>(
       'SELECT result_json FROM analyses WHERE id = $1',
       [updatedSuggestion.analysis_id],
     );
     const recommendations = (analysisRows[0]?.result_json as any)?.recommendations as
-      | { drillId: string; sets?: number; reps?: number; cue?: string }[]
+      | { flawId?: string; drillId: string; sets?: number; reps?: number; cue?: string }[]
+      | undefined;
+    const flaws = (analysisRows[0]?.result_json as any)?.flaws as
+      | { id: string; severity?: 1 | 2 | 3 }[]
       | undefined;
     const rec = recommendations?.find((r) => r.drillId === updatedSuggestion.drill_key);
+    const flaw = flaws?.find((f) => f.id === rec?.flawId);
+
+    // Athlete context that shapes plan length/frequency/progression (see
+    // calendar/trainingPlan.ts AthleteProgramInput) — reuses the open
+    // transaction client rather than a separate pooled query.
+    const { rows: userRows } = await client.query<{
+      experience_level: 'beginner' | 'intermediate' | 'advanced' | null;
+      is_injured: boolean;
+      drill_intensity_cap: 'moderate' | 'full' | null;
+    }>(
+      'SELECT experience_level, is_injured, drill_intensity_cap FROM users WHERE id = $1',
+      [userId],
+    );
+    const athlete = userRows[0]
+      ? {
+          experienceLevel: userRows[0].experience_level,
+          isInjured: userRows[0].is_injured,
+          drillIntensityCap: userRows[0].drill_intensity_cap,
+          flawSeverity: flaw?.severity ?? null,
+        }
+      : undefined;
+
+    // "Why this drill" text for the calendar detail view — already sitting
+    // unused on reference_drills, so no schema change needed to surface it.
+    const { rows: refDrillRows } = await client.query<{ description: string | null; cues: string[] }>(
+      'SELECT description, cues FROM reference_drills WHERE key = $1',
+      [updatedSuggestion.drill_key],
+    );
+    const refDrill = refDrillRows[0];
 
     // Build the full progressive program (multiple sessions spread over
-    // several weeks, volume increasing) instead of a single occurrence — see
-    // calendar/trainingPlan.ts. This is what makes approving a suggestion
-    // commit to an actual training block rather than a one-off activity.
+    // several weeks, volume increasing, shaped to this athlete and this
+    // flaw) instead of a single occurrence — see calendar/trainingPlan.ts.
+    // This is what makes approving a suggestion commit to an actual
+    // training block rather than a one-off activity.
     const sessions = generateDrillProgram(
       {
         drillKey: updatedSuggestion.drill_key,
@@ -480,9 +515,12 @@ export async function approveSuggestion(
         cue: rec?.cue ?? '',
         sets: rec?.sets ?? 3,
         reps: rec?.reps ?? 10,
+        why: refDrill?.description ?? undefined,
+        cues: refDrill?.cues,
       },
       updatedSuggestion.id,
       updatedSuggestion.suggested_date,
+      athlete,
     );
 
     const valueClauses: string[] = [];

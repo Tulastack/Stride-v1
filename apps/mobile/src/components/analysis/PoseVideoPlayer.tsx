@@ -121,12 +121,12 @@ function Inner({ uri, overlay, seekToMs }: { uri: string; overlay: OverlayData |
             {EDGES.map(([a, b], i) => {
               const p = toPx(frame.kp[a]); const q = toPx(frame.kp[b]);
               if (p.c < KP_CONF || q.c < KP_CONF) return null;
-              return <Line key={i} x1={p.x} y1={p.y} x2={q.x} y2={q.y} stroke={ACCENT} strokeWidth={2.5} strokeOpacity={0.85} strokeLinecap="round" />;
+              return <Line key={i} x1={p.x} y1={p.y} x2={q.x} y2={q.y} stroke={ACCENT} strokeWidth={1.9} strokeOpacity={0.85} strokeLinecap="round" />;
             })}
             {frame.kp.map((kp, i) => {
               if (i < 5 || kp[2] < KP_CONF) return null;
               const p = toPx(kp);
-              return <Circle key={i} cx={p.x} cy={p.y} r={3.5} fill="#FFFFFF" stroke={ACCENT} strokeWidth={1.5} />;
+              return <Circle key={i} cx={p.x} cy={p.y} r={2.6} fill="#FFFFFF" stroke={ACCENT} strokeWidth={1.1} />;
             })}
             {(() => {
               const side = frame.kp[13][2] >= frame.kp[14][2] ? [11, 13, 15] : [12, 14, 16];

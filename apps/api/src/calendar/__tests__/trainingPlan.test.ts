@@ -53,4 +53,51 @@ describe('generateDrillProgram (pure)', () => {
     expect(sessions.every((s) => s.eventType === 'drill')).toBe(true);
     expect(sessions.every((s) => s.title === base.drillName)).toBe(true);
   });
+
+  describe('athlete-driven plan shape', () => {
+    it('gives a beginner a shorter block than the default', () => {
+      const sessions = generateDrillProgram(base, 'sugg-1', '2026-02-02', { experienceLevel: 'beginner' });
+      const weeks = new Set(sessions.map((s) => s.details.week));
+      expect(weeks.size).toBe(2);
+    });
+
+    it('gives an advanced athlete a longer block than the default', () => {
+      const sessions = generateDrillProgram(base, 'sugg-1', '2026-02-02', { experienceLevel: 'advanced' });
+      const weeks = new Set(sessions.map((s) => s.details.week));
+      expect(weeks.size).toBe(4);
+    });
+
+    it('caps an injured athlete at a short, low-frequency block regardless of experience', () => {
+      const sessions = generateDrillProgram(base, 'sugg-1', '2026-02-02', {
+        experienceLevel: 'advanced',
+        isInjured: true,
+      });
+      const weeks = new Set(sessions.map((s) => s.details.week));
+      expect(weeks.size).toBe(2);
+      expect(sessions.filter((s) => s.details.week === 1)).toHaveLength(2);
+      // never progresses past a light bump when capped
+      expect(sessions.every((s) => s.details.reps <= Math.round(base.reps * 1.1))).toBe(true);
+    });
+
+    it('schedules more sessions/week for a severity-3 flaw than the default', () => {
+      const sessions = generateDrillProgram(base, 'sugg-1', '2026-02-02', { flawSeverity: 3 });
+      expect(sessions.filter((s) => s.details.week === 1)).toHaveLength(3);
+    });
+
+    it('carries why/cues through when the drill base provides them', () => {
+      const sessions = generateDrillProgram(
+        { ...base, why: 'Fixes overstriding by shortening ground contact.', cues: ['Land under your hip'] },
+        'sugg-1',
+        '2026-02-02',
+      );
+      expect(sessions.every((s) => s.details.why === 'Fixes overstriding by shortening ground contact.')).toBe(true);
+      expect(sessions.every((s) => s.details.cues?.[0] === 'Land under your hip')).toBe(true);
+    });
+
+    it('omitting athlete entirely resolves to the original fixed template', () => {
+      const withoutAthlete = generateDrillProgram(base, 'sugg-1', '2026-02-02');
+      const withEmptyAthlete = generateDrillProgram(base, 'sugg-1', '2026-02-02', {});
+      expect(withEmptyAthlete).toEqual(withoutAthlete);
+    });
+  });
 });
