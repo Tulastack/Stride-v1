@@ -6,7 +6,7 @@ formula: (1) perfect "lower is better" values (0% overstride, 0 valgus) scored
 band were penalized for not being at the exact band midpoint. Both meant
 accurate form could never score well.
 """
-from src.biomech2d import _form_score, FORM_WEIGHT, NORMAL_RANGE
+from src.biomech2d import _form_score, FORM_WEIGHT, NORMAL_RANGE, EXPERIMENTAL_FORM_WEIGHT
 
 
 def test_all_metrics_inside_healthy_band_score_100():
@@ -61,24 +61,46 @@ def test_worse_deviation_scores_lower_monotonically():
     assert inside > mild > severe
 
 
-def test_sparse_coverage_caps_the_score():
+def test_no_artificial_cap_clean_scores_regardless_of_how_much_was_measured():
+    # No coverage-based ceiling: 1, 2, or 3 clean trusted metrics all score
+    # 100 — the score is exactly what the deductions say, nothing else.
     one = _form_score([("trunk_lean", 15.0, True)], "max_velocity")
     two = _form_score([("trunk_lean", 15.0, True), ("knee_drive", 95.0, True)], "max_velocity")
-    assert one == 80   # 1 metric can't claim perfection
-    assert two == 90
-    assert _form_score(
+    three = _form_score(
         [("trunk_lean", 15.0, True), ("knee_drive", 95.0, True), ("hip_extension", 172.0, True)],
         "max_velocity",
-    ) == 100
+    )
+    assert one == two == three == 100
 
 
-def test_experimental_fallback_scores_at_half_weight():
-    # No trusted metrics at all: experimental ones score, discounted.
-    trusted_version = _form_score([("knee_drive", 22.0, True), ("trunk_lean", 15.0, True),
-                                   ("hip_extension", 172.0, True)], "max_velocity")
-    experimental_version = _form_score([("knee_drive", 22.0, False), ("trunk_lean", 15.0, False),
-                                        ("hip_extension", 172.0, False)], "max_velocity")
-    assert experimental_version > trusted_version  # same fault, half the deduction
+def test_experimental_faults_deduct_at_half_the_weight_of_trusted_ones():
+    # Same fault, same value — only the trust flag differs. An experimental
+    # reading still moves the score (it is not silently dropped), just less
+    # than an identical trusted reading would.
+    trusted_fault = _form_score([("knee_drive", 22.0, True)], "max_velocity")
+    experimental_fault = _form_score([("knee_drive", 22.0, False)], "max_velocity")
+    assert trusted_fault < experimental_fault < 100
+    trusted_deduction = 100 - trusted_fault
+    experimental_deduction = 100 - experimental_fault
+    assert abs(experimental_deduction - trusted_deduction * EXPERIMENTAL_FORM_WEIGHT) <= 1
+
+
+def test_thin_trusted_coverage_cannot_mask_bad_form_with_a_generous_score():
+    # The exact reported failure mode: one clean trusted metric alongside a
+    # pile of bad experimental ones used to score ~80-90 because experimental
+    # readings were excluded entirely once any metric was trusted. They must
+    # now count (discounted, not ignored), pulling the score well below the
+    # old too-generous outcome.
+    scorable = [
+        ("cadence_spm", 300.0, True),        # single clean trusted metric
+        ("trunk_lean", 38.0, False),         # everything else experimental,
+        ("knee_drive", 55.0, False),         # and clearly bad form if it
+        ("hip_extension", 130.0, False),     # were trusted
+        ("overstride", 18.0, False),
+    ]
+    score = _form_score(scorable, "max_velocity")
+    assert score < 85  # the old, too-generous outcome
+    assert score > 50  # discounted, not full weight — still meaningfully above a full-trust equivalent
 
 
 def test_nothing_usable_scores_zero():
