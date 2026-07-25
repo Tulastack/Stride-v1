@@ -166,20 +166,24 @@ def iter_frames(video_path: str, target_fps: int = 30, target=None, timing_out=N
                     sx0, sy0, sx1, sy1 = tracker.search_box()
                     cx0 = max(0, int(sx0 * w)); cy0 = max(0, int(sy0 * h))
                     cx1 = min(w, int(sx1 * w)); cy1 = min(h, int(sy1 * h))
-                    if cx1 - cx0 >= 24 and cy1 - cy0 >= 24:
-                        crop = frame[cy0:cy1, cx0:cx1]
-                        cw, ch = cx1 - cx0, cy1 - cy0
-                        kpts_c, scores_c = body(crop)
-                        idx = tracker.select(kpts_c, scores_c, crop, (cx0, cy0), (cw, ch)) if len(scores_c) > 0 else None
-                        if idx is not None:
-                            xy, sc = kpts_c[idx], scores_c[idx]
-                            kp[:, 0] = np.clip((cy0 + xy[:, 1]) / h, 0, 1)  # y (full-frame)
-                            kp[:, 1] = np.clip((cx0 + xy[:, 0]) / w, 0, 1)  # x
-                            kp[:, 2] = sc
-                            tracker.update(xy, sc, crop, (cx0, cy0), (cw, ch))
-                            excluded = float(np.mean(kp[core_idx, 2])) < _CONF_THRESHOLD
-                        else:
-                            tracker.miss += 1
+                    # Recovery: once the position lock is stale (long miss run /
+                    # exit latch) or the predicted box has drifted degenerate,
+                    # search the FULL frame instead of a blind crop — a lost
+                    # target must be re-findable anywhere, or every remaining
+                    # frame gets excluded and the whole analysis dies.
+                    if tracker.needs_global_search() or cx1 - cx0 < 24 or cy1 - cy0 < 24:
+                        cx0, cy0, cx1, cy1 = 0, 0, w, h
+                    crop = frame[cy0:cy1, cx0:cx1]
+                    cw, ch = cx1 - cx0, cy1 - cy0
+                    kpts_c, scores_c = body(crop)
+                    idx = tracker.select(kpts_c, scores_c, crop, (cx0, cy0), (cw, ch)) if len(scores_c) > 0 else None
+                    if idx is not None:
+                        xy, sc = kpts_c[idx], scores_c[idx]
+                        kp[:, 0] = np.clip((cy0 + xy[:, 1]) / h, 0, 1)  # y (full-frame)
+                        kp[:, 1] = np.clip((cx0 + xy[:, 0]) / w, 0, 1)  # x
+                        kp[:, 2] = sc
+                        tracker.update(xy, sc, crop, (cx0, cy0), (cw, ch))
+                        excluded = float(np.mean(kp[core_idx, 2])) < _CONF_THRESHOLD
                     else:
                         tracker.miss += 1
                 else:

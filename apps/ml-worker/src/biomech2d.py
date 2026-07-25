@@ -526,7 +526,8 @@ def _band(value: float, conf: float) -> dict[str, float]:
 def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
               mean_conf: float, azimuth_deg: float, clip_id: str,
               capture_fps: float | None = None, source_fps: float | None = None,
-              timing_signal: list | None = None, timing_fps: float | None = None) -> dict[str, Any]:
+              timing_signal: list | None = None, timing_fps: float | None = None,
+              dropped_pct: float = 0.0) -> dict[str, Any]:
     """Assemble metrics. `pose_fps` = keypoint sample rate (gait timing);
     `capture_fps` = phone capture rate (reported quality + nudges);
     `source_fps` = video container fps (flaw evidence timestamps)."""
@@ -580,16 +581,47 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
     # (LK optical flow between pose keyframes), compute contact-time + cadence from
     # it and let the temporal trust gate see the REAL foot-sample rate. Otherwise
     # timing rides the 15fps pose rate and can never clear FPS_TRUST_GATE (=120).
+    #
+    # Graceful degradation: a flat or broken flow signal yields 0s — that must
+    # DOWNGRADE to the pose-rate estimate (with the trust gate seeing the honest,
+    # lower sample rate for that quantity), never report "no cadence" for a clip
+    # whose pose series shows clear strides. Per-key fps so a mixed outcome
+    # (signal cadence + pose contact) is gated honestly per metric.
+    pose_contact, pose_cadence = _gait(a["l_rel"], a["r_rel"], pose_fps)
+    pose_temporal = min(cap_fps, pose_fps)  # temporal trust needs high capture rate AND dense keypoints
+    temporal_fps_by_key: dict[str, float] = {}
     if timing_signal is not None and timing_fps and len(timing_signal) >= 8:
         _ts = np.asarray(timing_signal, dtype=float)  # cols: frame_index, lank_y, rank_y
         contact_ms, cadence = _gait_signal(_ts[:, 1], _ts[:, 2], float(timing_fps))
-        temporal_fps = float(timing_fps)
+        temporal_fps_by_key["contact_time_ms"] = float(timing_fps)
+        temporal_fps_by_key["cadence_spm"] = float(timing_fps)
+        if contact_ms <= 0 and pose_contact > 0:
+            contact_ms = pose_contact
+            temporal_fps_by_key["contact_time_ms"] = pose_temporal
+        if cadence <= 0 and pose_cadence > 0:
+            cadence = pose_cadence
+            temporal_fps_by_key["cadence_spm"] = pose_temporal
     else:
-        contact_ms, cadence = _gait(a["l_rel"], a["r_rel"], pose_fps)
-        # Temporal trust needs BOTH high capture rate and dense keypoints.
-        temporal_fps = min(cap_fps, pose_fps)
+        contact_ms, cadence = pose_contact, pose_cadence
     values["contact_time_ms"] = (contact_ms, 0)
     values["cadence_spm"] = (cadence, 0)
+
+    # Robust fallback statistics: a primary peak percentile can be shot outside
+    # the physical envelope by a handful of corrupted frames (occlusion, a
+    # momentary keypoint swap). Before declaring such a metric unmeasurable,
+    # retry with a more outlier-resistant statistic — a salvaged read is always
+    # demoted to experimental (the primary read DID fail), but it participates
+    # in the score and focus areas instead of silently vanishing.
+    alt_values: dict[str, float] = {
+        "knee_drive": float(np.percentile(a["knee_drive"], 85)),
+        "hip_extension": float(np.percentile(a["hip_ext"], 85)),
+        "knee_flexion": float(np.percentile(a["knee_flex"], 15)),
+        "knee_valgus": float(np.percentile(a["knee_valgus"], 75)),
+        "pelvic_drop": float(np.percentile(a["pelvic_drop"], 75)),
+        "vertical_oscillation": round(min(float(
+            (np.percentile(a["hip_y"], 97.5) - np.percentile(a["hip_y"], 2.5))
+            / max(float(np.median(a["torso_len"])), 1e-6)) * 100.0, 25.0), 1),
+    }
 
     metrics, flaws, recs, per_usable, vp_by_key = [], [], [], {}, {}
     # Sprint PHASE from the athlete's posture, not the camera azimuth: a moving
@@ -605,10 +637,13 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
     for key, (val, evi) in values.items():
         tier = TIER.get(key, 2)
         if tier == 1:
-            # angle-robust → NO viewpoint penalty; trust gated on frame rate.
+            # angle-robust → NO viewpoint penalty; trust gated on the ACTUAL
+            # sample rate that produced this quantity (per-key: a pose-rate
+            # fallback must not inherit the flow signal's rate).
             vp = 0.0
             conf = mean_conf
-            trust = "trusted" if (conf >= TRUST_CONF_MIN and temporal_fps >= FPS_TRUST_GATE and key not in CANDIDATE) else "experimental"
+            t_fps = temporal_fps_by_key.get(key, pose_temporal)
+            trust = "trusted" if (conf >= TRUST_CONF_MIN and t_fps >= FPS_TRUST_GATE and key not in CANDIDATE) else "experimental"
         elif tier == 3:
             # rebinned / translation-dependent → trusted only from a near-pure
             # side view with confident keypoints (see OVERSTRIDE_VP_MAX), never
@@ -629,9 +664,18 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
         # Plausibility backstop: a value outside the physical envelope is a failed
         # measurement (off-axis perspective, static-bystander lock, sub-Nyquist
         # timing) — demote it to experimental so it is never shown as trusted.
+        # Before dropping the metric entirely, try the robust fallback statistic
+        # (alt_values): if the outlier-resistant read IS physically sane, the
+        # primary was corrupted by a few bad frames, not unmeasurable — report
+        # the salvaged value as experimental rather than losing the metric.
         plo, phi = _plausible_range(key, phase)
         plausible = (val > 0) and (plo <= val <= phi)
         if not plausible:
+            alt = alt_values.get(key)
+            if alt is not None and alt > 0 and plo <= alt <= phi:
+                val = alt
+                values[key] = (val, evi)  # keep score/focus-area consumers consistent
+                plausible = True
             trust = "experimental"
         band = _band(val, conf)
         usable = conf >= 0.35 and plausible
@@ -722,6 +766,8 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
     nudge = None
     if not moving_subject:
         nudge = "Couldn't lock onto a clearly running subject — make sure the runner is centered (or brush to select them) and moving across the frame."
+    elif dropped_pct > 0.5:
+        nudge = "The runner was hard to track for much of this clip — keep them in frame, and brush-select them to lock on."
     elif azimuth_deg > 45:
         nudge = "Film from the side (perpendicular to running direction) for trustworthy joint angles."
     elif cap_fps < 60:
@@ -744,6 +790,7 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
                            "framing": "full", "perMetricUsable": per_usable,
                            "cameraAzimuthDeg": round(azimuth_deg, 1),
                            "subjectMotion": subject_motion, "movingSubject": moving_subject,
+                           "droppedFramePct": round(dropped_pct, 2),
                            **({"primaryNudge": nudge} if nudge else {})},
         "reconstructionMethod": "2d", "createdAt": datetime.now(timezone.utc).isoformat(),
     }
@@ -815,7 +862,12 @@ def analyze_2d_sagittal_stream(frame_iter: Iterable[dict], fps: float,
             })
     included = len(idxs)
     excluded_pct = (total - included) / total if total else 1.0
-    if included < min_frames or excluded_pct > 0.60:
+    # Fail ONLY when there is genuinely nothing to analyze. A high excluded
+    # fraction used to hard-fail the whole clip even with plenty of good frames
+    # left (e.g. the tracker losing then re-finding the athlete) — now the
+    # usable frames are analyzed, the dropped fraction is reported in
+    # captureQuality, and per-metric trust gating handles the uncertainty.
+    if included < min_frames:
         raise ValueError("low_confidence_video")
     mean_conf = float(np.mean(S["conf"]))
     # Prefer keypoint-estimated azimuth over the static default when available.
@@ -824,7 +876,8 @@ def analyze_2d_sagittal_stream(frame_iter: Iterable[dict], fps: float,
         use_az = float(np.median(az_samples))
     return _assemble(S, idxs, pose_fps, mean_conf, use_az, clip_id,
                      capture_fps=cap_fps, source_fps=src_fps,
-                     timing_signal=timing_signal, timing_fps=timing_fps)
+                     timing_signal=timing_signal, timing_fps=timing_fps,
+                     dropped_pct=excluded_pct)
 
 
 def analyze_2d_sagittal(frames: list[dict], fps: float, mean_conf: float,

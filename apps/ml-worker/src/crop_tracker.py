@@ -37,7 +37,13 @@ _MOTION_GATE = 0.22       # max normalized jump from the Kalman prediction to st
 _REACQ_MISS = 2           # after this many consecutive misses we're "re-acquiring"
 _REACQ_APP_GATE = 0.50    # on re-acquisition, candidate must match the RECENT (EMA) look
 _VMAX = 0.10              # cap per-frame predicted motion so noisy detections can't make it run away
-_RESET_MISS = 8           # after a long miss, drop the stale position lock so we can re-find anywhere
+_RESET_MISS = 4           # after this many misses the position lock is stale → global search
+_GLOBAL_APP_GATE = 0.45   # in global search, candidate must match the first-lock anchor this well
+_REENTRY_APP_GATE = 0.35  # an "exited" target only re-locks on a STRONG anchor match
+_SEED_INFLATE = 0.15      # first-lock: widen the brush box by this much per miss (imprecise brushes)
+_SEED_INFLATE_MAX = 2.5   # ... up to this factor — spatial tolerance grows, user intent still anchors it
+_EDGE = 0.03              # normalized margin that counts as "at the frame edge"
+_EXIT_VEL = 0.005         # min outward velocity (normalized/frame) for an edge touch to mean "leaving"
 
 
 def _torso_centroid_norm(xy: np.ndarray, origin, frame_wh) -> tuple[float, float]:
@@ -124,6 +130,7 @@ class CropTracker:
         self.miss = 0               # consecutive frames the target was not found
         self._cur = (cx, cy, w, h)  # latest predicted box (centre + size)
         self._exited = False        # latched once the athlete tracks off a frame edge
+        self._locks = 0             # successful updates so far (exit needs a settled filter)
 
     # ── prediction ────────────────────────────────────────────────────────
     def predict(self) -> None:
@@ -151,6 +158,14 @@ class CropTracker:
         my = h * (0.25 + 0.25 * self.miss) + 0.04
         return (cx - w / 2 - mx, cy - h / 2 - my, cx + w / 2 + mx, cy + h / 2 + my)
 
+    def needs_global_search(self) -> bool:
+        """True once the position lock can no longer be trusted — the caller
+        should hand select() the FULL frame so the athlete can be re-found
+        anywhere (identity then rests on the appearance anchor, not position).
+        Applies after a long miss run or an exit latch; never during first lock,
+        where the user's brush box is the only ground truth we have."""
+        return self.hist is not None and (self.miss >= _RESET_MISS or self._exited)
+
     # ── selection (cascaded gate) ─────────────────────────────────────────
     def select(self, kpts_c, scores_c, crop_bgr, origin, crop_wh):
         """Choose the detection that IS the target, or None (a miss).
@@ -164,19 +179,47 @@ class CropTracker:
         decision = None
         cand_dbg = []
 
-        # Once the athlete has tracked off a frame edge they have EXITED the shot —
-        # stop, rather than re-acquiring whatever noise/bystander drifts through next.
+        # Once the athlete has tracked off a frame edge, do NOT free-run on
+        # noise — but the exit call itself can be wrong (a runner ENTERING near
+        # an edge, an occlusion at the boundary). A candidate that strongly
+        # matches the first-lock appearance anchor re-locks the target; anything
+        # weaker stays refused, which keeps the bystander protection.
         if self._exited:
+            best_i, best_app = None, _REENTRY_APP_GATE
+            for i in range(len(scores_c)):
+                xy, sc = kpts_c[i], scores_c[i]
+                if float(np.mean(sc[_TORSO])) < 0.35 or self.anchor is None:
+                    continue
+                bx0, by0, bx1, by1 = _kp_bbox_px(xy, sc, cw, ch)
+                hh = _hsv_hist(crop_bgr[by0:by1, bx0:bx1])
+                if hh is None:
+                    continue
+                app_anchor = 1.0 - max(0.0, float(cv2.compareHist(self.anchor, hh, cv2.HISTCMP_CORREL)))
+                if app_anchor < best_app:
+                    best_app, best_i = app_anchor, i
+            if best_i is not None:
+                self._exited = False
             if os.environ.get("STRIDE_TRACK_DEBUG"):
                 DEBUG.append({"pred_x": round(cx, 2), "seeded": seeded, "miss": self.miss,
-                              "n": len(scores_c), "cands": [], "chosen": None, "exited": True})
-            return None
+                              "n": len(scores_c), "cands": cand_dbg, "chosen": best_i,
+                              "exited": best_i is None})
+            return best_i
 
         if not seeded:
             # ── FIRST LOCK ── pick the detection whose box best OVERLAPS the
             # brushed seed box. "Nearest to the box centre" mis-picks a bystander
             # when the box spans several people or the athlete sits low (bent at
             # the blocks), because the y-distance dominates. Overlap doesn't.
+            # The box INFLATES with each miss: an imprecise brush (or an athlete
+            # who enters the region a beat later) must not leave the whole clip
+            # unlocked and every frame excluded — the user's intent stays the
+            # anchor, the spatial tolerance around it grows.
+            inflate = min(1.0 + _SEED_INFLATE * self.miss, _SEED_INFLATE_MAX)
+            scx = (self.seed_box[0] + self.seed_box[2]) / 2.0
+            scy = (self.seed_box[1] + self.seed_box[3]) / 2.0
+            shw = (self.seed_box[2] - self.seed_box[0]) / 2.0 * inflate
+            shh = (self.seed_box[3] - self.seed_box[1]) / 2.0 * inflate
+            lock_box = (scx - shw, scy - shh, scx + shw, scy + shh)
             best_score = 0.0
             for i in range(len(scores_c)):
                 xy, sc = kpts_c[i], scores_c[i]
@@ -185,7 +228,7 @@ class CropTracker:
                        (ox + bx1) / self.W, (oy + by1) / self.H)
                 # overlap = IoU with the brush box, boosted by how much of the
                 # detection is contained inside it (rewards a person the brush is on)
-                score = _iou(det, self.seed_box) + 0.5 * _contained(det, self.seed_box)
+                score = _iou(det, lock_box) + 0.5 * _contained(det, lock_box)
                 if os.environ.get("STRIDE_TRACK_DEBUG"):
                     pxn, _ = _torso_centroid_norm(xy, origin, (self.W, self.H))
                     cand_dbg.append((round(pxn, 2), round(score, 2), round(float(np.mean(sc[_TORSO])), 2)))
@@ -195,7 +238,11 @@ class CropTracker:
             if best_score < 0.10:   # nothing meaningfully inside the brush → miss
                 decision = None
         else:
-            # ── TRACKING ── cascade: motion first, appearance to break ties/reject drift
+            # ── TRACKING ── cascade: motion first, appearance to break ties/reject
+            # drift. Once the position lock is stale (long miss run → the caller
+            # hands us the full frame), position is meaningless and identity
+            # rests on appearance against the EMA look and the first-lock anchor.
+            global_search = self.miss >= _RESET_MISS
             best = None
             best_cost = 1e9
             for i in range(len(scores_c)):
@@ -211,7 +258,8 @@ class CropTracker:
                     app = 1.0 - max(0.0, float(cv2.compareHist(self.hist, hh, cv2.HISTCMP_CORREL)))
                     if self.anchor is not None:
                         app_anchor = 1.0 - max(0.0, float(cv2.compareHist(self.anchor, hh, cv2.HISTCMP_CORREL)))
-                cost = motion * 3.0 + app * 1.0 - core * 0.2
+                cost = (app * 2.0 + app_anchor * 1.0 - core * 0.3) if global_search \
+                    else (motion * 3.0 + app * 1.0 - core * 0.2)
                 if os.environ.get("STRIDE_TRACK_DEBUG"):
                     cand_dbg.append((round(pxn, 2), round(motion, 3), round(app, 2), round(core, 2)))
                 if cost < best_cost:
@@ -220,11 +268,16 @@ class CropTracker:
             if best is not None:
                 i, motion, app, app_anchor = best
                 decision = i
+                if global_search:
+                    # Position lock is stale — accept on appearance alone, against
+                    # either the recent look or the immutable first-lock anchor.
+                    if not (app <= _REACQ_APP_GATE or app_anchor <= _GLOBAL_APP_GATE):
+                        decision = None
                 # Position continuity is PRIMARY: a detection within the motion
                 # gate of the prediction is the target — accept it even if the
                 # colour histogram drifted (a set→drive pose change makes appearance
                 # an unreliable hard gate).
-                if motion > _MOTION_GATE:
+                elif motion > _MOTION_GATE:
                     decision = None
                 # Appearance only matters when RE-ACQUIRING after a loss, and
                 # against the RECENT (EMA) look — this rejects grabbing a nearby
@@ -248,8 +301,18 @@ class CropTracker:
         self.kf.correct(np.array([[pxn], [pyn], [wn], [hn]], dtype=np.float32))
         self._cur = (pxn, pyn, wn, hn)
         self.miss = 0
-        # the athlete's own torso centroid reaching a frame edge = they are leaving
-        if pxn < 0.03 or pxn > 0.97 or pyn < 0.03 or pyn > 0.97:
+        self._locks += 1
+        # Exit = torso centroid at a frame edge AND velocity pointing OUT of it,
+        # once the filter has settled (>= 3 locks). A bare position test latched
+        # on athletes legitimately near an edge — above all a runner ENTERING
+        # the shot, whose very first lock is at the edge — and the first locks'
+        # velocity is dominated by the seed-box innovation, not real motion.
+        # A false latch here used to blind the tracker for the rest of the clip.
+        vx = float(self.kf.statePost[4, 0])
+        vy = float(self.kf.statePost[5, 0])
+        if self._locks >= 3 and (
+                (pxn < _EDGE and vx < -_EXIT_VEL) or (pxn > 1 - _EDGE and vx > _EXIT_VEL)
+                or (pyn < _EDGE and vy < -_EXIT_VEL) or (pyn > 1 - _EDGE and vy > _EXIT_VEL)):
             self._exited = True
         hh = _hsv_hist(crop_bgr[by0:by1, bx0:bx1])
         if hh is not None:
