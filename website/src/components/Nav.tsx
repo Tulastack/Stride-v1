@@ -29,7 +29,7 @@ export default function Nav() {
       animate={{ y: 0, opacity: 1 }}
       transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1], delay: 0.2 }}
       className={`fixed inset-x-0 top-0 z-40 transition-colors duration-300 ${
-        scrolled ? 'border-b border-hairline/60 bg-graphite-900/95' : 'bg-transparent'
+        scrolled ? 'border-b border-hairline/60 bg-graphite-900' : 'bg-transparent'
       }`}
     >
       <nav className="mx-auto flex h-16 max-w-7xl items-center justify-between px-5 md:px-8">
@@ -54,7 +54,7 @@ export default function Nav() {
                 e.preventDefault()
                 scrollToId(l.id)
               }}
-              className="font-mono text-xs tracking-[0.18em] text-bone-300 uppercase transition-colors hover:text-volt"
+              className="font-mono text-xs tracking-[0.18em] text-bone-300 uppercase transition-colors hover:text-gold"
             >
               {l.label}
             </a>
@@ -63,7 +63,7 @@ export default function Nav() {
 
         <button
           onClick={() => scrollToId('#waitlist')}
-          className="rounded-[4px] bg-volt px-4 py-2 font-display text-sm font-semibold text-graphite-900 transition-transform duration-200 hover:scale-[1.03] active:scale-[0.98]"
+          className="rounded-[4px] bg-gold px-4 py-2 font-display text-sm font-semibold text-graphite-900 transition-transform duration-200 hover:scale-[1.03] active:scale-[0.98]"
         >
           Join waitlist
         </button>

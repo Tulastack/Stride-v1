@@ -40,7 +40,7 @@ export default function Hero() {
         aria-hidden
         className="pointer-events-none absolute inset-0 opacity-60"
         style={{
-          backgroundImage: 'radial-gradient(circle, #2A2E36 1px, transparent 1px)',
+          backgroundImage: 'radial-gradient(circle, #2E2A24 1px, transparent 1px)',
           backgroundSize: '26px 26px',
           maskImage:
             'radial-gradient(ellipse 75% 85% at 68% 45%, black 15%, transparent 72%)',
@@ -72,7 +72,7 @@ export default function Hero() {
             transition={{ duration: 0.7, ease: EASE, delay: 0.35 }}
             className="mb-6 flex items-center gap-2.5 font-mono text-xs tracking-[0.25em] text-bone-300"
           >
-            <span className="h-1.5 w-1.5 rounded-full bg-volt animate-blink" />
+            <span className="h-px w-8 bg-gold" />
             3D BIOMETRIC FORM ANALYSIS
           </motion.p>
 
@@ -87,7 +87,7 @@ export default function Hero() {
                 >
                   {i === 1 ? (
                     <>
-                      Any phone. <span className="text-volt">Any angle.</span>
+                      Any phone. <span className="text-gold">Any angle.</span>
                     </>
                   ) : (
                     line
@@ -116,7 +116,7 @@ export default function Hero() {
           >
             <button
               onClick={() => scrollToId('#waitlist')}
-              className="group rounded-[4px] bg-volt px-6 py-3.5 font-display text-base font-semibold text-graphite-900 transition-transform duration-200 hover:scale-[1.03] active:scale-[0.98]"
+              className="group rounded-[4px] bg-gold px-6 py-3.5 font-display text-base font-semibold text-graphite-900 transition-transform duration-200 hover:scale-[1.03] active:scale-[0.98]"
             >
               Join the waitlist
               <span className="ml-2 inline-block transition-transform duration-200 group-hover:translate-x-1">

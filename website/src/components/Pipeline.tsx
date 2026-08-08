@@ -1,33 +1,39 @@
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { motion } from 'motion/react'
 import SectionHeading from './SectionHeading'
-import PipelineVisual from './PipelineVisual'
+
+const PipelineScene = lazy(() => import('./three/PipelineScene'))
 
 const STEPS = [
   {
     tag: 'FILM',
     title: 'Any angle. Any distance.',
     body: 'Record or import a clip — race footage, practice reps, head-on, 45°. No tripods, no lab, no controlled conditions.',
+    caption: 'ORBIT 360° — ANY CAMERA ANGLE',
   },
   {
     tag: 'EXTRACT',
     title: 'Pose estimation, every frame',
     body: 'RTMPose reads 17 keypoints per frame, while IoU-based tracking locks onto your athlete — even in crowded, multi-runner clips.',
+    caption: '17 KEYPOINTS / FRAME',
   },
   {
     tag: 'CANONICALIZE',
     title: 'Gravity-anchored 3D',
     body: 'A monocular 3D lift plus phone accelerometer data aligns every measurement to true vertical. Camera tilt stops lying to your angles.',
+    caption: 'GRAVITY LOCK — TRUE VERTICAL',
   },
   {
     tag: 'MEASURE',
     title: 'The 11-metric sagittal engine',
     body: 'Joint angles, stride phases, gait timing. Every metric is trust-tiered — only measurements the engine can validate at full confidence raise flaws.',
+    caption: 'LIVE JOINT ANGLES · TRUST-TIERED',
   },
   {
     tag: 'COACH',
     title: 'Grounded advice, on your calendar',
     body: 'An AI coach grounded in your actual numbers writes the report, prescribes corrective drills with volumes and cues, and syncs a plan to your calendar.',
+    caption: 'SLOW-MOTION REVIEW · DRILLS PRESCRIBED',
   },
 ]
 
@@ -56,12 +62,12 @@ export default function Pipeline() {
               >
                 <div
                   className={`border-l-2 py-2 pl-7 transition-all duration-500 ${
-                    active === i ? 'border-volt' : 'border-hairline/60'
+                    active === i ? 'border-gold' : 'border-hairline/60'
                   }`}
                 >
                   <p
                     className={`font-mono text-xs tracking-[0.3em] transition-colors duration-500 ${
-                      active === i ? 'text-volt' : 'text-muted'
+                      active === i ? 'text-gold' : 'text-muted'
                     }`}
                   >
                     0{i + 1} · {s.tag}
@@ -85,14 +91,42 @@ export default function Pipeline() {
             ))}
           </div>
 
-          {/* Sticky visual */}
+          {/* Sticky live 3D panel */}
           <div className="hidden lg:block">
             <div className="sticky top-0 flex h-screen items-center justify-center">
-              <PipelineVisual step={active} />
+              <div className="relative aspect-square w-full max-w-[460px]">
+                <div className="absolute inset-0 rounded-lg border border-hairline/60 bg-graphite-850" />
+                {[
+                  'top-2 left-2 border-t border-l',
+                  'top-2 right-2 border-t border-r',
+                  'bottom-2 left-2 border-b border-l',
+                  'bottom-2 right-2 border-b border-r',
+                ].map((pos) => (
+                  <div key={pos} className={`absolute h-3 w-3 border-bone-300/40 ${pos}`} />
+                ))}
+                <div className="absolute inset-0 overflow-hidden rounded-lg">
+                  <Suspense fallback={null}>
+                    <PipelineScene step={active} />
+                  </Suspense>
+                </div>
+                <div className="absolute inset-x-0 bottom-3 flex items-center justify-between px-4">
+                  <motion.span
+                    key={active}
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.4 }}
+                    className="font-mono text-[10px] tracking-[0.25em] text-gold"
+                  >
+                    {STEPS[active].caption}
+                  </motion.span>
+                  <span className="font-mono text-[10px] tracking-[0.3em] text-muted">
+                    0{active + 1} / 05
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
-
       </div>
     </section>
   )

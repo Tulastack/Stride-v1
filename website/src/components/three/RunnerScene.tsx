@@ -1,180 +1,13 @@
 import { useMemo, useRef } from 'react'
-import { Canvas, useFrame, useThree } from '@react-three/fiber'
+import { Canvas, useFrame } from '@react-three/fiber'
 import { Html, Trail } from '@react-three/drei'
 import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing'
 import * as THREE from 'three'
 import { computePose, BONES } from '../../lib/gait'
+import DotFigure from './DotFigure'
 
-const VOLT = '#CDFF4F'
+const GOLD = '#E8C87D'
 const CYCLE_SECONDS = 1.15 // one full stride
-
-// Dot density config per bone (matches BONES order): [count, jitter radius]
-const BONE_DOTS: [number, number][] = [
-  [26, 0.034], // head-neck
-  [46, 0.062], // neck-chest
-  [80, 0.072], // chest-pelvis
-  [22, 0.045], // pelvis-hipL
-  [22, 0.045], // pelvis-hipR
-  [62, 0.05], // hipL-kneeL
-  [62, 0.05], // hipR-kneeR
-  [52, 0.038], // kneeL-ankleL
-  [52, 0.038], // kneeR-ankleR
-  [16, 0.026], // ankleL-toeL
-  [16, 0.026], // ankleR-toeR
-  [20, 0.042], // neck-shoulderL
-  [20, 0.042], // neck-shoulderR
-  [42, 0.038], // shoulderL-elbowL
-  [42, 0.038], // shoulderR-elbowR
-  [34, 0.03], // elbowL-wristL
-  [34, 0.03], // elbowR-wristR
-]
-const HEAD_DOTS = 88
-const HEAD_R = 0.088
-
-interface Particle {
-  bone: number // -1 = head shell
-  u: number
-  ox: number
-  oy: number
-  oz: number
-}
-
-/**
- * The athlete as an LED dot-matrix figure: particles distributed along the
- * skeleton, repositioned every frame from the gait engine, twinkling like a
- * stadium board.
- */
-function DotBody() {
-  const pointsRef = useRef<THREE.Points>(null)
-  const dpr = useThree((s) => s.viewport.dpr)
-
-  const { geometry, particles } = useMemo(() => {
-    const particles: Particle[] = []
-    // Bones
-    BONE_DOTS.forEach(([count, r], bi) => {
-      for (let i = 0; i < count; i++) {
-        // Gaussian-ish jitter inside a ball of radius r
-        const a = Math.random() * Math.PI * 2
-        const b = Math.acos(2 * Math.random() - 1)
-        const rr = r * Math.cbrt(Math.random())
-        particles.push({
-          bone: bi,
-          u: Math.random(),
-          ox: rr * Math.sin(b) * Math.cos(a),
-          oy: rr * Math.sin(b) * Math.sin(a),
-          oz: rr * Math.cos(b),
-        })
-      }
-    })
-    // Head shell
-    for (let i = 0; i < HEAD_DOTS; i++) {
-      const a = Math.random() * Math.PI * 2
-      const b = Math.acos(2 * Math.random() - 1)
-      const rr = HEAD_R * (0.55 + 0.45 * Math.random())
-      particles.push({
-        bone: -1,
-        u: 0,
-        ox: rr * Math.sin(b) * Math.cos(a),
-        oy: rr * Math.sin(b) * Math.sin(a),
-        oz: rr * Math.cos(b),
-      })
-    }
-
-    const n = particles.length
-    const positions = new Float32Array(n * 3)
-    const sizes = new Float32Array(n)
-    const phases = new Float32Array(n)
-    const tones = new Float32Array(n)
-    for (let i = 0; i < n; i++) {
-      sizes[i] =
-        Math.random() < 0.1
-          ? 0.085 + Math.random() * 0.03
-          : 0.03 + Math.random() * 0.042
-      phases[i] = Math.random() * Math.PI * 2
-      tones[i] = Math.random() < 0.08 ? 1 : 0
-    }
-    const geometry = new THREE.BufferGeometry()
-    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-    geometry.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1))
-    geometry.setAttribute('aPhase', new THREE.BufferAttribute(phases, 1))
-    geometry.setAttribute('aTone', new THREE.BufferAttribute(tones, 1))
-    return { geometry, particles }
-  }, [])
-
-  const material = useMemo(
-    () =>
-      new THREE.ShaderMaterial({
-        transparent: true,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-        uniforms: {
-          uTime: { value: 0 },
-          uPR: { value: 1 },
-        },
-        vertexShader: /* glsl */ `
-          attribute float aSize;
-          attribute float aPhase;
-          attribute float aTone;
-          uniform float uPR;
-          varying float vPhase;
-          varying float vTone;
-          void main() {
-            vec4 mv = modelViewMatrix * vec4(position, 1.0);
-            gl_PointSize = aSize * uPR * (240.0 / -mv.z);
-            gl_Position = projectionMatrix * mv;
-            vPhase = aPhase;
-            vTone = aTone;
-          }
-        `,
-        fragmentShader: /* glsl */ `
-          uniform float uTime;
-          varying float vPhase;
-          varying float vTone;
-          void main() {
-            vec2 c = gl_PointCoord - 0.5;
-            float d = length(c);
-            float alpha = smoothstep(0.5, 0.12, d);
-            float tw = 0.65 + 0.35 * sin(uTime * 2.4 + vPhase);
-            vec3 bone = vec3(0.925, 0.906, 0.863);
-            vec3 volt = vec3(0.804, 1.0, 0.310);
-            vec3 col = mix(bone, volt, vTone);
-            gl_FragColor = vec4(col * tw, alpha * (0.45 + 0.5 * tw));
-          }
-        `,
-      }),
-    [],
-  )
-
-  useFrame(({ clock }) => {
-    material.uniforms.uTime.value = clock.getElapsedTime()
-    material.uniforms.uPR.value = dpr
-    if (!pointsRef.current) return
-    const t = clock.getElapsedTime() / CYCLE_SECONDS
-    const pose = computePose(t)
-    const pos = pointsRef.current.geometry.attributes.position
-    const head = pose.joints.head
-    for (let i = 0; i < particles.length; i++) {
-      const p = particles[i]
-      if (p.bone === -1) {
-        pos.setXYZ(i, head[0] + p.ox, head[1] + p.oy, head[2] + p.oz)
-      } else {
-        const [a, b] = BONES[p.bone]
-        const pa = pose.joints[a]
-        const pb = pose.joints[b]
-        pos.setXYZ(
-          i,
-          pa[0] + (pb[0] - pa[0]) * p.u + p.ox,
-          pa[1] + (pb[1] - pa[1]) * p.u + p.oy,
-          pa[2] + (pb[2] - pa[2]) * p.u + p.oz,
-        )
-      }
-    }
-    pos.needsUpdate = true
-    pointsRef.current.geometry.computeBoundingSphere()
-  })
-
-  return <points ref={pointsRef} geometry={geometry} material={material} />
-}
 
 /** Ghost skeleton: faint bones + tracked joints with live angle readouts. */
 function Skeleton() {
@@ -191,8 +24,8 @@ function Skeleton() {
   const trackedMat = useMemo(
     () =>
       new THREE.MeshStandardMaterial({
-        color: VOLT,
-        emissive: VOLT,
+        color: GOLD,
+        emissive: GOLD,
         emissiveIntensity: 1.7,
         roughness: 0.3,
       }),
@@ -201,7 +34,7 @@ function Skeleton() {
   const boneMat = useMemo(
     () =>
       new THREE.MeshBasicMaterial({
-        color: '#8A8E97',
+        color: '#8E897E',
         transparent: true,
         opacity: 0.12,
         depthWrite: false,
@@ -261,7 +94,7 @@ function Skeleton() {
       <Trail
         width={0.5}
         length={5}
-        color={new THREE.Color(VOLT).multiplyScalar(0.6)}
+        color={new THREE.Color(GOLD).multiplyScalar(0.6)}
         attenuation={(w) => w * w}
       >
         <mesh ref={useAnkleRef()} geometry={sphereGeo} material={trackedMat} scale={0.024} />
@@ -275,8 +108,8 @@ function Skeleton() {
           zIndexRange={[10, 0]}
         >
           <div className="flex items-center gap-1.5 whitespace-nowrap">
-            <span className="block h-px w-6 bg-volt/60" />
-            <span className="font-mono text-[11px] tracking-wider text-volt">
+            <span className="block h-px w-6 bg-gold/60" />
+            <span className="font-mono text-[11px] tracking-wider text-gold">
               KNEE <span ref={kneeLabelRef}>—</span>
             </span>
           </div>
@@ -312,7 +145,8 @@ function useAnkleRef() {
   return ref
 }
 
-/** Ground: scrolling grid with radial fade, implying speed. */
+/** Ground: a running track — lanes along the direction of motion, with
+ *  surface seams scrolling past to imply speed, fading out radially. */
 function Ground() {
   const mat = useMemo(
     () =>
@@ -332,18 +166,29 @@ function Ground() {
         fragmentShader: /* glsl */ `
           varying vec2 vUv;
           uniform float uTime;
-          float gridLine(float v, float w) {
-            float f = abs(fract(v) - 0.5);
-            return smoothstep(0.5 - w, 0.5, f);
-          }
           void main() {
-            vec2 p = (vUv - 0.5) * 24.0;      // world-ish coords
-            p.x += uTime * 4.4;               // scroll toward -x (runner "moves" +x)
-            float g = max(gridLine(p.x, 0.05), gridLine(p.y, 0.05));
+            vec2 p = (vUv - 0.5) * 14.0;      // world units, runner at origin
+            p.x += uTime * 3.4;               // track streams toward -x
+
+            const float LANE = 1.12;          // lane width
+            // Runner centred in a lane: boundaries at +-LANE/2, ...
+            float fy = abs(fract(p.y / LANE) - 0.5) * LANE;
+            float lane = smoothstep(0.055, 0.028, fy);
+
+            // Faint surface seams sweeping past (speed cue)
+            float fx = abs(fract(p.x / 2.6 + 0.5) - 0.5) * 2.6;
+            float seam = smoothstep(0.05, 0.02, fx) * 0.18;
+
             float d = length((vUv - 0.5) * 2.0);
-            float fade = smoothstep(0.85, 0.18, d);
-            vec3 col = vec3(0.208, 0.227, 0.267); // hairline #353A44
-            gl_FragColor = vec4(col, g * fade * 0.3);
+            float fade = smoothstep(0.82, 0.15, d);
+
+            // Warm asphalt base + beige lane lines
+            vec3 base = vec3(0.105, 0.095, 0.078);
+            vec3 line = vec3(0.80, 0.78, 0.72);
+            float lineA = lane * 0.5 + seam;
+            vec3 col = mix(base, line, clamp(lineA, 0.0, 1.0));
+            float alpha = fade * (0.5 + 0.5 * clamp(lineA, 0.0, 1.0));
+            gl_FragColor = vec4(col, alpha * 0.75);
           }
         `,
       }),
@@ -353,7 +198,7 @@ function Ground() {
     mat.uniforms.uTime.value = clock.getElapsedTime()
   })
   return (
-    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} material={mat}>
+    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0.56]} material={mat}>
       <planeGeometry args={[14, 14]} />
     </mesh>
   )
@@ -365,7 +210,7 @@ function ScanLine() {
   const mat = useMemo(
     () =>
       new THREE.MeshBasicMaterial({
-        color: VOLT,
+        color: GOLD,
         transparent: true,
         opacity: 0.35,
         blending: THREE.AdditiveBlending,
@@ -457,9 +302,9 @@ export default function RunnerScene() {
     >
       <ambientLight intensity={0.5} />
       <directionalLight position={[3, 4, 2]} intensity={0.9} color="#ECE7DC" />
-      <pointLight position={[-2, 1.5, -1]} intensity={0.5} color={VOLT} />
+      <pointLight position={[-2, 1.5, -1]} intensity={0.5} color={GOLD} />
 
-      <DotBody />
+      <DotFigure sample={(t) => computePose(t / CYCLE_SECONDS)} />
       <Skeleton />
       <Ground />
       <ScanLine />

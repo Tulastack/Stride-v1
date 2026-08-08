@@ -29,7 +29,7 @@ export default function Compare() {
                     CAPABILITY
                   </th>
                   <th className="px-4 py-4 text-center">
-                    <span className="inline-block rounded-[4px] bg-volt px-3 py-1 font-display text-sm font-bold text-graphite-900">
+                    <span className="inline-block rounded-[4px] bg-gold px-3 py-1 font-display text-sm font-bold text-graphite-900">
                       STRIDE
                     </span>
                   </th>
@@ -50,7 +50,7 @@ export default function Compare() {
                     className="border-b border-hairline/30 transition-colors hover:bg-graphite-800/50"
                   >
                     <td className="py-4 pr-4 text-sm text-bone-100">{cap}</td>
-                    <td className="px-4 py-4 text-center font-mono text-volt">✓</td>
+                    <td className="px-4 py-4 text-center font-mono text-gold">✓</td>
                     {[a, b, c].map((v, i) => (
                       <td
                         key={i}

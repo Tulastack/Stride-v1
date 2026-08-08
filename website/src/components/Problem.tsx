@@ -34,11 +34,11 @@ export default function Problem() {
         {CARDS.map((c, i) => (
           <Reveal key={c.title} delay={i * 0.1} className="h-full">
             <article className="group relative h-full overflow-hidden rounded-lg border border-hairline/70 bg-graphite-850 p-7 transition-colors duration-300 hover:border-bone-300/40">
-              <p className="font-mono text-4xl tracking-tight text-flaw">{c.stat}</p>
+              <p className="font-mono text-4xl tracking-tight text-gold">{c.stat}</p>
               <p className="mt-1 font-mono text-[10px] tracking-[0.3em] text-muted">{c.unit}</p>
               <h3 className="mt-8 font-display text-xl font-semibold">{c.title}</h3>
               <p className="mt-3 text-[15px] leading-relaxed text-bone-300">{c.body}</p>
-              <div className="absolute inset-x-0 bottom-0 h-px origin-left scale-x-0 bg-flaw/70 transition-transform duration-500 group-hover:scale-x-100" />
+              <div className="absolute inset-x-0 bottom-0 h-px origin-left scale-x-0 bg-gold/70 transition-transform duration-500 group-hover:scale-x-100" />
             </article>
           </Reveal>
         ))}

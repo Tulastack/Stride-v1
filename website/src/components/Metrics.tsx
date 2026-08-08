@@ -28,13 +28,13 @@ function ScoreRing({ score }: { score: number }) {
   return (
     <div ref={ref} className="relative h-32 w-32">
       <svg viewBox="0 0 120 120" className="h-full w-full -rotate-90">
-        <circle cx="60" cy="60" r={r} fill="none" stroke="#1E2127" strokeWidth="7" />
+        <circle cx="60" cy="60" r={r} fill="none" stroke="#221F1A" strokeWidth="7" />
         <motion.circle
           cx="60"
           cy="60"
           r={r}
           fill="none"
-          stroke="#CDFF4F"
+          stroke="#E8C87D"
           strokeWidth="7"
           strokeLinecap="round"
           strokeDasharray={c}
@@ -78,8 +78,7 @@ export default function Metrics() {
               <span className="font-mono text-[10px] tracking-[0.3em] text-muted">
                 ANALYSIS 0027 · 100M · LANE 4
               </span>
-              <span className="flex items-center gap-2 font-mono text-[10px] tracking-[0.2em] text-improve">
-                <span className="h-1.5 w-1.5 rounded-full bg-improve animate-blink" />
+              <span className="font-mono text-[10px] tracking-[0.2em] text-gold">
                 COMPLETE · 14.2s
               </span>
             </header>
@@ -102,21 +101,21 @@ export default function Metrics() {
                 <span className="font-mono text-xs tracking-[0.2em] text-flaw">
                   #1 · LOW KNEE DRIVE
                 </span>
-                <span className="rounded-[3px] border border-flaw/50 px-2 py-0.5 font-mono text-[9px] tracking-[0.2em] text-flaw">
-                  SEVERITY HIGH
+                <span className="font-mono text-[9px] tracking-[0.2em] text-flaw">
+                  SEVERITY — HIGH
                 </span>
               </div>
               <div className="mt-4 flex items-baseline gap-4 font-mono">
                 <span className="text-3xl text-bone-100">81.2°</span>
                 <span className="text-sm text-muted">measured</span>
-                <span className="text-sm text-improve">optimal 90–95°</span>
+                <span className="text-sm text-gold">optimal 90–95°</span>
               </div>
               <p className="mt-3 text-sm leading-relaxed text-bone-300">
                 Your lead thigh is dropping early, reducing vertical flight time and
                 restricting horizontal stride length.
               </p>
               <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-hairline/40 pt-4">
-                <span className="font-mono text-xs text-volt">FIX: KNEE DRIVE A-SKIPS</span>
+                <span className="font-mono text-xs text-gold">FIX: KNEE DRIVE A-SKIPS</span>
                 <span className="font-mono text-xs text-muted">3 × 20m</span>
                 <span className="text-xs text-bone-300">
                   “Punch lead foot down directly under hip center.”
@@ -136,7 +135,7 @@ export default function Metrics() {
                   <p
                     className={`mt-2 font-mono text-xl ${
                       t.tone === 'improve'
-                        ? 'text-improve'
+                        ? 'text-gold'
                         : t.tone === 'muted'
                           ? 'text-muted'
                           : 'text-bone-100'
@@ -146,7 +145,7 @@ export default function Metrics() {
                   </p>
                   <p
                     className={`mt-2 font-mono text-[8px] tracking-[0.25em] ${
-                      t.tier === 'TRUSTED' ? 'text-improve/80' : 'text-muted'
+                      t.tier === 'TRUSTED' ? 'text-gold/80' : 'text-muted'
                     }`}
                   >
                     {t.tier}
@@ -173,7 +172,7 @@ export default function Metrics() {
                 ],
               ].map(([title, body]) => (
                 <li key={title} className="flex gap-4">
-                  <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-volt" />
+                  <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-gold" />
                   <div>
                     <p className="font-display font-semibold">{title}</p>
                     <p className="mt-1 text-sm leading-relaxed text-bone-300">{body}</p>

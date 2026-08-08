@@ -1,8 +1,9 @@
 # Stride — Landing Page
 
-One-page marketing site for Stride. Dark "stadium timing board" aesthetic driven
-by the design tokens in `packages/design-tokens` (graphite surfaces, bone text,
-volt `#CDFF4F` signal, Archivo / Hanken Grotesk / Space Mono).
+One-page marketing site for Stride. Dark "stadium at night" aesthetic matching
+the pitch-deck palette: champagne gold `#E8C87D`, beige `#F2F2EF`, warm dark
+greys (`#100F0D`–`#3E3931`). Type: Space Grotesk (display), Instrument Sans
+(body), IBM Plex Mono (numerals).
 
 ## Stack
 
@@ -10,9 +11,14 @@ volt `#CDFF4F` signal, Archivo / Hanken Grotesk / Space Mono).
 - **Tailwind CSS v4** — brand tokens defined in `src/index.css` `@theme`
 - **Motion (Framer Motion)** — scroll reveals, sticky pipeline, hero choreography
 - **Lenis** — smooth scrolling
-- **React Three Fiber + drei + postprocessing** — the hero: a procedural
-  dot-matrix sprinter driven by a keyframed sprint-gait engine
-  (`src/lib/gait.ts`) with live joint-angle readouts, motion trails and bloom
+- **React Three Fiber + drei + postprocessing** — three scenes driven by the
+  parametric sprint-kinematics engine in `src/lib/gait.ts`:
+  - `RunnerScene` (hero): dot-matrix sprinter on a scrolling track with live
+    joint-angle readouts, motion trail and bloom
+  - `PipelineScene` (engine section): per-step live 3D — orbiting camera,
+    keypoint extraction, gravity tilt-correction, measurement, slow-mo review
+  - `BlocksScene` (waitlist): a block start in slow motion with a heat-haze
+    warp effect, accelerating away across the bottom of the section
 
 ## Develop
 
@@ -46,6 +52,7 @@ VITE_WAITLIST_ENDPOINT=https://... npm run build
 ```
 node scripts/screenshot.mjs <outDir>          # desktop sweep of every section
 node scripts/screenshot-mobile.mjs <outDir>   # mobile sweep
+node scripts/shoot-blocks.mjs <outDir>        # frames of the waitlist block-start loop
 node scripts/test-form.mjs <outDir>           # waitlist form + nav CTA smoke test
 ```
 

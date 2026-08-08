@@ -15,7 +15,7 @@ export default function SectionHeading({
     <div className="mb-14 max-w-3xl md:mb-20">
       <Reveal>
         <p className="mb-4 font-mono text-xs tracking-[0.25em] text-muted">
-          <span className="text-volt">{index}</span> — {eyebrow}
+          <span className="text-gold">{index}</span> — {eyebrow}
         </p>
       </Reveal>
       <Reveal delay={0.08}>

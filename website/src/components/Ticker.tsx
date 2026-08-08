@@ -22,7 +22,7 @@ function Row() {
           <span className="text-muted">{label}</span>
           <span
             className={
-              tone === 'flaw' ? 'text-flaw' : tone === 'ok' ? 'text-improve' : 'text-bone-100'
+              tone === 'flaw' ? 'text-flaw' : tone === 'ok' ? 'text-gold' : 'text-bone-100'
             }
           >
             {value}
