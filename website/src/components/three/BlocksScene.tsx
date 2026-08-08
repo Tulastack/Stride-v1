@@ -68,19 +68,20 @@ function SceneInner() {
       groupRef.current.position.x = runnerX
     }
 
-    // Steady tracking shot: the camera only TRANSLATES with the athlete —
-    // fixed height, fixed distance, fixed viewing direction (no tilt, no
-    // zoom). It trails him out of the blocks, stops following near the end
-    // so he pulls away, and snaps back while the frame is fully faded.
-    const followX = 0.9 + Math.min(Math.max(f.travel - 0.3, 0) * 0.85, 2.2)
+    // Steady side-on tracking shot, like TV race footage: the camera looks
+    // straight at the track (no lateral angle, so the lanes run level across
+    // the frame) and only TRANSLATES with the athlete. It trails him out of
+    // the blocks, stops following near the end so he pulls away, and snaps
+    // back while the frame is fully faded.
+    const followX = -0.9 + Math.min(Math.max(f.travel - 0.3, 0) * 0.85, 2.6)
     if (followX < camera.position.x - 0.5) {
       camera.position.x = followX // loop reset — happens during the fade
     } else {
       camera.position.x += (followX - camera.position.x) * 0.08
     }
-    camera.position.y = 1.1
+    camera.position.y = 1.05
     camera.position.z = 3.5
-    camera.lookAt(camera.position.x - 0.55, 0.75, 0)
+    camera.lookAt(camera.position.x, 0.72, 0)
   })
 
   return (
