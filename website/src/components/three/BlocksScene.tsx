@@ -56,26 +56,15 @@ function StartingBlocks() {
 function SceneInner() {
   const frameRef = useRef<StartFrame>(startFrame(0))
   const groupRef = useRef<THREE.Group>(null)
-  const shadowMat = useMemo(
-    () =>
-      new THREE.MeshBasicMaterial({
-        color: '#000000',
-        transparent: true,
-        opacity: 0,
-        depthWrite: false,
-      }),
-    [],
-  )
   const opacity = useRef(0)
 
   useFrame(({ clock, camera }) => {
     const f = startFrame(clock.getElapsedTime())
     frameRef.current = f
-    opacity.current = f.fade * 0.5 // background layer — hazier than the hero
+    opacity.current = f.fade * 0.62 // background layer — hazier than the hero
     if (groupRef.current) {
       groupRef.current.position.x = START_X + 0.16 + f.travel
     }
-    shadowMat.opacity = f.fade * 0.35
     camera.lookAt(0.55, 0.78, 0)
   })
 
@@ -90,15 +79,6 @@ function SceneInner() {
           density={0.7}
           goldFraction={0.2}
         />
-        {/* soft contact shadow keeps the athlete visually on the track */}
-        <mesh
-          rotation={[-Math.PI / 2, 0, 0]}
-          position={[0.1, 0.006, 0]}
-          scale={[0.55, 0.22, 1]}
-          material={shadowMat}
-        >
-          <circleGeometry args={[1, 24]} />
-        </mesh>
       </group>
     </>
   )

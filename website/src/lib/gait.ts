@@ -295,20 +295,22 @@ export function computePose(t: number): Pose {
 // ─── Block start sequence ────────────────────────────────────────────
 
 /**
- * "Set" position: hips raised above shoulders, front (left) leg on the front
- * pedal at ~90°, rear leg more open, shoulders over the hands, head down.
+ * "Set" position, matched to real side-view footage: hips raised ABOVE the
+ * shoulders (torso pitched past horizontal, lean > 90°), shoulders stacked
+ * over the hands with the arms straight down to the line, front knee ~90° on
+ * the front pedal, rear leg longer back to the rear pedal, eyes down.
  */
 const SET_POSE: BodyParams = {
   pelvisX: -0.16,
-  pelvisY: 0.63,
-  lean: 50,
+  pelvisY: 0.74,
+  lean: 102,
   pelvisYaw: 0,
   shoulderYaw: 0,
-  headDrop: 32,
-  legL: { thigh: 86, knee: 94, foot: 20 }, // front block, ~90° knee
-  legR: { thigh: 34, knee: 116, foot: 32 }, // rear block, more open
-  armR: { swing: -50, included: 176 }, // arms straight down to the line
-  armL: { swing: -50, included: 176 },
+  headDrop: 18,
+  legL: { thigh: 38, knee: 108, foot: 25 }, // front pedal, ~90° knee
+  legR: { thigh: -19, knee: 33, foot: 30 }, // rear pedal, nearly extended
+  armR: { swing: -97, included: 178 }, // straight down, hands at the line
+  armL: { swing: -97, included: 178 },
 }
 
 /**
@@ -362,7 +364,7 @@ function easeInOut(u: number) {
   return u < 0.5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2
 }
 
-export const START_LOOP = 4.9 // seconds
+export const START_LOOP = 4.6 // seconds
 const DRIVE_AT = 1.4 // gun goes off
 const DRIVE_LEN = 0.45 // real block clearance is ~0.35-0.45s
 const RUN_AT = DRIVE_AT + DRIVE_LEN
@@ -410,8 +412,8 @@ export function startFrame(time: number): StartFrame {
     travel = 0.5 + 1.5 * tt + 0.25 * tt * tt
   }
 
-  const fadeIn = t < 0.35 ? t / 0.35 : 1
-  const fadeOut = t > START_LOOP - 0.7 ? Math.max(0, (START_LOOP - t) / 0.7) : 1
+  const fadeIn = t < 0.25 ? t / 0.25 : 1
+  const fadeOut = t > START_LOOP - 0.3 ? Math.max(0, (START_LOOP - t) / 0.3) : 1
 
   return {
     pose: computeFromParams(params),

@@ -67,9 +67,6 @@ export default function Compare() {
             </table>
           </div>
         </Reveal>
-        <Reveal delay={0.15}>
-         
-        </Reveal>
       </div>
     </section>
   )
