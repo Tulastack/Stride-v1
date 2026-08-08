@@ -81,7 +81,7 @@ function SceneInner() {
 
   return (
     <>
-      <TrackGround size={20} opacity={0.6} position={[1.2, 0, 0.56]} />
+      <TrackGround size={20} opacity={0.6} position={[1.2, 0, 0]} />
       <StartingBlocks />
       <group ref={groupRef}>
         <DotFigure

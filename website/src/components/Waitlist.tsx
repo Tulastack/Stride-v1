@@ -57,12 +57,10 @@ export default function Waitlist() {
       <div className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-gold/50 to-transparent" />
 
       <div className="relative mx-auto max-w-4xl px-5 pt-20 pb-24 text-center md:pt-24 md:pb-32">
-        <Reveal>
-          <p className="mb-5 font-mono text-xs tracking-[0.3em] text-gold">ON YOUR MARKS</p>
-        </Reveal>
+        
         <Reveal delay={0.08}>
           <h2 className="font-display text-4xl font-bold tracking-tight text-balance md:text-6xl">
-            Be first out of the blocks.
+            Be the first out of the blocks.
           </h2>
         </Reveal>
 

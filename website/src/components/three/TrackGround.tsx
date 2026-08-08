@@ -14,7 +14,7 @@ export default function TrackGround({
   distRef,
   size = 14,
   opacity = 0.75,
-  position = [0, 0, 0.56] as [number, number, number],
+  position = [0, 0, 0] as [number, number, number],
 }: {
   distRef?: RefObject<number>
   size?: number

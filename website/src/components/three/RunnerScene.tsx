@@ -199,7 +199,7 @@ function HeroTrack() {
           ref={(m) => {
             numeralRefs.current[i] = m
           }}
-          rotation={[-Math.PI / 2, 0, 0]}
+          rotation={[-Math.PI / 2, 0, -Math.PI / 2]}
           position={[6, 0.005, z]}
           material={numeralMats[i]}
         >

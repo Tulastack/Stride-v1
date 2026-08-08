@@ -68,9 +68,7 @@ export default function Compare() {
           </div>
         </Reveal>
         <Reveal delay={0.15}>
-          <p className="mt-6 font-mono text-xs tracking-wide text-muted">
-            * Private coaching does it well — at $200–500 per session.
-          </p>
+         
         </Reveal>
       </div>
     </section>
