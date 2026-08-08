@@ -8,12 +8,19 @@ const ENDPOINT = import.meta.env.VITE_WAITLIST_ENDPOINT as string | undefined
 
 export default function Waitlist() {
   const [email, setEmail] = useState('')
+  const [trap, setTrap] = useState('') // honeypot — humans never see or fill it
   const [state, setState] = useState<'idle' | 'busy' | 'done' | 'error'>('idle')
 
   async function submit(e: FormEvent) {
     e.preventDefault()
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    const value = email.trim().toLowerCase()
+    if (value.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
       setState('error')
+      return
+    }
+    // Bots that auto-fill every field get a silent success and no request
+    if (trap) {
+      setState('done')
       return
     }
     setState('busy')
@@ -22,7 +29,7 @@ export default function Waitlist() {
         await fetch(ENDPOINT, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, source: 'stride-landing' }),
+          body: JSON.stringify({ email: value, source: 'stride-landing' }),
         })
       }
       setState('done')
@@ -88,8 +95,19 @@ export default function Waitlist() {
                 className="mx-auto mt-9 flex max-w-md flex-col gap-3 sm:flex-row"
               >
                 <input
+                  type="text"
+                  name="company"
+                  value={trap}
+                  onChange={(e) => setTrap(e.target.value)}
+                  tabIndex={-1}
+                  autoComplete="off"
+                  aria-hidden="true"
+                  className="absolute -left-[9999px] h-0 w-0 opacity-0"
+                />
+                <input
                   type="email"
                   required
+                  maxLength={254}
                   value={email}
                   onChange={(e) => {
                     setEmail(e.target.value)

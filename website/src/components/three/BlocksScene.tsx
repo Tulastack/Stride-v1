@@ -57,9 +57,6 @@ function SceneInner() {
   const frameRef = useRef<StartFrame>(startFrame(0))
   const groupRef = useRef<THREE.Group>(null)
   const opacity = useRef(0)
-  const camX = useRef(-0.4)
-  const camY = useRef(1.2)
-  const camZ = useRef(3.6)
 
   useFrame(({ clock, camera }) => {
     const f = startFrame(clock.getElapsedTime())
@@ -71,24 +68,19 @@ function SceneInner() {
       groupRef.current.position.x = runnerX
     }
 
-    // During set position, frame tightly on the athlete + blocks
-    // As they run, pan right to follow while widening slightly
-    const inSet = f.travel < 0.1
-    const targetCamX = inSet
-      ? START_X + 0.6   // frame the whole set + blocks
-      : Math.min(runnerX + 0.4, 2.4)
-    const targetCamY = inSet ? 1.1 : 1.2
-    const targetCamZ = inSet ? 3.2 : 3.8
-
-    const k = 0.035
-    camX.current += (targetCamX - camX.current) * k
-    camY.current += (targetCamY - camY.current) * k
-    camZ.current += (targetCamZ - camZ.current) * k
-
-    camera.position.set(camX.current, camY.current, camZ.current)
-    // Look slightly ahead of the runner
-    const lookX = inSet ? START_X + 0.1 : runnerX - 0.1
-    camera.lookAt(lookX, 0.75, 0)
+    // Steady tracking shot: the camera only TRANSLATES with the athlete —
+    // fixed height, fixed distance, fixed viewing direction (no tilt, no
+    // zoom). It trails him out of the blocks, stops following near the end
+    // so he pulls away, and snaps back while the frame is fully faded.
+    const followX = 0.9 + Math.min(Math.max(f.travel - 0.3, 0) * 0.85, 2.2)
+    if (followX < camera.position.x - 0.5) {
+      camera.position.x = followX // loop reset — happens during the fade
+    } else {
+      camera.position.x += (followX - camera.position.x) * 0.08
+    }
+    camera.position.y = 1.1
+    camera.position.z = 3.5
+    camera.lookAt(camera.position.x - 0.55, 0.75, 0)
   })
 
   return (

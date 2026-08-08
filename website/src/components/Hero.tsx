@@ -157,20 +157,6 @@ export default function Hero() {
         )}
       </div>
 
-      {/* Scroll cue */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 1.6, duration: 1 }}
-        style={{ opacity: textOpacity }}
-        className="absolute bottom-6 left-1/2 hidden -translate-x-1/2 md:block"
-      >
-        <motion.div
-          animate={{ y: [0, 8, 0] }}
-          transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
-          className="h-8 w-px bg-gradient-to-b from-transparent via-bone-300/60 to-transparent"
-        />
-      </motion.div>
     </section>
   )
 }
