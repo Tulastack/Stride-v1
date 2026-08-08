@@ -4,6 +4,7 @@ import { Html } from '@react-three/drei'
 import * as THREE from 'three'
 import { computePose, BONES, type JointName } from '../../lib/gait'
 import DotFigure from './DotFigure'
+import TrackGround, { TRACK_SPEED } from './TrackGround'
 
 const GOLD = '#E8C87D'
 const CYCLE = 1.15
@@ -42,6 +43,7 @@ const STEP = [
 function SceneInner({ step }: { step: number }) {
   const cfg = STEP[step] ?? STEP[0]
   const phase = useRef(0)
+  const trackDist = useRef(0)
   const tiltGroup = useRef<THREE.Group>(null)
   const dotOpacity = useRef(1)
   const kpRefs = useRef<(THREE.Mesh | null)[]>([])
@@ -90,6 +92,7 @@ function SceneInner({ step }: { step: number }) {
 
   useFrame(({ camera, clock }, delta) => {
     phase.current += (delta * cfg.speed) / CYCLE
+    trackDist.current += TRACK_SPEED * cfg.speed * delta
     const pose = computePose(phase.current)
 
     // Camera: orbit on step 0, ease to fixed azimuth otherwise
@@ -100,8 +103,8 @@ function SceneInner({ step }: { step: number }) {
     const k = cfg.az === null ? 1 : 0.06
     camera.position.x += (targetX - camera.position.x) * k
     camera.position.z += (targetZ - camera.position.z) * k
-    camera.position.y += (1.25 - camera.position.y) * 0.06
-    camera.lookAt(0, 0.9, 0)
+    camera.position.y += (1.3 - camera.position.y) * 0.06
+    camera.lookAt(0, 0.82, 0)
 
     // Dot opacity eases toward target
     dotOpacity.current += (cfg.dots - dotOpacity.current) * 0.07
@@ -159,6 +162,7 @@ function SceneInner({ step }: { step: number }) {
   return (
     <group>
       <group ref={tiltGroup}>
+        <TrackGround distRef={trackDist} size={10} opacity={0.6} />
         <DotFigure
           sample={() => computePose(phase.current)}
           opacityRef={dotOpacity}

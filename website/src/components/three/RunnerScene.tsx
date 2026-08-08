@@ -5,6 +5,7 @@ import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing'
 import * as THREE from 'three'
 import { computePose, BONES } from '../../lib/gait'
 import DotFigure from './DotFigure'
+import TrackGround, { makeNumeralTexture, TRACK_SPEED, LANE_W } from './TrackGround'
 
 const GOLD = '#E8C87D'
 const CYCLE_SECONDS = 1.15 // one full stride
@@ -145,90 +146,67 @@ function useAnkleRef() {
   return ref
 }
 
-/** Ground: a running track — lanes along the direction of motion, with
- *  surface seams scrolling past to imply speed, fading out radially. */
-function Ground() {
-  const mat = useMemo(
+/**
+ * The hero track: scrolling lanes plus painted lane numerals that sweep past
+ * with the surface once every 12 seconds — the runner is in lane 4.
+ */
+function HeroTrack() {
+  const dist = useRef(0)
+  const numeralRefs = useRef<(THREE.Mesh | null)[]>([])
+  const numerals = useMemo(
     () =>
-      new THREE.ShaderMaterial({
-        transparent: true,
-        depthWrite: false,
-        uniforms: {
-          uTime: { value: 0 },
-        },
-        vertexShader: /* glsl */ `
-          varying vec2 vUv;
-          void main() {
-            vUv = uv;
-            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-          }
-        `,
-        fragmentShader: /* glsl */ `
-          varying vec2 vUv;
-          uniform float uTime;
-          void main() {
-            vec2 p = (vUv - 0.5) * 14.0;      // world units, runner at origin
-            p.x += uTime * 3.4;               // track streams toward -x
-
-            const float LANE = 1.12;          // lane width
-            // Runner centred in a lane: boundaries at +-LANE/2, ...
-            float fy = abs(fract(p.y / LANE) - 0.5) * LANE;
-            float lane = smoothstep(0.055, 0.028, fy);
-
-            // Faint surface seams sweeping past (speed cue)
-            float fx = abs(fract(p.x / 2.6 + 0.5) - 0.5) * 2.6;
-            float seam = smoothstep(0.05, 0.02, fx) * 0.18;
-
-            float d = length((vUv - 0.5) * 2.0);
-            float fade = smoothstep(0.82, 0.15, d);
-
-            // Warm asphalt base + beige lane lines
-            vec3 base = vec3(0.105, 0.095, 0.078);
-            vec3 line = vec3(0.80, 0.78, 0.72);
-            float lineA = lane * 0.5 + seam;
-            vec3 col = mix(base, line, clamp(lineA, 0.0, 1.0));
-            float alpha = fade * (0.5 + 0.5 * clamp(lineA, 0.0, 1.0));
-            gl_FragColor = vec4(col, alpha * 0.75);
-          }
-        `,
-      }),
+      ['3', '4', '5'].map((n, i) => ({
+        tex: makeNumeralTexture(n),
+        z: (1 - i) * LANE_W, // lane 3 near camera, 4 under the runner, 5 far
+      })),
     [],
   )
-  useFrame(({ clock }) => {
-    mat.uniforms.uTime.value = clock.getElapsedTime()
-  })
-  return (
-    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0.56]} material={mat}>
-      <planeGeometry args={[14, 14]} />
-    </mesh>
-  )
-}
-
-/** Horizontal volt scan line sweeping the athlete, timing-board style. */
-function ScanLine() {
-  const ref = useRef<THREE.Mesh>(null)
-  const mat = useMemo(
+  const numeralMats = useMemo(
     () =>
-      new THREE.MeshBasicMaterial({
-        color: GOLD,
-        transparent: true,
-        opacity: 0.35,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-      }),
-    [],
+      numerals.map(
+        ({ tex }) =>
+          new THREE.MeshBasicMaterial({
+            map: tex,
+            transparent: true,
+            opacity: 0,
+            depthWrite: false,
+          }),
+      ),
+    [numerals],
   )
-  useFrame(({ clock }) => {
-    if (!ref.current) return
-    const t = (clock.getElapsedTime() % 7) / 7
-    const y = THREE.MathUtils.lerp(0.05, 1.85, t)
-    ref.current.position.y = y
-    mat.opacity = 0.16 * Math.sin(Math.PI * t)
+
+  const SWEEP = TRACK_SPEED * 12 // one pass every 12 seconds
+
+  useFrame((_, delta) => {
+    dist.current += TRACK_SPEED * delta
+    const x = 6 - (dist.current % SWEEP)
+    numerals.forEach((_, i) => {
+      const mesh = numeralRefs.current[i]
+      if (!mesh) return
+      mesh.position.x = x
+      // Painted on the surface: fade with the same falloff as the track
+      const vis = THREE.MathUtils.clamp(1 - (Math.abs(x) - 2.2) / 2.2, 0, 1)
+      numeralMats[i].opacity = vis * 0.8
+    })
   })
+
   return (
-    <mesh ref={ref} position={[0, 1, -0.35]} material={mat}>
-      <planeGeometry args={[1.9, 0.004]} />
-    </mesh>
+    <group>
+      <TrackGround distRef={dist} />
+      {numerals.map(({ z }, i) => (
+        <mesh
+          key={z}
+          ref={(m) => {
+            numeralRefs.current[i] = m
+          }}
+          rotation={[-Math.PI / 2, 0, 0]}
+          position={[6, 0.005, z]}
+          material={numeralMats[i]}
+        >
+          <planeGeometry args={[0.6, 0.88]} />
+        </mesh>
+      ))}
+    </group>
   )
 }
 
@@ -306,8 +284,7 @@ export default function RunnerScene() {
 
       <DotFigure sample={(t) => computePose(t / CYCLE_SECONDS)} />
       <Skeleton />
-      <Ground />
-      <ScanLine />
+      <HeroTrack />
       <SpeedLines />
       <CameraRig />
 

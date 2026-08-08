@@ -16,9 +16,9 @@ await page.evaluate(`(() => {
   window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - 120)
 })()`)
 await new Promise((r) => setTimeout(r, 1000))
-for (let i = 0; i < 6; i++) {
+for (let i = 0; i < 10; i++) {
   await page.screenshot({ path: `${OUT}/blocks-${i}.png` })
-  await new Promise((r) => setTimeout(r, 1300))
+  await new Promise((r) => setTimeout(r, 620))
 }
 await browser.close()
 console.log('done')

@@ -94,7 +94,7 @@ export default function Pipeline() {
           {/* Sticky live 3D panel */}
           <div className="hidden lg:block">
             <div className="sticky top-0 flex h-screen items-center justify-center">
-              <div className="relative aspect-square w-full max-w-[460px]">
+              <div className="relative h-[72vh] max-h-[700px] w-full">
                 <div className="absolute inset-0 rounded-lg border border-hairline/60 bg-graphite-850" />
                 {[
                   'top-2 left-2 border-t border-l',

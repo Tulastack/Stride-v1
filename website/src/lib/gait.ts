@@ -294,32 +294,38 @@ export function computePose(t: number): Pose {
 
 // ─── Block start sequence ────────────────────────────────────────────
 
-/** "On your marks / set" crouch. Left leg forward in the blocks. */
+/**
+ * "Set" position: hips raised above shoulders, front (left) leg on the front
+ * pedal at ~90°, rear leg more open, shoulders over the hands, head down.
+ */
 const SET_POSE: BodyParams = {
-  pelvisX: -0.18,
-  pelvisY: 0.56,
-  lean: 58,
+  pelvisX: -0.16,
+  pelvisY: 0.63,
+  lean: 50,
   pelvisYaw: 0,
   shoulderYaw: 0,
-  headDrop: 28,
-  legL: { thigh: 96, knee: 102, foot: 22 }, // front block
-  legR: { thigh: 44, knee: 118, foot: 34 }, // rear block
-  armR: { swing: -56, included: 174 }, // arms straight down to the line
-  armL: { swing: -56, included: 174 },
+  headDrop: 32,
+  legL: { thigh: 86, knee: 94, foot: 20 }, // front block, ~90° knee
+  legR: { thigh: 34, knee: 116, foot: 32 }, // rear block, more open
+  armR: { swing: -50, included: 176 }, // arms straight down to the line
+  armL: { swing: -50, included: 176 },
 }
 
-/** Full drive extension, one explosive push off the front block. */
+/**
+ * End of the drive: full triple extension off the front pedal — push leg one
+ * straight line hip to toe, rear knee punched through, arms ripped apart.
+ */
 const DRIVE_POSE: BodyParams = {
   pelvisX: 0.34,
-  pelvisY: 0.82,
-  lean: 44,
+  pelvisY: 0.84,
+  lean: 46,
   pelvisYaw: 6,
   shoulderYaw: -8,
-  headDrop: 14,
-  legL: { thigh: -28, knee: 12, foot: -18 }, // extended push leg
-  legR: { thigh: 66, knee: 92, foot: 6 }, // driving knee
-  armR: { swing: -50, included: 132 }, // arms split
-  armL: { swing: 48, included: 78 },
+  headDrop: 16,
+  legL: { thigh: -32, knee: 8, foot: -24 }, // extended push leg
+  legR: { thigh: 64, knee: 94, foot: 4 }, // driving knee
+  armR: { swing: -54, included: 134 }, // arms split
+  armL: { swing: 50, included: 78 },
 }
 
 function lerp(a: number, b: number, u: number) {
@@ -356,63 +362,60 @@ function easeInOut(u: number) {
   return u < 0.5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2
 }
 
-export const START_LOOP = 7.5 // seconds
+export const START_LOOP = 4.9 // seconds
+const DRIVE_AT = 1.4 // gun goes off
+const DRIVE_LEN = 0.45 // real block clearance is ~0.35-0.45s
+const RUN_AT = DRIVE_AT + DRIVE_LEN
 
 export interface StartFrame {
   pose: Pose
   /** Forward travel of the athlete, world units. */
   travel: number
-  /** Warp/shockwave intensity 0..1, peaks during the slow-mo drive. */
-  warp: number
   /** Overall figure opacity 0..1 (fade at loop edges). */
   fade: number
 }
 
 /**
- * Block start on a repeating loop:
- * 0.0-1.6s   set position, held (micro-sway)
- * 1.6-3.6s   the drive, in slow motion (warp peaks)
- * 3.6-7.0s   accelerating run, lean easing upright, figure travelling
- * 7.0-7.5s   fade out, loop
+ * Block start on a repeating loop, timed like the real thing:
+ * 0.0-1.4s    set position, held (breathing micro-sway)
+ * 1.4-1.85s   the drive — one explosive triple extension off the front pedal
+ * 1.85s+      acceleration strides: quick turnover, lean rising 46° -> 12°
+ * last 0.6s   fade, loop restarts in the blocks
  */
 export function startFrame(time: number): StartFrame {
   const t = ((time % START_LOOP) + START_LOOP) % START_LOOP
 
   let params: BodyParams
   let travel = 0
-  let warp = 0
 
-  if (t < 1.6) {
+  if (t < DRIVE_AT) {
     // SET — breathing micro-sway
-    const sway = Math.sin(t * 2.2) * 0.008
-    params = { ...SET_POSE, pelvisY: SET_POSE.pelvisY + sway, pelvisX: SET_POSE.pelvisX }
-    warp = 0
-  } else if (t < 3.6) {
-    // DRIVE — slow motion
-    const u = easeInOut((t - 1.6) / 2)
-    params = lerpBody(SET_POSE, DRIVE_POSE, u)
-    travel = u * 0.55
-    warp = Math.sin(Math.PI * u) // peaks mid-drive
+    const sway = Math.sin(t * 2.4) * 0.007
+    params = { ...SET_POSE, pelvisY: SET_POSE.pelvisY + sway }
+  } else if (t < RUN_AT) {
+    // DRIVE — explosive, ease-out (fastest at the gun)
+    const u = (t - DRIVE_AT) / DRIVE_LEN
+    const e = 1 - (1 - u) * (1 - u)
+    params = lerpBody(SET_POSE, DRIVE_POSE, e)
+    travel = e * 0.5
   } else {
-    // ACCELERATE — blend into the gait cycle, speed ramping up
-    const tt = t - 3.6
-    const blend = Math.min(tt / 0.6, 1)
-    // integrated phase: cycles/sec ramps 0.9 -> 1.9
-    const runPhase = 0.62 + 0.9 * tt + (0.5 * tt * tt) / 3.4
-    const lean = lerp(44, 10, Math.min(tt / 2.6, 1))
+    // ACCELERATE — blend into the gait cycle over one drive-step,
+    // turnover ramping from ~1.9 to ~2.4 strides/s
+    const tt = t - RUN_AT
+    const blend = Math.min(tt / 0.35, 1)
+    const runPhase = 0.72 + 1.9 * tt + 0.06 * tt * tt
+    const lean = lerp(46, 12, Math.min(tt / 2.2, 1))
     const run = gaitParams(runPhase, lean)
     params = blend < 1 ? lerpBody(DRIVE_POSE, run, easeInOut(blend)) : run
-    travel = 0.55 + 0.9 * tt + 0.16 * tt * tt
-    warp = Math.max(0, 0.35 - tt * 0.3)
+    travel = 0.5 + 1.5 * tt + 0.25 * tt * tt
   }
 
-  const fadeIn = t < 0.4 ? t / 0.4 : 1
-  const fadeOut = t > START_LOOP - 0.6 ? Math.max(0, (START_LOOP - t) / 0.6) : 1
+  const fadeIn = t < 0.35 ? t / 0.35 : 1
+  const fadeOut = t > START_LOOP - 0.7 ? Math.max(0, (START_LOOP - t) / 0.7) : 1
 
   return {
     pose: computeFromParams(params),
     travel,
-    warp,
     fade: Math.min(fadeIn, fadeOut),
   }
 }

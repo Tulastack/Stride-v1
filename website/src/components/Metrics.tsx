@@ -155,7 +155,38 @@ export default function Metrics() {
             ))}
           </div>
 
-          <Reveal delay={0.2}>
+          {/* The coach — the premium sell */}
+          <Reveal delay={0.15}>
+            <article className="mt-4 rounded-lg border border-hairline/60 bg-graphite-850">
+              <header className="flex items-center justify-between border-b border-hairline/50 px-5 py-3">
+                <span className="font-mono text-[10px] tracking-[0.25em] text-gold">
+                  AI COACH
+                </span>
+                <span className="font-mono text-[9px] tracking-[0.2em] text-muted">
+                  KNOWS YOUR HISTORY · DRILLS · CALENDAR
+                </span>
+              </header>
+              <div className="space-y-3 px-5 py-4">
+                <p className="ml-auto w-fit max-w-[85%] rounded-md bg-graphite-700 px-4 py-2.5 text-sm text-bone-100">
+                  Why is my knee drive flagged?
+                </p>
+                <div className="w-fit max-w-[92%] rounded-md border border-gold/25 bg-gold/[0.05] px-4 py-2.5 text-sm leading-relaxed text-bone-300">
+                  Your lead thigh peaked at{' '}
+                  <span className="font-mono text-bone-100">81.2°</span> — your last three
+                  runs averaged <span className="font-mono text-bone-100">83°</span>, so
+                  this is a pattern, not a one-off. It's costing you stride length. I've
+                  put <span className="text-gold">A-skips, 3 × 20m</span> on Thursday.
+                </div>
+              </div>
+              <footer className="border-t border-hairline/50 px-5 py-2.5">
+                <p className="font-mono text-[9px] tracking-[0.2em] text-muted">
+                  GROUNDED IN YOUR MEASUREMENTS — NOT GENERIC ADVICE · PREMIUM
+                </p>
+              </footer>
+            </article>
+          </Reveal>
+
+          <Reveal delay={0.22}>
             <ul className="mt-8 space-y-4">
               {[
                 [
@@ -165,10 +196,6 @@ export default function Metrics() {
                 [
                   'Optimal ranges, not vibes',
                   'Every measurement is compared against sprint-literature ranges — you see measured vs. optimal, in degrees and milliseconds.',
-                ],
-                [
-                  'Drills with volumes and cues',
-                  'Each flaw maps to corrective drills with exact sets, distances and coaching cues — ready to schedule.',
                 ],
               ].map(([title, body]) => (
                 <li key={title} className="flex gap-4">

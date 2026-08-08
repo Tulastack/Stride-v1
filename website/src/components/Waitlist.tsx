@@ -48,8 +48,8 @@ export default function Waitlist() {
             'radial-gradient(ellipse 80% 90% at 50% 50%, black 25%, transparent 75%)',
         }}
       />
-      {/* Dot-matrix sprinter out of the blocks, along the bottom of the section */}
-      <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-[44%]">
+      {/* Dot-matrix sprinter out of the blocks — full-section backdrop */}
+      <div aria-hidden className="pointer-events-none absolute inset-0">
         <Suspense fallback={null}>
           <BlocksScene />
         </Suspense>
