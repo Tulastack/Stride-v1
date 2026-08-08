@@ -103,8 +103,8 @@ export default function Hero() {
             transition={{ duration: 0.8, ease: EASE, delay: 0.8 }}
             className="mt-7 max-w-xl text-lg leading-relaxed text-bone-300"
           >
-            Film a sprint. Stride reconstructs your biomechanics — joint angles, stride
-            timing, form flaws — and hands you a coaching plan in about{' '}
+            Film a sprint. Stride reconstructs your biomechanics, joint angles, stride
+            timing, and form flaws, then hands you a coaching plan in about{' '}
             <span className="font-mono text-base text-bone-100">15 seconds</span>.
           </motion.p>
 

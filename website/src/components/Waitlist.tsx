@@ -114,20 +114,19 @@ export default function Waitlist() {
 
         <Reveal delay={0.24}>
           <p className="mx-auto mt-6 max-w-xl text-lg text-bone-300">
-            Stride launches on the App Store soon. Early access — free analyses on day one.
+            Stride launches on the App Store soon. Early access gets free analyses on day one.
           </p>
         </Reveal>
 
         <Reveal delay={0.32}>
           <p className="mt-10 font-mono text-[11px] tracking-wide text-muted">
-            Coach a team? We're running school pilot programs —{' '}
+            Coach a team? We're running school pilot programs.{' '}
             <a
               href="mailto:adhibanarul@gmail.com?subject=Stride%20team%20pilot"
               className="text-bone-300 underline decoration-hairline underline-offset-4 transition-colors hover:text-gold"
             >
-              talk to us
+              Talk to us.
             </a>
-            .
           </p>
         </Reveal>
       </div>

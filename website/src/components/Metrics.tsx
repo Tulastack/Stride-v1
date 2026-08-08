@@ -26,7 +26,7 @@ function ScoreRing({ score }: { score: number }) {
   }, [inView, score])
 
   return (
-    <div ref={ref} className="relative h-32 w-32">
+    <div ref={ref} className="relative h-32 w-32 shrink-0">
       <svg viewBox="0 0 120 120" className="h-full w-full -rotate-90">
         <circle cx="60" cy="60" r={r} fill="none" stroke="#221F1A" strokeWidth="7" />
         <motion.circle
@@ -45,7 +45,7 @@ function ScoreRing({ score }: { score: number }) {
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
         <span className="font-mono text-3xl text-bone-100">{display}</span>
-        <span className="font-mono text-[9px] tracking-[0.25em] text-muted">FORM SCORE</span>
+        <span className="font-mono text-[10px] tracking-[0.1em] text-muted">FORM SCORE</span>
       </div>
     </div>
   )
@@ -73,53 +73,84 @@ export default function Metrics() {
       <div className="grid gap-10 lg:grid-cols-[1.1fr_1fr] lg:gap-16">
         {/* Report card mock */}
         <Reveal>
-          <article className="relative overflow-hidden rounded-lg border border-hairline/70 bg-graphite-850">
-            <header className="flex items-center justify-between border-b border-hairline/60 px-6 py-4">
-              <span className="font-mono text-[10px] tracking-[0.3em] text-muted">
+          <article className="relative overflow-hidden rounded-xl border border-hairline/70 bg-graphite-850 shadow-2xl shadow-black/40">
+            {/* Header */}
+            <header className="flex items-center justify-between border-b border-hairline/60 bg-graphite-900/60 px-5 py-3">
+              <span className="font-mono text-[10px] tracking-[0.12em] text-muted">
                 ANALYSIS 0027 · 100M · LANE 4
               </span>
-              <span className="font-mono text-[10px] tracking-[0.2em] text-gold">
+              <span className="flex items-center gap-2 font-mono text-[10px] tracking-[0.1em] text-gold">
+                <span className="h-1.5 w-1.5 rounded-full bg-gold" />
                 COMPLETE · 14.2s
               </span>
             </header>
 
-            <div className="flex flex-col gap-6 p-6 sm:flex-row sm:items-center">
+            {/* Score row */}
+            <div className="flex items-center gap-5 border-b border-hairline/40 px-5 py-4">
               <ScoreRing score={82} />
-              <div className="flex-1">
-                <p className="font-display text-lg leading-snug font-semibold">
+              <div className="min-w-0 flex-1">
+                <p className="font-display text-lg font-semibold leading-snug text-bone-100">
                   Dynamic acceleration setup. Noticeable hip collapse at toe-off.
                 </p>
-                <p className="mt-2 font-mono text-[10px] tracking-[0.25em] text-muted">
+                <p className="mt-2 font-mono text-[10px] tracking-[0.12em] text-muted">
                   RTMPOSE · GRAVITY-ANCHORED · 11 METRICS
                 </p>
               </div>
             </div>
 
             {/* Primary issue */}
-            <div className="mx-6 mb-6 rounded-md border border-flaw/30 bg-flaw/[0.06] p-5">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="font-mono text-xs tracking-[0.2em] text-flaw">
-                  #1 · LOW KNEE DRIVE
-                </span>
-                <span className="font-mono text-[9px] tracking-[0.2em] text-flaw">
-                  SEVERITY — HIGH
-                </span>
-              </div>
-              <div className="mt-4 flex items-baseline gap-4 font-mono">
-                <span className="text-3xl text-bone-100">81.2°</span>
-                <span className="text-sm text-muted">measured</span>
-                <span className="text-sm text-gold">optimal 90–95°</span>
-              </div>
-              <p className="mt-3 text-sm leading-relaxed text-bone-300">
-                Your lead thigh is dropping early, reducing vertical flight time and
-                restricting horizontal stride length.
-              </p>
-              <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-hairline/40 pt-4">
-                <span className="font-mono text-xs text-gold">FIX: KNEE DRIVE A-SKIPS</span>
-                <span className="font-mono text-xs text-muted">3 × 20m</span>
-                <span className="text-xs text-bone-300">
-                  “Punch lead foot down directly under hip center.”
-                </span>
+            <div className="p-5">
+              <div className="rounded-md border border-hairline/60 border-l-4 border-l-flaw bg-graphite-800 p-4">
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-[10px] tracking-[0.1em] text-flaw">
+                    #1 · LOW KNEE DRIVE
+                  </span>
+                  <span className="rounded-sm bg-flaw px-2 py-0.5 font-mono text-[9px] font-bold tracking-[0.1em] text-graphite-900">
+                    HIGH
+                  </span>
+                </div>
+
+                <div className="mt-3 flex items-end gap-3">
+                  <span className="font-mono text-4xl font-light text-bone-100">81.2°</span>
+                  <div className="mb-1 flex flex-col gap-0.5">
+                    <span className="font-mono text-[10px] tracking-[0.08em] text-muted">MEASURED</span>
+                    <span className="font-mono text-[10px] tracking-[0.08em] text-gold">OPTIMAL 90–95°</span>
+                  </div>
+                </div>
+
+                {/* Range bar */}
+                <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-graphite-700">
+                  <div className="relative h-full w-full">
+                    <div
+                      className="absolute h-full rounded-full bg-flaw/70"
+                      style={{ width: '54%' }}
+                    />
+                    <div
+                      className="absolute h-full rounded-full bg-gold/50"
+                      style={{ left: '60%', width: '5%' }}
+                    />
+                  </div>
+                </div>
+                <div className="mt-1 flex justify-between font-mono text-[9px] text-muted">
+                  <span>60°</span>
+                  <span className="text-gold">90–95° optimal</span>
+                  <span>110°</span>
+                </div>
+
+                <p className="mt-3 text-[15px] leading-relaxed text-bone-300">
+                  Your lead thigh is dropping early, reducing vertical flight time and
+                  restricting horizontal stride length.
+                </p>
+
+                <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-md border border-hairline/60 bg-graphite-700 px-3 py-2.5">
+                  <span className="font-mono text-[10px] tracking-[0.08em] text-gold">
+                    ↗ KNEE DRIVE A-SKIPS
+                  </span>
+                  <span className="font-mono text-[10px] text-muted">3 × 20m</span>
+                  <span className="text-[13px] italic text-bone-300">
+                    "Punch lead foot down directly under hip center."
+                  </span>
+                </div>
               </div>
             </div>
           </article>
@@ -131,7 +162,7 @@ export default function Metrics() {
             {TILES.map((t, i) => (
               <Reveal key={t.k} delay={0.05 * i}>
                 <div className="rounded-md border border-hairline/60 bg-graphite-850 p-4 transition-colors duration-300 hover:border-bone-300/40">
-                  <p className="font-mono text-[9px] tracking-[0.25em] text-muted">{t.k}</p>
+                  <p className="font-mono text-[10px] tracking-[0.1em] text-muted">{t.k}</p>
                   <p
                     className={`mt-2 font-mono text-xl ${
                       t.tone === 'improve'
@@ -144,7 +175,7 @@ export default function Metrics() {
                     {t.v}
                   </p>
                   <p
-                    className={`mt-2 font-mono text-[8px] tracking-[0.25em] ${
+                    className={`mt-2 font-mono text-[10px] tracking-[0.1em] ${
                       t.tier === 'TRUSTED' ? 'text-gold/80' : 'text-muted'
                     }`}
                   >
@@ -155,32 +186,32 @@ export default function Metrics() {
             ))}
           </div>
 
-          {/* The coach — the premium sell */}
+          {/* AI Coach card */}
           <Reveal delay={0.15}>
-            <article className="mt-4 rounded-lg border border-hairline/60 bg-graphite-850">
+            <article className="mt-4 rounded-md border border-hairline/60 bg-graphite-850">
               <header className="flex items-center justify-between border-b border-hairline/50 px-5 py-3">
-                <span className="font-mono text-[10px] tracking-[0.25em] text-gold">
+                <span className="font-mono text-[11px] tracking-[0.1em] text-gold">
                   AI COACH
                 </span>
-                <span className="font-mono text-[9px] tracking-[0.2em] text-muted">
+                <span className="font-mono text-[10px] tracking-[0.08em] text-muted">
                   KNOWS YOUR HISTORY · DRILLS · CALENDAR
                 </span>
               </header>
               <div className="space-y-3 px-5 py-4">
-                <p className="ml-auto w-fit max-w-[85%] rounded-md bg-graphite-700 px-4 py-2.5 text-sm text-bone-100">
+                <p className="ml-auto w-fit max-w-[85%] rounded-md bg-graphite-700 px-4 py-2.5 text-[15px] text-bone-100">
                   Why is my knee drive flagged?
                 </p>
-                <div className="w-fit max-w-[92%] rounded-md border border-gold/25 bg-gold/[0.05] px-4 py-2.5 text-sm leading-relaxed text-bone-300">
+                <div className="w-fit max-w-[92%] rounded-md border border-hairline/60 bg-graphite-700 px-4 py-2.5 text-[15px] leading-relaxed text-bone-300">
                   Your lead thigh peaked at{' '}
-                  <span className="font-mono text-bone-100">81.2°</span> — your last three
+                  <span className="font-mono text-bone-100">81.2°</span>. Your last three
                   runs averaged <span className="font-mono text-bone-100">83°</span>, so
                   this is a pattern, not a one-off. It's costing you stride length. I've
                   put <span className="text-gold">A-skips, 3 × 20m</span> on Thursday.
                 </div>
               </div>
               <footer className="border-t border-hairline/50 px-5 py-2.5">
-                <p className="font-mono text-[9px] tracking-[0.2em] text-muted">
-                  GROUNDED IN YOUR MEASUREMENTS — NOT GENERIC ADVICE · PREMIUM
+                <p className="font-mono text-[10px] tracking-[0.08em] text-muted">
+                  GROUNDED IN YOUR MEASUREMENTS. NOT GENERIC ADVICE. PREMIUM.
                 </p>
               </footer>
             </article>
@@ -195,14 +226,14 @@ export default function Metrics() {
                 ],
                 [
                   'Optimal ranges, not vibes',
-                  'Every measurement is compared against sprint-literature ranges — you see measured vs. optimal, in degrees and milliseconds.',
+                  'Every measurement is compared against sprint-literature ranges. You see measured vs optimal, in degrees and milliseconds.',
                 ],
               ].map(([title, body]) => (
                 <li key={title} className="flex gap-4">
                   <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-gold" />
                   <div>
                     <p className="font-display font-semibold">{title}</p>
-                    <p className="mt-1 text-sm leading-relaxed text-bone-300">{body}</p>
+                    <p className="mt-1 text-[15px] leading-relaxed text-bone-300">{body}</p>
                   </div>
                 </li>
               ))}

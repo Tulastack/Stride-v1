@@ -208,17 +208,20 @@ export function computeFromParams(p: BodyParams): Pose {
 // ─── Cyclic sprint gait ──────────────────────────────────────────────
 
 // Phase 0 = right foot initial contact.
+// More keyframes + smoother knee drive arc for fluid animation.
 const KEYS: { t: number; thigh: number; knee: number; foot: number }[] = [
-  { t: 0.0, thigh: 27, knee: 25, foot: 10 },
-  { t: 0.08, thigh: 12, knee: 42, foot: 6 },
-  { t: 0.18, thigh: -8, knee: 32, foot: -2 },
-  { t: 0.27, thigh: -24, knee: 30, foot: -14 },
-  { t: 0.38, thigh: -14, knee: 85, foot: -8 },
-  { t: 0.5, thigh: 12, knee: 122, foot: 0 },
-  { t: 0.64, thigh: 48, knee: 112, foot: 4 },
-  { t: 0.74, thigh: 62, knee: 88, foot: 8 },
-  { t: 0.86, thigh: 48, knee: 45, foot: 10 },
-  { t: 0.95, thigh: 33, knee: 26, foot: 10 },
+  { t: 0.00, thigh:  26, knee:  22, foot:  12 },  // right foot strike
+  { t: 0.06, thigh:  14, knee:  35, foot:   8 },  // loading
+  { t: 0.13, thigh:   0, knee:  28, foot:   0 },  // mid-stance
+  { t: 0.22, thigh: -18, knee:  24, foot: -10 },  // late stance
+  { t: 0.32, thigh: -26, knee:  22, foot: -18 },  // toe-off approach
+  { t: 0.40, thigh: -16, knee:  72, foot: -10 },  // early swing, heel recovery
+  { t: 0.50, thigh:  10, knee: 118, foot:  -2 },  // peak knee flexion
+  { t: 0.60, thigh:  46, knee: 112, foot:   2 },  // late swing rising
+  { t: 0.70, thigh:  72, knee:  96, foot:   6 },  // peak knee drive — thigh well past horizontal
+  { t: 0.80, thigh:  60, knee:  62, foot:   8 },  // descending to contact
+  { t: 0.90, thigh:  38, knee:  34, foot:  10 },  // pre-contact
+  { t: 0.97, thigh:  28, knee:  23, foot:  11 },  // contact imminent
 ]
 
 function catmullRom(p0: number, p1: number, p2: number, p3: number, u: number): number {
@@ -262,16 +265,22 @@ function sampleLeg(phase: number): LegParams {
   }
 }
 
-function armAt(ph: number): ArmParams {
+function armAt(ph: number, intensity = 1.0): ArmParams {
+  // Base swing amplitude 50°, elbow variation 28°
+  // Higher intensity (acceleration phase) = wider swing
+  const amp = 50 * intensity
+  const elbowVar = 28 * intensity
   return {
-    swing: 40 * Math.sin(2 * Math.PI * (ph + 0.03)),
-    included: 102 - 22 * Math.sin(2 * Math.PI * (ph + 0.03)),
+    swing: amp * Math.sin(2 * Math.PI * (ph + 0.03)),
+    included: 98 - elbowVar * Math.sin(2 * Math.PI * (ph + 0.03)),
   }
 }
 
 export function gaitParams(t: number, lean = 9): BodyParams {
   const phR = t
   const phL = t + 0.5
+  // Arms swing more aggressively at steep lean (acceleration) than upright sprint
+  const armIntensity = Math.max(0.85, Math.min(1.4, lean / 18))
   return {
     pelvisX: 0.02 * Math.sin(4 * Math.PI * t),
     pelvisY: 0.98 + 0.035 * Math.cos(4 * Math.PI * (t - 0.1)),
@@ -281,8 +290,8 @@ export function gaitParams(t: number, lean = 9): BodyParams {
     headDrop: 0,
     legR: sampleLeg(phR),
     legL: sampleLeg(phL),
-    armR: armAt(phL), // arms counter-phase to same-side leg
-    armL: armAt(phR),
+    armR: armAt(phL, armIntensity), // arms counter-phase to same-side leg
+    armL: armAt(phR, armIntensity),
   }
 }
 
@@ -295,39 +304,54 @@ export function computePose(t: number): Pose {
 // ─── Block start sequence ────────────────────────────────────────────
 
 /**
- * "Set" position, matched to real side-view footage: hips raised ABOVE the
- * shoulders (torso pitched past horizontal, lean > 90°), shoulders stacked
- * over the hands with the arms straight down to the line, front knee ~90° on
- * the front pedal, rear leg longer back to the rear pedal, eyes down.
+ * "Set" position: athlete coiled in the blocks.
+ *
+ * legL/legR thigh+knee are solved (2-link IK, foot angle held fixed) so the
+ * TOE — not just the ankle — lands on the real pedal-face geometry from
+ * StartingBlocks() in BlocksScene.tsx:
+ *   front (left foot)  pedal face ≈ local (-0.111, 0.113)
+ *   rear  (right foot) pedal face ≈ local (-0.479, 0.131)
+ * With pelvisX = -0.10, pelvisY = 0.70 (hip at local (-0.10, 0.64)):
+ *   legL (thigh 44.4°, knee 123.3°, foot 30°) → toe ≈ (-0.111, 0.113) ✓
+ *   legR (thigh -0.6°, knee 101.2°, foot 34°) → toe ≈ (-0.479, 0.131) ✓
+ * (Previous values undershot badly — the rear toe landed ~0.12 units
+ * *below* the ground plane, which read as the foot missing the block
+ * entirely. If the block geometry or pelvis position ever changes, re-solve
+ * rather than hand-tune — these are exact for the current geometry, not
+ * eyeballed.)
  */
 const SET_POSE: BodyParams = {
-  pelvisX: -0.16,
-  pelvisY: 0.74,
-  lean: 102,
+  pelvisX: -0.10,
+  pelvisY: 0.70,
+  lean: 95,          // torso pitched well past horizontal — hips above shoulders
   pelvisYaw: 0,
   shoulderYaw: 0,
-  headDrop: 18,
-  legL: { thigh: 38, knee: 108, foot: 25 }, // front pedal, ~90° knee
-  legR: { thigh: -19, knee: 33, foot: 30 }, // rear pedal, nearly extended
-  armR: { swing: -97, included: 178 }, // straight down, hands at the line
-  armL: { swing: -97, included: 178 },
+  headDrop: 22,      // eyes down at the line
+  // Front (left) foot — knee bent ~90°, foot dorsiflexed into the pedal
+  legL: { thigh: 44.4, knee: 123.3, foot: 30 },
+  // Rear (right) foot — leg more extended, ankle plantar-flexed into rear pedal
+  legR: { thigh: -0.6, knee: 101.2, foot: 34 },
+  // Arms straight down, weight through knuckles on the line
+  armR: { swing: -92, included: 174 },
+  armL: { swing: -92, included: 174 },
 }
 
 /**
- * End of the drive: full triple extension off the front pedal — push leg one
- * straight line hip to toe, rear knee punched through, arms ripped apart.
+ * First drive step: explosive triple extension. Push leg nearly straight,
+ * rear knee punching forward and up, arms ripping apart with full range.
  */
 const DRIVE_POSE: BodyParams = {
-  pelvisX: 0.34,
-  pelvisY: 0.84,
-  lean: 46,
-  pelvisYaw: 6,
-  shoulderYaw: -8,
-  headDrop: 16,
-  legL: { thigh: -32, knee: 8, foot: -24 }, // extended push leg
-  legR: { thigh: 64, knee: 94, foot: 4 }, // driving knee
-  armR: { swing: -54, included: 134 }, // arms split
-  armL: { swing: 50, included: 78 },
+  pelvisX: 0.42,
+  pelvisY: 0.88,
+  lean: 42,
+  pelvisYaw: 7,
+  shoulderYaw: -9,
+  headDrop: 12,
+  legL: { thigh: -36, knee: 5, foot: -28 },   // push leg fully extended
+  legR: { thigh: 80, knee: 104, foot: 8 },     // drive knee punching high and forward
+  // Strong, wide arm split — back arm driving elbow past hip, front punching forward
+  armR: { swing: -78, included: 115 },
+  armL: { swing: 74, included: 64 },
 }
 
 function lerp(a: number, b: number, u: number) {
@@ -364,9 +388,9 @@ function easeInOut(u: number) {
   return u < 0.5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2
 }
 
-export const START_LOOP = 4.6 // seconds
-const DRIVE_AT = 1.4 // gun goes off
-const DRIVE_LEN = 0.45 // real block clearance is ~0.35-0.45s
+export const START_LOOP = 5.8 // seconds — longer so runner gets further down the track
+const DRIVE_AT = 1.6 // brief hold in set, then gun
+const DRIVE_LEN = 0.42
 const RUN_AT = DRIVE_AT + DRIVE_LEN
 
 export interface StartFrame {
@@ -378,11 +402,11 @@ export interface StartFrame {
 }
 
 /**
- * Block start on a repeating loop, timed like the real thing:
- * 0.0-1.4s    set position, held (breathing micro-sway)
- * 1.4-1.85s   the drive — one explosive triple extension off the front pedal
- * 1.85s+      acceleration strides: quick turnover, lean rising 46° -> 12°
- * last 0.6s   fade, loop restarts in the blocks
+ * Block start on a repeating loop:
+ * 0.0-1.6s    set position, held with subtle breathing sway
+ * 1.6-2.02s   explosive drive off the front pedal
+ * 2.02s+      acceleration strides: lean dropping 44 to 10 degrees
+ * last 0.5s   fade out, loop restarts silently in the blocks
  */
 export function startFrame(time: number): StartFrame {
   const t = ((time % START_LOOP) + START_LOOP) % START_LOOP
@@ -391,29 +415,45 @@ export function startFrame(time: number): StartFrame {
   let travel = 0
 
   if (t < DRIVE_AT) {
-    // SET — breathing micro-sway
-    const sway = Math.sin(t * 2.4) * 0.007
-    params = { ...SET_POSE, pelvisY: SET_POSE.pelvisY + sway }
+    // SET — subtle breathing sway
+    const sway = Math.sin(t * 2.2) * 0.006
+    const breathLean = Math.sin(t * 1.8) * 0.4
+    params = { ...SET_POSE, pelvisY: SET_POSE.pelvisY + sway, lean: SET_POSE.lean + breathLean }
   } else if (t < RUN_AT) {
-    // DRIVE — explosive, ease-out (fastest at the gun)
+    // DRIVE — explosive off the blocks. Real sprint starts aren't symmetric:
+    // the rear (back) leg leaves the pedal and punches its knee through
+    // early/fast to become the first step, while the front leg stays loaded
+    // and extends more gradually. Stagger the two legs (and their
+    // contralateral arms) instead of lerping everything on one clock, or it
+    // reads as both legs firing in sync.
     const u = (t - DRIVE_AT) / DRIVE_LEN
-    const e = 1 - (1 - u) * (1 - u)
+    const ease = (x: number) => 1 - (1 - x) * (1 - x) * (1 - x)
+    const e = ease(u)
+    const eDrive = ease(Math.min(u * 1.4, 1)) // rear leg + front arm: fast, early
+    const ePush = ease(Math.max(0, (u - 0.15) / 0.85)) // front leg + back arm: delayed
+
     params = lerpBody(SET_POSE, DRIVE_POSE, e)
-    travel = e * 0.5
+    params.legR = lerpLeg(SET_POSE.legR, DRIVE_POSE.legR, eDrive) // rear (back) leg drives first
+    params.armL = lerpArm(SET_POSE.armL, DRIVE_POSE.armL, eDrive) // contralateral arm
+    params.legL = lerpLeg(SET_POSE.legL, DRIVE_POSE.legL, ePush) // front leg keeps pushing
+    params.armR = lerpArm(SET_POSE.armR, DRIVE_POSE.armR, ePush)
+    travel = e * 0.55
   } else {
-    // ACCELERATE — blend into the gait cycle over one drive-step,
-    // turnover ramping from ~1.9 to ~2.4 strides/s
+    // ACCELERATE — blend into cyclic gait, turnover ramping up
     const tt = t - RUN_AT
-    const blend = Math.min(tt / 0.35, 1)
-    const runPhase = 0.72 + 1.9 * tt + 0.06 * tt * tt
-    const lean = lerp(46, 12, Math.min(tt / 2.2, 1))
+    const blendDur = 0.4
+    const blend = Math.min(tt / blendDur, 1)
+    // Gait phase starts at 0.72 (matching drive leg position) and ramps up
+    const runPhase = 0.72 + 1.85 * tt + 0.08 * tt * tt
+    // Lean eases from drive lean (44°) down to upright sprint (10°) over 2.5s
+    const lean = lerp(44, 10, Math.min(tt / 2.5, 1))
     const run = gaitParams(runPhase, lean)
     params = blend < 1 ? lerpBody(DRIVE_POSE, run, easeInOut(blend)) : run
-    travel = 0.5 + 1.5 * tt + 0.25 * tt * tt
+    travel = 0.55 + 1.6 * tt + 0.22 * tt * tt
   }
 
-  const fadeIn = t < 0.25 ? t / 0.25 : 1
-  const fadeOut = t > START_LOOP - 0.3 ? Math.max(0, (START_LOOP - t) / 0.3) : 1
+  const fadeIn = t < 0.3 ? t / 0.3 : 1
+  const fadeOut = t > START_LOOP - 0.5 ? Math.max(0, (START_LOOP - t) / 0.5) : 1
 
   return {
     pose: computeFromParams(params),

@@ -3,10 +3,10 @@ import SectionHeading from './SectionHeading'
 
 const ROWS: [string, boolean, string, string, string][] = [
   ['Sprint-specific biometrics', true, '✓', '✕', '✓'],
-  ['Any-angle phone video', true, '✕', '✕', '—'],
+  ['Any-angle phone video', true, '✕', '✕', '?'],
   ['3D gravity alignment', true, '✕', '✕', '✕'],
   ['Under $5 / month', true, '✕', '✕', '✕'],
-  ['Coach, plans & calendar', true, '✕', '✕', '✓'],
+  ['Coach, plans and calendar', true, '✕', '✕', '✓'],
 ]
 
 const COLS = ['Lab motion capture', 'Form-check apps', 'Private coaching']

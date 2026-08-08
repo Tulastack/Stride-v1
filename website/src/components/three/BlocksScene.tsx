@@ -5,7 +5,7 @@ import { startFrame, type StartFrame } from '../../lib/gait'
 import DotFigure from './DotFigure'
 import TrackGround from './TrackGround'
 
-const START_X = -1.7 // where the blocks sit
+const START_X = -1.5 // where the blocks sit — shifted slightly right for better framing
 
 /** Starting blocks: centre rail with two angled pedals, plus the start line. */
 function StartingBlocks() {
@@ -57,27 +57,50 @@ function SceneInner() {
   const frameRef = useRef<StartFrame>(startFrame(0))
   const groupRef = useRef<THREE.Group>(null)
   const opacity = useRef(0)
+  const camX = useRef(-0.4)
+  const camY = useRef(1.2)
+  const camZ = useRef(3.6)
 
   useFrame(({ clock, camera }) => {
     const f = startFrame(clock.getElapsedTime())
     frameRef.current = f
-    opacity.current = f.fade * 0.62 // background layer — hazier than the hero
+    opacity.current += (f.fade * 0.58 - opacity.current) * 0.1
+
+    const runnerX = START_X + f.travel
     if (groupRef.current) {
-      groupRef.current.position.x = START_X + 0.16 + f.travel
+      groupRef.current.position.x = runnerX
     }
-    camera.lookAt(0.55, 0.78, 0)
+
+    // During set position, frame tightly on the athlete + blocks
+    // As they run, pan right to follow while widening slightly
+    const inSet = f.travel < 0.1
+    const targetCamX = inSet
+      ? START_X + 0.6   // frame the whole set + blocks
+      : Math.min(runnerX + 0.4, 2.4)
+    const targetCamY = inSet ? 1.1 : 1.2
+    const targetCamZ = inSet ? 3.2 : 3.8
+
+    const k = 0.035
+    camX.current += (targetCamX - camX.current) * k
+    camY.current += (targetCamY - camY.current) * k
+    camZ.current += (targetCamZ - camZ.current) * k
+
+    camera.position.set(camX.current, camY.current, camZ.current)
+    // Look slightly ahead of the runner
+    const lookX = inSet ? START_X + 0.1 : runnerX - 0.1
+    camera.lookAt(lookX, 0.75, 0)
   })
 
   return (
     <>
-      <TrackGround size={20} opacity={0.6} position={[1.2, 0, 0]} />
+      <TrackGround size={28} opacity={0.5} position={[1.5, 0, 0]} />
       <StartingBlocks />
       <group ref={groupRef}>
         <DotFigure
           sample={() => frameRef.current.pose}
           opacityRef={opacity}
-          density={0.7}
-          goldFraction={0.2}
+          density={0.78}
+          goldFraction={0.22}
         />
       </group>
     </>
@@ -96,7 +119,7 @@ export default function BlocksScene() {
         powerPreference: 'high-performance',
         toneMapping: THREE.NoToneMapping,
       }}
-      camera={{ position: [1.1, 1.1, 3.5], fov: 36 }}
+      camera={{ position: [-0.4, 1.1, 3.2], fov: 38 }}
       style={{ background: 'transparent' }}
     >
       <SceneInner />

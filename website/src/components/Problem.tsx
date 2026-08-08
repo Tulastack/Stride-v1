@@ -3,7 +3,7 @@ import SectionHeading from './SectionHeading'
 
 const CARDS = [
   {
-    stat: '$200–500',
+    stat: '$200 to $500',
     unit: 'PER SESSION',
     title: 'Elite coaching is a luxury good',
     body: 'Private sprint coaching runs hundreds of dollars an hour. For almost every young runner, real form feedback is simply out of reach.',
@@ -12,7 +12,7 @@ const CARDS = [
     stat: '1 : 40+',
     unit: 'COACH TO ATHLETES',
     title: 'Team coaches are spread thin',
-    body: 'School track rosters are huge. Most runners never get individual attention — so the same form errors persist season after season.',
+    body: 'School track rosters are huge. Most runners never get individual attention, so the same form errors persist season after season.',
   },
   {
     stat: 'SIDE-ON',

@@ -9,25 +9,25 @@ import TrackGround, { TRACK_SPEED } from './TrackGround'
 const GOLD = '#E8C87D'
 const CYCLE = 1.15
 
+// Exactly 17 keypoints matching COCO-17 layout (no 'chest' — that's not a COCO joint)
 const JOINTS: JointName[] = [
-  'head',
-  'neck',
-  'chest',
-  'pelvis',
-  'hipL',
-  'hipR',
-  'kneeL',
-  'kneeR',
-  'ankleL',
-  'ankleR',
-  'toeL',
-  'toeR',
-  'shoulderL',
-  'shoulderR',
-  'elbowL',
-  'elbowR',
-  'wristL',
-  'wristR',
+  'head',       // 0  nose
+  'neck',       // 1  (mid-shoulder proxy)
+  'shoulderL',  // 2  left_shoulder
+  'shoulderR',  // 3  right_shoulder
+  'elbowL',     // 4  left_elbow
+  'elbowR',     // 5  right_elbow
+  'wristL',     // 6  left_wrist
+  'wristR',     // 7  right_wrist
+  'hipL',       // 8  left_hip
+  'hipR',       // 9  right_hip
+  'kneeL',      // 10 left_knee
+  'kneeR',      // 11 right_knee
+  'ankleL',     // 12 left_ankle
+  'ankleR',     // 13 right_ankle
+  'toeL',       // 14 left_foot_index
+  'toeR',       // 15 right_foot_index
+  'pelvis',     // 16 (mid-hip proxy)
 ]
 
 // Per-step targets: camera azimuth (rad, orbit if null), dot opacity,

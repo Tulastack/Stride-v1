@@ -36,8 +36,26 @@ KEYPOINT_FORMAT = "coco17"
 # Override via env RTMPOSE_CONFIDENCE_THRESHOLD.
 _CONF_THRESHOLD = float(os.environ.get("RTMPOSE_CONFIDENCE_THRESHOLD", "0.3"))
 
-# Lucas-Kanade params for the dual-rate ankle signal (tracked between pose
-# keyframes at full source fps — see iter_frames' timing_out / biomech2d).
+# Max pixel dimension fed to YOLOX+RTMPose. Frames wider/taller than this are
+# downscaled before inference and coordinates are rescaled back — no accuracy
+# impact for running gait analysis (joints are large, not fine-detail).
+# Override via env RTMPOSE_MAX_DIM (set to 0 to disable).
+_MAX_DIM = int(os.environ.get("RTMPOSE_MAX_DIM", "640"))
+
+
+def _maybe_downscale(frame: np.ndarray) -> tuple[np.ndarray, float]:
+    """Downscale frame if its longest dimension exceeds _MAX_DIM.
+    Returns (resized_frame, scale) where scale = resized / original.
+    scale=1.0 means no resize was done."""
+    if _MAX_DIM <= 0:
+        return frame, 1.0
+    h, w = frame.shape[:2]
+    longest = max(h, w)
+    if longest <= _MAX_DIM:
+        return frame, 1.0
+    scale = _MAX_DIM / longest
+    new_w, new_h = int(w * scale), int(h * scale)
+    return cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_LINEAR), scale
 _LK_PARAMS = dict(
     winSize=(21, 21), maxLevel=2,
     criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03),
@@ -56,7 +74,7 @@ def _load_body(mode: str | None = None) -> Any:
     if _body is None:
         from rtmlib import Body  # imported lazily so movenet-only deploys don't need rtmlib
 
-        mode = mode or os.environ.get("RTMPOSE_MODE", "balanced")
+        mode = mode or os.environ.get("RTMPOSE_MODE", "lightweight")
         logger.info("Loading YOLOX+RTMPose (mode=%s) via rtmlib/onnxruntime …", mode)
         _body = Body(mode=mode, backend="onnxruntime", device="cpu")
         logger.info("RTMPose backend loaded.")
@@ -175,7 +193,11 @@ def iter_frames(video_path: str, target_fps: int = 30, target=None, timing_out=N
                         cx0, cy0, cx1, cy1 = 0, 0, w, h
                     crop = frame[cy0:cy1, cx0:cx1]
                     cw, ch = cx1 - cx0, cy1 - cy0
-                    kpts_c, scores_c = body(crop)
+                    # Downscale crop before inference; coords rescaled back below.
+                    crop_inf, crop_scale = _maybe_downscale(crop)
+                    kpts_c, scores_c = body(crop_inf)
+                    if crop_scale != 1.0 and len(kpts_c) > 0:
+                        kpts_c = [xy / crop_scale for xy in kpts_c]
                     idx = tracker.select(kpts_c, scores_c, crop, (cx0, cy0), (cw, ch)) if len(scores_c) > 0 else None
                     if idx is not None:
                         xy, sc = kpts_c[idx], scores_c[idx]
@@ -188,7 +210,10 @@ def iter_frames(video_path: str, target_fps: int = 30, target=None, timing_out=N
                         tracker.miss += 1
                 else:
                     # ── no target: full-frame lock-and-follow (auto) ──
-                    kpts, scores = body(frame)
+                    frame_inf, frame_scale = _maybe_downscale(frame)
+                    kpts, scores = body(frame_inf)
+                    if frame_scale != 1.0 and len(kpts) > 0:
+                        kpts = [xy / frame_scale for xy in kpts]
                     best, cent = _select_person(kpts, scores, w, h, tgt, core_idx)
                     if best is not None:
                         tgt = cent
