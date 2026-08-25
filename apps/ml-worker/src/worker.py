@@ -85,6 +85,14 @@ LOCAL_STORAGE_DIR = os.environ.get("LOCAL_STORAGE_DIR", "/tmp/stride-local-stora
 # (apps/api/src/analysis/engine/engine.ts, reached via POST
 # /internal/analysis-biomech) is kept working, not deleted, just dormant
 # until something explicitly starts this worker with STRIDE_PIPELINE=wham.
+#   STRIDE_PIPELINE=3d      — RTMW3D image->3D + canonical frame + virtual
+#                           cameras, with per-segment viewpoint routing. Handles
+#                           a clip whose viewpoint CHANGES (a rotating operator,
+#                           a runner going around a bend) by routing each metric
+#                           to the segment that actually observed it. Measured on
+#                           a synthetic lap: 2.45 deg vs 7.13 deg for whole-clip,
+#                           and it certifies knee valgus + pelvic drop, which no
+#                           side-on capture can supply at all.
 #   STRIDE_PIPELINE=2d      (default) — RTMPose + 2D sagittal biomechanics. The
 #                           production path: accurate sagittal angles from a good
 #                           2D backbone, no fragile monocular 3D lift. CPU-friendly.
@@ -183,6 +191,16 @@ def _image_down_from_capture(capture: dict) -> tuple[float, float] | None:
     return (-my / mag, mx / mag)
 
 
+# Longest stretch of a clip we analyse. The old cap was a bare 450-frame count,
+# which at POSE_FPS=15 silently truncated anything over 30 s -- a 400 m lost its
+# back half, where the race is actually decided, with nothing said about it.
+MAX_ANALYSIS_SECONDS = float(os.environ.get("MAX_ANALYSIS_SECONDS", "120"))
+
+
+def _max_frames(pose_fps: float) -> int:
+    return max(64, int(round(MAX_ANALYSIS_SECONDS * float(pose_fps))))
+
+
 def _run_2d(analysis_id: str, video_path: str, capture: dict, s3_key: str | None = None) -> None:
     """RTMPose 2D keypoints -> 2D sagittal biomechanics -> AnalysisResult.
 
@@ -237,6 +255,7 @@ def _run_2d(analysis_id: str, video_path: str, capture: dict, s3_key: str | None
         image_down=image_down,
         timing_signal=timing_signal,
         timing_fps=source_fps,
+        max_frames=_max_frames(eff_fps),
     )
     _write_overlay(video_path, s3_key, {
         "fps": eff_fps,
@@ -283,6 +302,71 @@ def _run_2d(analysis_id: str, video_path: str, capture: dict, s3_key: str | None
                     "UPDATE analyses SET status='completed', overall_score=%s, result_json=%s, movenet_version=%s, completed_at=now() WHERE id=%s",
                     (overall_score, json.dumps(result), model_version, analysis_id),
                 )
+
+
+def _run_3d(analysis_id: str, video_path: str, capture: dict, s3_key: str | None = None) -> None:
+    """RTMW3D image->3D -> canonical frame -> virtual cameras -> AnalysisResult.
+
+    Unlike the 2D path this does NOT assume one viewpoint for the clip. A
+    rotating operator, or a runner coming off a bend, presents a different
+    viewpoint every second; `analyze_3d_multisegment` scores each segment for how
+    well it saw the sagittal and frontal planes and routes each metric to the
+    segment that actually observed it. A single-viewpoint clip falls back to the
+    whole-clip path unchanged.
+    """
+    from src.pose3d_rtmw import extract_3d_sequence
+    from src.analyze3d import analyze_3d_multisegment
+    from src.lift3d import gravity_up_from_capture
+
+    capture_fps = float(capture.get("fps") or capture.get("preferredFps") or 30)
+    pose_fps = int(os.environ.get("POSE_FPS", "15"))
+
+    notify_progress(analysis_id, "pose_extraction", 30, "RTMW3D 3D keypoints")
+    tgt = capture.get("target")
+    poses, conf, meta = extract_3d_sequence(
+        video_path, target=tgt, target_fps=pose_fps,
+        max_frames=_max_frames(pose_fps))
+
+    # Gravity from the phone IMU makes the canonical frame invariant to camera
+    # pitch and roll, not just yaw. Absent, Stage 4 falls back to assuming +Y up.
+    up = gravity_up_from_capture(capture)
+
+    notify_progress(analysis_id, "biomechanics_calculation", 75, "Canonical-frame metrics")
+    result = analyze_3d_multisegment(
+        poses, conf, fps=meta["poseFps"], up_world=up,
+        source_fps=meta["sourceFps"], capture_fps=capture_fps,
+        clip_id=analysis_id[:8])
+
+    cq = result["captureQuality"]
+    if capture.get("motionBlur"):
+        cq["motionBlur"] = capture["motionBlur"]
+    if capture.get("framing"):
+        cq["framing"] = capture["framing"]
+    cq["segmentCV"] = meta.get("segmentCV")
+    cq["segmentBias"] = meta.get("segmentBias")
+
+    result["reconstructionMethod"] = "3d-mono"
+    result["model_meta"] = {
+        "backend": meta["backend"], "model_version": meta["backend"],
+        "detector": "yolox", "device": "cpu", "poseFps": meta["poseFps"],
+        "pipeline": "3d-multisegment", "keypointFormat": "coco17",
+    }
+
+    overall_score = int(result.get("economyScore") or 0)
+    notify_progress(analysis_id, "finalizing", 95, "Complete")
+    ok = notify_analysis_completed(analysis_id, overall_score, result)
+    if not ok:
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE analyses SET status='completed', overall_score=%s, result_json=%s, movenet_version=%s, completed_at=now() WHERE id=%s",
+                    (overall_score, json.dumps(result), meta["backend"], analysis_id),
+                )
+
+
+def _process_3d(analysis_id: str, s3_key: str, local_video: str) -> None:
+    capture = download_capture_sidecar(s3_client, s3_bucket, s3_key, local_video)
+    _run_3d(analysis_id, local_video, capture, s3_key)
 
 
 def _process_2d_sagittal(analysis_id: str, s3_key: str, local_video: str) -> None:
@@ -405,7 +489,10 @@ def process_sqs_message(message: dict) -> bool:
         notify_progress(analysis_id, "downloading", 10)
         s3_client.download_file(s3_bucket, s3_key, local_temp_file)
 
-        if PIPELINE == "wham":
+        if PIPELINE == "3d":
+            logger.info("Running RTMW3D + canonical-frame pipeline (multi-segment)")
+            _process_3d(analysis_id, s3_key, local_temp_file)
+        elif PIPELINE == "wham":
             logger.info("Running WHAM + OpenCap pipeline (Stages 2–3)")
             _process_wham_opencap(analysis_id, s3_key, local_temp_file)
         elif PIPELINE == "legacy":
@@ -499,7 +586,10 @@ def _process_local(analysis_id: str, s3_key: str) -> None:
             return
         _MISSING_VIDEO.pop(analysis_id, None)
         capture = _read_local_capture(s3_key)
-        if PIPELINE == "wham":
+        if PIPELINE == "3d":
+            logger.info("Running RTMW3D + canonical-frame pipeline (multi-segment)")
+            _process_3d(analysis_id, s3_key, local_temp_file)
+        elif PIPELINE == "wham":
             _process_wham_opencap(analysis_id, s3_key, video_path)
         elif PIPELINE == "legacy":
             _process_legacy_llm(analysis_id, video_path)

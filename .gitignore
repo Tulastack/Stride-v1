@@ -91,3 +91,8 @@ yarn-error.log*
 
 test-videos/
 apps/mobile/.env
+
+# ML model weights: large binaries, and RTMW3D provenance is uncleared
+# (training mix likely includes H3WB / Human3.6M, academic use only).
+.models/
+*.onnx
