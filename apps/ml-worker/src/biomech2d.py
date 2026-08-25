@@ -720,7 +720,30 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
         overstride_pct = float(np.median(os_vals)) * 100.0
     # NO ceiling clamp (same reasoning as overstride: the baseline found 25%
     # saturation on every clip) — the plausibility gate owns implausible values.
-    vo_pct = float((a["hip_y"].max() - a["hip_y"].min()) / max(np.median(a["torso_len"]), 1e-6)) * 100.0
+    # Vertical oscillation is the athlete's BOUNCE, which is a per-stride
+    # wobble, not the total travel of the hip across the frame. Measuring the
+    # raw range conflates three things: real bounce, the operator panning, and
+    # the athlete traversing the shot. Measured across all nine test clips the
+    # raw version returned 111%, 157%, 454% and 769% of torso length against a
+    # 4-11% healthy band -- it failed the physical envelope on 6 of 7 clips it
+    # ran on, so the metric was effectively dead on real footage.
+    #
+    # Detrending against a stride-length moving average removes the slow
+    # component (pan + traversal) and leaves the fast one (bounce). It is not a
+    # substitute for real camera-motion compensation from the gyro, which is
+    # still the right fix; it is the part that can be done without it.
+    _hip_v = a["hip_y"]
+    _stride_w = max(3, int(round(pose_fps * 0.42)))     # ~1 stride at sprint cadence
+    if len(_hip_v) > _stride_w:
+        _trend = _smooth(_hip_v, _stride_w)
+        _bounce = _hip_v - _trend
+        # trim the convolution edges, which are zero-padded and not real signal
+        _e = _stride_w // 2
+        _bounce = _bounce[_e:-_e] if len(_bounce) > 2 * _e else _bounce
+    else:
+        _bounce = _hip_v - float(np.mean(_hip_v))
+    vo_pct = float(np.percentile(_bounce, 97.5) - np.percentile(_bounce, 2.5)) \
+        / max(float(np.median(a["torso_len"])), 1e-6) * 100.0
 
     # ── Static-subject guard (the "guard" half of the P0 fix) ──────────────────
     # A running subject's near ankle swings strongly in image-y each stride; a
