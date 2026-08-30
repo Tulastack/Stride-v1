@@ -87,6 +87,7 @@ const sampleDrill: ReferenceDrill = {
   cues: ['Punch foot down under hip', 'Drive knee to 90°', 'Stay tall through hips'],
   contraindications: ['knee_pain', 'hip_flexor_strain'],
   target_metrics: ['knee_drive_angle'],
+  recovery_phases: [],
   created_at: new Date('2024-01-01'),
 };
 

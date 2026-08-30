@@ -108,6 +108,27 @@ CREATE TABLE suggestion_audit (
 -- ALTER TABLE users ADD COLUMN IF NOT EXISTS drill_intensity_cap VARCHAR(20) CHECK (drill_intensity_cap IN ('moderate','full'));
 -- ALTER TABLE users ADD COLUMN IF NOT EXISTS is_injured BOOLEAN NOT NULL DEFAULT FALSE;
 
+-- Migration: Add reference_drills.recovery_phases + the metric_biomechanics
+-- table (run against existing DBs — see the metric_biomechanics research pipeline)
+-- ALTER TABLE reference_drills ADD COLUMN IF NOT EXISTS recovery_phases JSONB NOT NULL DEFAULT '[]';
+-- CREATE TABLE IF NOT EXISTS metric_biomechanics (
+--     metric_key VARCHAR(100) PRIMARY KEY,
+--     body_region VARCHAR(100) NOT NULL,
+--     primary_structure VARCHAR(200) NOT NULL,
+--     mechanism TEXT NOT NULL,
+--     injury_risks JSONB NOT NULL DEFAULT '[]',
+--     confidence VARCHAR(20) NOT NULL CHECK (confidence IN ('established','emerging','preliminary')),
+--     correlation_or_causal VARCHAR(20) NOT NULL CHECK (correlation_or_causal IN ('causal_mechanism','correlational','biomechanically_plausible')),
+--     hedge_note TEXT,
+--     citations JSONB NOT NULL DEFAULT '[]',
+--     checker_a_verdict VARCHAR(20) NOT NULL CHECK (checker_a_verdict IN ('confirmed','partial','contradicted','no_lit_found')),
+--     checker_b_verdict VARCHAR(20) NOT NULL CHECK (checker_b_verdict IN ('confirmed','partial','contradicted','no_lit_found')),
+--     reviewed_by VARCHAR(255),
+--     reviewed_at TIMESTAMPTZ,
+--     pipeline_run_id VARCHAR(100) NOT NULL,
+--     created_at TIMESTAMPTZ DEFAULT now()
+-- );
+
 -- ─── Reference Drills ─────────────────────────────────────────────
 CREATE TABLE reference_drills (
     key VARCHAR(100) PRIMARY KEY,
@@ -117,6 +138,53 @@ CREATE TABLE reference_drills (
     cues JSONB NOT NULL DEFAULT '[]',
     contraindications JSONB NOT NULL DEFAULT '[]',
     target_metrics JSONB NOT NULL DEFAULT '[]',
+    -- An ORDERED, TIME-BASED 4-phase corrective program — NOT interchangeable
+    -- difficulty tiers picked by athlete level. Every athlete who gets this
+    -- metric's flaw progresses phase 1 -> 2 -> 3 -> 4 in order; each phase has
+    -- its own FIXED exercise group, done for that phase's duration, then the
+    -- whole group swaps at the phase boundary. See generateRecoveryProgram()
+    -- in calendar/trainingPlan.ts for how this becomes calendar_events.
+    -- Shape: [{
+    --   phase: 1|2|3|4,
+    --   name: "Stability"|"Strength"|"Plyometrics & Movement"|"Back to Sport",
+    --   durationWeeksMin, durationWeeksMax: number,
+    --   daysPerWeek: number,
+    --   exercises: [{name, sets, reps, cue, rationale, sourceCitation}],
+    --   advanceCriteria: string
+    -- }]
+    -- Populated from metric_biomechanics once a metric's research has been
+    -- human-reviewed (see metric_biomechanics.reviewed_by) — '[]' means no
+    -- reviewed phase content exists yet, not an error; approveSuggestion()
+    -- falls back to the flat drillId/sets/reps dosing when empty.
+    recovery_phases JSONB NOT NULL DEFAULT '[]',
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- ─── Metric Biomechanics (offline research pipeline output) ──────────────
+-- Populated by apps/api/scripts/research/generate-metric-biomechanics.ts
+-- (biometrics agent -> 2 independent checkers -> human review), then synced
+-- into biomech2d.py's WHY dict, coach/knowledge.ts, and
+-- reference_drills.recovery_phases ONLY once reviewed_by is set. This table
+-- is the durable, auditable SOURCE — not read at runtime by the analysis
+-- pipeline or the coach agent,
+-- by design (see docs/research/metric-biomechanics.md).
+CREATE TABLE metric_biomechanics (
+    metric_key VARCHAR(100) PRIMARY KEY,      -- must match biomech2d.py NORMAL_RANGE keys exactly
+    body_region VARCHAR(100) NOT NULL,
+    primary_structure VARCHAR(200) NOT NULL,
+    mechanism TEXT NOT NULL,
+    injury_risks JSONB NOT NULL DEFAULT '[]', -- [{name, mechanism_note}]
+    confidence VARCHAR(20) NOT NULL
+        CHECK (confidence IN ('established','emerging','preliminary')),
+    correlation_or_causal VARCHAR(20) NOT NULL
+        CHECK (correlation_or_causal IN ('causal_mechanism','correlational','biomechanically_plausible')),
+    hedge_note TEXT,
+    citations JSONB NOT NULL DEFAULT '[]',    -- [{citation, url_or_doi, what_it_shows}]
+    checker_a_verdict VARCHAR(20) NOT NULL CHECK (checker_a_verdict IN ('confirmed','partial','contradicted','no_lit_found')),
+    checker_b_verdict VARCHAR(20) NOT NULL CHECK (checker_b_verdict IN ('confirmed','partial','contradicted','no_lit_found')),
+    reviewed_by VARCHAR(255),                 -- human reviewer; NULL = not yet cleared to ship
+    reviewed_at TIMESTAMPTZ,
+    pipeline_run_id VARCHAR(100) NOT NULL,
     created_at TIMESTAMPTZ DEFAULT now()
 );
 

@@ -1,7 +1,7 @@
 import pg from 'pg';
 import type { User, Analysis, CalendarEvent, CoachSession, DrillSuggestion, ReferenceDrill, MetricsTimelineRow } from '../types.js';
 import { dbConnectionConfig } from './dsql.js';
-import { generateDrillProgram } from '../calendar/trainingPlan.js';
+import { generateDrillProgram, generateRecoveryProgram, type RecoveryPhase } from '../calendar/trainingPlan.js';
 
 const { Pool } = pg;
 
@@ -511,31 +511,45 @@ export async function approveSuggestion(
 
     // "Why this drill" text for the calendar detail view — already sitting
     // unused on reference_drills, so no schema change needed to surface it.
-    const { rows: refDrillRows } = await client.query<{ description: string | null; cues: string[] }>(
-      'SELECT description, cues FROM reference_drills WHERE key = $1',
+    const { rows: refDrillRows } = await client.query<{
+      description: string | null;
+      cues: string[];
+      recovery_phases: RecoveryPhase[];
+    }>(
+      'SELECT description, cues, recovery_phases FROM reference_drills WHERE key = $1',
       [updatedSuggestion.drill_key],
     );
     const refDrill = refDrillRows[0];
 
-    // Build the full progressive program (multiple sessions spread over
-    // several weeks, volume increasing, shaped to this athlete and this
-    // flaw) instead of a single occurrence — see calendar/trainingPlan.ts.
-    // This is what makes approving a suggestion commit to an actual
-    // training block rather than a one-off activity.
-    const sessions = generateDrillProgram(
-      {
-        drillKey: updatedSuggestion.drill_key,
-        drillName: updatedSuggestion.drill_name,
-        cue: rec?.cue ?? '',
-        sets: rec?.sets ?? 3,
-        reps: rec?.reps ?? 10,
-        why: refDrill?.description ?? undefined,
-        cues: refDrill?.cues,
-      },
-      updatedSuggestion.id,
-      updatedSuggestion.suggested_date,
-      athlete,
-    );
+    // Two program shapes, chosen by whether this drill's metric has been
+    // through the offline research pipeline AND human-reviewed
+    // (reference_drills.recovery_phases non-empty). Reviewed metrics get the
+    // real 4-phase recovery arc (Stability -> Strength -> Plyometrics &
+    // Movement -> Back to Sport); everything else falls back to the
+    // original flat, progressively-loaded single-drill block — never an
+    // error, just less content than a reviewed metric has earned.
+    const sessions =
+      refDrill?.recovery_phases && refDrill.recovery_phases.length > 0
+        ? generateRecoveryProgram(
+            updatedSuggestion.drill_key,
+            refDrill.recovery_phases,
+            updatedSuggestion.id,
+            updatedSuggestion.suggested_date,
+          )
+        : generateDrillProgram(
+            {
+              drillKey: updatedSuggestion.drill_key,
+              drillName: updatedSuggestion.drill_name,
+              cue: rec?.cue ?? '',
+              sets: rec?.sets ?? 3,
+              reps: rec?.reps ?? 10,
+              why: refDrill?.description ?? undefined,
+              cues: refDrill?.cues,
+            },
+            updatedSuggestion.id,
+            updatedSuggestion.suggested_date,
+            athlete,
+          );
 
     const valueClauses: string[] = [];
     const values: unknown[] = [];

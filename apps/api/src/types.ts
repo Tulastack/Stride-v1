@@ -1,4 +1,5 @@
 import type { Request } from 'express';
+import type { RecoveryPhase } from './calendar/trainingPlan.js';
 
 // ─── Database row types ───────────────────────────────────────────
 
@@ -119,6 +120,9 @@ export interface ReferenceDrill {
   cues: string[];
   contraindications: string[];
   target_metrics: string[];
+  // '[]' until this drill's metric has been through the offline biomechanics
+  // research pipeline AND human-reviewed — see calendar/trainingPlan.ts.
+  recovery_phases: RecoveryPhase[];
   created_at: Date;
 }
 
