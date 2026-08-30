@@ -191,6 +191,18 @@ OVERSTRIDE_VP_MAX = 0.3
 # Perspective/scale corrupt vertical CoM off-axis and it is unmeasured on runners
 # (honesty ledger #9) — keep it a candidate, never headline-trusted yet.
 CANDIDATE = {"vertical_oscillation"}
+
+# Metrics whose IDEAL reading is zero. For these, 0.0 is the best possible
+# result, not a missing measurement.
+#
+# The plausibility gate reads `val > 0` to catch a metric that never got
+# computed, because an unset value defaults to 0.0. That conflates "measured
+# zero" with "not measured", and for a lower-is-better metric the two are
+# opposite verdicts: an athlete with perfectly tracking knees reads exactly 0.0
+# knee valgus and was being marked unmeasurable -- never trusted, never scored.
+# Same shape as the band-as-plateau bug in _form_score, where perfect form was
+# punished because only the band midpoint scored well.
+ZERO_IS_VALID = {"knee_valgus", "pelvic_drop", "overstride"}
 # Peak angle metrics that are only meaningful AT a gait event (peak knee drive
 # in swing, peak swing flexion, hip extension at toe-off). When stride events
 # can't be detected, these fall back to whole-clip percentiles — a legitimate
@@ -708,7 +720,30 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
         overstride_pct = float(np.median(os_vals)) * 100.0
     # NO ceiling clamp (same reasoning as overstride: the baseline found 25%
     # saturation on every clip) — the plausibility gate owns implausible values.
-    vo_pct = float((a["hip_y"].max() - a["hip_y"].min()) / max(np.median(a["torso_len"]), 1e-6)) * 100.0
+    # Vertical oscillation is the athlete's BOUNCE, which is a per-stride
+    # wobble, not the total travel of the hip across the frame. Measuring the
+    # raw range conflates three things: real bounce, the operator panning, and
+    # the athlete traversing the shot. Measured across all nine test clips the
+    # raw version returned 111%, 157%, 454% and 769% of torso length against a
+    # 4-11% healthy band -- it failed the physical envelope on 6 of 7 clips it
+    # ran on, so the metric was effectively dead on real footage.
+    #
+    # Detrending against a stride-length moving average removes the slow
+    # component (pan + traversal) and leaves the fast one (bounce). It is not a
+    # substitute for real camera-motion compensation from the gyro, which is
+    # still the right fix; it is the part that can be done without it.
+    _hip_v = a["hip_y"]
+    _stride_w = max(3, int(round(pose_fps * 0.42)))     # ~1 stride at sprint cadence
+    if len(_hip_v) > _stride_w:
+        _trend = _smooth(_hip_v, _stride_w)
+        _bounce = _hip_v - _trend
+        # trim the convolution edges, which are zero-padded and not real signal
+        _e = _stride_w // 2
+        _bounce = _bounce[_e:-_e] if len(_bounce) > 2 * _e else _bounce
+    else:
+        _bounce = _hip_v - float(np.mean(_hip_v))
+    vo_pct = float(np.percentile(_bounce, 97.5) - np.percentile(_bounce, 2.5)) \
+        / max(float(np.median(a["torso_len"])), 1e-6) * 100.0
 
     # ── Static-subject guard (the "guard" half of the P0 fix) ──────────────────
     # A running subject's near ankle swings strongly in image-y each stride; a
@@ -881,7 +916,7 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
         # primary was corrupted by a few bad frames, not unmeasurable — report
         # the salvaged value as experimental rather than losing the metric.
         plo, phi = _plausible_range(key, phase)
-        plausible = (val > 0) and (plo <= val <= phi)
+        plausible = (plo <= val <= phi) and (val > 0 or key in ZERO_IS_VALID)
         if not plausible:
             alt = alt_values.get(key)
             if alt is not None and alt > 0 and plo <= alt <= phi:
@@ -1039,9 +1074,14 @@ def _collect_scalars(frame_iter: Iterable[dict], azimuth_deg: float,
     idxs: list[int] = []
     az_samples: list[float] = []
     total = 0
+    truncated = False
     for f in frame_iter:
         total += 1
         if total > max_frames:
+            # Say so. Silently analysing the first N seconds of a longer clip
+            # and reporting on it as though it were the whole run is the kind of
+            # omission a user cannot detect and would not forgive.
+            truncated = True
             break
         if f.get("excluded"):
             continue
@@ -1088,7 +1128,7 @@ def _collect_scalars(frame_iter: Iterable[dict], azimuth_deg: float,
         az_arr = np.asarray(az_samples, dtype=float)
         iqr = float(np.percentile(az_arr, 75) - np.percentile(az_arr, 25))
         use_az = float(np.percentile(az_arr, 75)) if iqr > 25.0 else float(np.median(az_arr))
-    return S, idxs, mean_conf, use_az, excluded_pct
+    return S, idxs, mean_conf, use_az, excluded_pct, truncated
 
 
 def analyze_2d_sagittal_stream(frame_iter: Iterable[dict], fps: float,
@@ -1118,16 +1158,20 @@ def analyze_2d_sagittal_stream(frame_iter: Iterable[dict], fps: float,
     src_fps = float(source_fps if source_fps is not None else pose_fps)
     cap_fps = float(capture_fps if capture_fps is not None else pose_fps)
 
-    S, idxs, mean_conf, use_az, excluded_pct = _collect_scalars(
+    S, idxs, mean_conf, use_az, excluded_pct, truncated = _collect_scalars(
         frame_iter, azimuth_deg, min_frames=min_frames, max_frames=max_frames,
         overlay_out=overlay_out, src_fps=src_fps, image_down=image_down,
         estimate_azimuth=estimate_azimuth,
     )
-    return _assemble(S, idxs, pose_fps, mean_conf, use_az, clip_id,
-                     capture_fps=cap_fps, source_fps=src_fps,
-                     timing_signal=timing_signal, timing_fps=timing_fps,
-                     dropped_pct=excluded_pct, vp_override=vp_override,
-                     recon_conf=recon_conf)
+    result = _assemble(S, idxs, pose_fps, mean_conf, use_az, clip_id,
+                       capture_fps=cap_fps, source_fps=src_fps,
+                       timing_signal=timing_signal, timing_fps=timing_fps,
+                       dropped_pct=excluded_pct, vp_override=vp_override,
+                       recon_conf=recon_conf)
+    if truncated:
+        result["captureQuality"]["truncated"] = True
+        result["captureQuality"]["analysedSeconds"] = round(len(idxs) / max(pose_fps, 1e-6), 1)
+    return result
 
 
 def analyze_2d_sagittal(frames: list[dict], fps: float, mean_conf: float,
