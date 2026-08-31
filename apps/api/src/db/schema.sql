@@ -54,9 +54,23 @@ CREATE TABLE calendar_events (
     status VARCHAR(20) DEFAULT 'scheduled'
         CHECK (status IN ('scheduled','completed','skipped','modified')),
     completion_note TEXT,
+    -- Who put this on the calendar. Only externally-scheduled work (the coach
+    -- LLM, or an approved ML drill suggestion) earns the full-screen card
+    -- reveal on the Plan tab; anything the athlete added by hand is already
+    -- known to them and must never take the screen over.
+    source VARCHAR(10) NOT NULL DEFAULT 'manual'
+        CHECK (source IN ('manual','coach','analysis')),
+    -- NULL = the athlete has not yet been shown the card for this event.
+    -- Set once the card stack is swiped through (or skipped), so the reveal
+    -- survives a backgrounded app but never replays after it has been seen.
+    revealed_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT now()
 );
 CREATE INDEX idx_calendar_user_date ON calendar_events(user_id, scheduled_date);
+-- Drives the "is there anything to reveal?" check on every Plan tab open, so
+-- it must not degrade into a scan of the athlete's whole calendar history.
+CREATE INDEX idx_calendar_unrevealed ON calendar_events(user_id, scheduled_date)
+    WHERE revealed_at IS NULL AND source <> 'manual';
 
 -- ─── Coach Sessions ──────────────────────────────────────────────
 CREATE TABLE coach_sessions (
@@ -99,6 +113,16 @@ CREATE TABLE suggestion_audit (
 -- ALTER TABLE calendar_events DROP CONSTRAINT IF EXISTS calendar_events_event_type_check;
 -- ALTER TABLE calendar_events ADD CONSTRAINT calendar_events_event_type_check
 --     CHECK (event_type IN ('workout','rest','competition','drill','hydration','recovery','cross_training'));
+
+-- Migration: Add calendar_events.source + revealed_at (run against existing DBs).
+-- Existing rows default to 'manual'/revealed so the card stack does not fire a
+-- retroactive reveal of every session an athlete has ever been scheduled.
+-- ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS source VARCHAR(10) NOT NULL DEFAULT 'manual'
+--     CHECK (source IN ('manual','coach','analysis'));
+-- ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS revealed_at TIMESTAMPTZ;
+-- UPDATE calendar_events SET revealed_at = now() WHERE revealed_at IS NULL;
+-- CREATE INDEX IF NOT EXISTS idx_calendar_unrevealed ON calendar_events(user_id, scheduled_date)
+--     WHERE revealed_at IS NULL AND source <> 'manual';
 
 -- Migration: Add consent fields (run against existing DBs)
 -- ALTER TABLE users ADD COLUMN IF NOT EXISTS date_of_birth DATE;

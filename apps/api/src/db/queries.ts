@@ -1,5 +1,5 @@
 import pg from 'pg';
-import type { User, Analysis, CalendarEvent, CoachSession, DrillSuggestion, ReferenceDrill, MetricsTimelineRow } from '../types.js';
+import type { User, Analysis, CalendarEvent, CalendarEventSource, CoachSession, DrillSuggestion, ReferenceDrill, MetricsTimelineRow } from '../types.js';
 import { dbConnectionConfig } from './dsql.js';
 import { generateDrillProgram, generateRecoveryProgram, type RecoveryPhase } from '../calendar/trainingPlan.js';
 
@@ -211,6 +211,9 @@ export async function getAnalysesByUser(userId: string): Promise<Analysis[]> {
 
 // ─── Calendar Events ──────────────────────────────────────────────
 
+// Events the athlete adds by hand are already known to them, so they default to
+// 'manual' and are born revealed. Only the coach LLM and approved ML
+// suggestions pass an explicit source, which is what arms the card reveal.
 export async function createCalendarEvent(
   userId: string,
   event: {
@@ -219,12 +222,16 @@ export async function createCalendarEvent(
     scheduled_date: string;
     details?: Record<string, unknown> | null;
   },
+  source: CalendarEventSource = 'manual',
 ): Promise<CalendarEvent> {
+  // $6 is cast to text in BOTH places it appears. Without the casts Postgres
+  // deduces `character varying` from the source column and `text` from the
+  // CASE comparison, and rejects the statement with 42P08.
   const { rows } = await pool.query<CalendarEvent>(
-    `INSERT INTO calendar_events (user_id, title, event_type, scheduled_date, details)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO calendar_events (user_id, title, event_type, scheduled_date, details, source, revealed_at)
+     VALUES ($1, $2, $3, $4, $5, $6::text, CASE WHEN $6::text = 'manual' THEN now() ELSE NULL END)
      RETURNING *`,
-    [userId, event.title, event.event_type, event.scheduled_date, event.details ? JSON.stringify(event.details) : null],
+    [userId, event.title, event.event_type, event.scheduled_date, event.details ? JSON.stringify(event.details) : null, source],
   );
   return rows[0]!;
 }
@@ -237,6 +244,7 @@ export async function createCalendarEvents(
     scheduled_date: string;
     details?: Record<string, unknown> | null;
   }[],
+  source: CalendarEventSource = 'manual',
 ): Promise<CalendarEvent[]> {
   if (events.length === 0) return [];
 
@@ -244,15 +252,23 @@ export async function createCalendarEvents(
   const values: unknown[] = [];
   let paramIndex = 1;
 
+  // The source is identical for every row in a batch, so it is bound once up
+  // front rather than repeated per row.
+  values.push(source);
+  const sourceParam = paramIndex++;
+
   for (const event of events) {
+    // The source param is cast to text everywhere it appears — see the note in
+    // createCalendarEvent; an uncast reuse across the column and the CASE makes
+    // Postgres deduce two different types for the same parameter (42P08).
     valueClauses.push(
-      `($${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++})`,
+      `($${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${sourceParam}::text, CASE WHEN $${sourceParam}::text = 'manual' THEN now() ELSE NULL END)`,
     );
     values.push(userId, event.title, event.event_type, event.scheduled_date, event.details ? JSON.stringify(event.details) : null);
   }
 
   const { rows } = await pool.query<CalendarEvent>(
-    `INSERT INTO calendar_events (user_id, title, event_type, scheduled_date, details)
+    `INSERT INTO calendar_events (user_id, title, event_type, scheduled_date, details, source, revealed_at)
      VALUES ${valueClauses.join(', ')}
      RETURNING *`,
     values,
@@ -302,6 +318,105 @@ export async function updateCalendarEvent(
     values,
   );
   return rows[0] ?? null;
+}
+
+// ─── Calendar Reveal (card stack) ─────────────────────────────────
+
+/**
+ * Everything the coach or the analysis engine has scheduled that the athlete
+ * has not been shown yet. This is the card stack's entire input — one row per
+ * event; the client groups them into one card per day.
+ */
+export async function getUnrevealedEvents(userId: string): Promise<CalendarEvent[]> {
+  const { rows } = await pool.query<CalendarEvent>(
+    `SELECT * FROM calendar_events
+     WHERE user_id = $1 AND revealed_at IS NULL AND source <> 'manual'
+     ORDER BY scheduled_date ASC, created_at ASC`,
+    [userId],
+  );
+  return rows;
+}
+
+/**
+ * Mark events as seen. Called when the stack is swiped through *or* skipped —
+ * both count as shown, so a skip can never leave the reveal to nag again.
+ * Passing no ids clears every outstanding reveal for the user.
+ */
+export async function markEventsRevealed(userId: string, eventIds?: string[]): Promise<number> {
+  if (eventIds && eventIds.length === 0) return 0;
+  const { rowCount } = eventIds
+    ? await pool.query(
+        `UPDATE calendar_events SET revealed_at = now()
+         WHERE user_id = $1 AND revealed_at IS NULL AND id = ANY($2::uuid[])`,
+        [userId, eventIds],
+      )
+    : await pool.query(
+        `UPDATE calendar_events SET revealed_at = now()
+         WHERE user_id = $1 AND revealed_at IS NULL AND source <> 'manual'`,
+        [userId],
+      );
+  return rowCount ?? 0;
+}
+
+/**
+ * Left-swipe: the athlete drops a day the coach proposed. The rows are kept
+ * (status 'skipped') rather than deleted so the decision stays auditable and
+ * the undo below is a plain status flip rather than a re-insert. A skipped day
+ * is neutral for the streak — declining work is a decision, not a miss.
+ *
+ * Scoped to ids the client actually showed on the card, so this can never
+ * touch other events that happen to share the date.
+ */
+export async function declineEvents(userId: string, eventIds: string[]): Promise<CalendarEvent[]> {
+  if (eventIds.length === 0) return [];
+  const { rows } = await pool.query<CalendarEvent>(
+    `UPDATE calendar_events
+     SET status = 'skipped', revealed_at = COALESCE(revealed_at, now())
+     WHERE user_id = $1 AND id = ANY($2::uuid[]) AND status <> 'completed'
+     RETURNING *`,
+    [userId, eventIds],
+  );
+  return rows;
+}
+
+/** Undo a decline — puts the day back exactly as the coach scheduled it. */
+export async function restoreEvents(userId: string, eventIds: string[]): Promise<CalendarEvent[]> {
+  if (eventIds.length === 0) return [];
+  const { rows } = await pool.query<CalendarEvent>(
+    `UPDATE calendar_events SET status = 'scheduled'
+     WHERE user_id = $1 AND id = ANY($2::uuid[]) AND status = 'skipped'
+     RETURNING *`,
+    [userId, eventIds],
+  );
+  return rows;
+}
+
+/**
+ * Per-day training activity across the athlete's whole history, which is what
+ * the streak is derived from. Aggregating in SQL keeps this one small row per
+ * active day instead of shipping every event the athlete has ever had.
+ *
+ * `outstanding` deliberately excludes 'rest' (prescribed recovery never needs
+ * a tap) and 'skipped' (an explicit decline, not a miss).
+ */
+export async function getTrainingDays(
+  userId: string,
+): Promise<{ date: string; completed: number; outstanding: number }[]> {
+  const { rows } = await pool.query<{ date: string; completed: string; outstanding: string }>(
+    `SELECT scheduled_date::text AS date,
+            COUNT(*) FILTER (WHERE status = 'completed') AS completed,
+            COUNT(*) FILTER (WHERE status IN ('scheduled','modified') AND event_type <> 'rest') AS outstanding
+     FROM calendar_events
+     WHERE user_id = $1
+     GROUP BY scheduled_date
+     ORDER BY scheduled_date ASC`,
+    [userId],
+  );
+  return rows.map((r) => ({
+    date: r.date,
+    completed: Number(r.completed),
+    outstanding: Number(r.outstanding),
+  }));
 }
 
 // ─── Coach Sessions ───────────────────────────────────────────────
@@ -555,12 +670,15 @@ export async function approveSuggestion(
     const values: unknown[] = [];
     let paramIndex = 1;
     for (const s of sessions) {
-      valueClauses.push(`($${paramIndex++}, $${paramIndex++}, 'drill', $${paramIndex++}, $${paramIndex++})`);
+      valueClauses.push(`($${paramIndex++}, $${paramIndex++}, 'drill', $${paramIndex++}, $${paramIndex++}, 'analysis')`);
       values.push(userId, s.title, s.scheduledDate, JSON.stringify(s.details));
     }
 
+    // source 'analysis' + revealed_at NULL: the athlete never asked for these
+    // dates by hand, so the program earns the full-screen card reveal on the
+    // Plan tab (see calendar_events.source).
     const { rows: evtRows } = await client.query<CalendarEvent>(
-      `INSERT INTO calendar_events (user_id, title, event_type, scheduled_date, details)
+      `INSERT INTO calendar_events (user_id, title, event_type, scheduled_date, details, source)
        VALUES ${valueClauses.join(', ')}
        RETURNING *`,
       values,

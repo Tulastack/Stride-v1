@@ -112,6 +112,8 @@ const CALENDAR_EVENT: CalendarEvent = {
   details: { drill_key: 'a_skips' },
   status: 'scheduled',
   completion_note: null,
+  source: 'analysis',
+  revealed_at: null,
   created_at: new Date(),
 };
 

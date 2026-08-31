@@ -33,15 +33,28 @@ export interface Analysis {
   completed_at: Date | null;
 }
 
+/** Who put an event on the calendar — see calendar_events.source. */
+export type CalendarEventSource = 'manual' | 'coach' | 'analysis';
+
 export interface CalendarEvent {
   id: string;
   user_id: string;
   title: string;
-  event_type: 'workout' | 'rest' | 'competition' | 'drill';
+  event_type:
+    | 'workout'
+    | 'rest'
+    | 'competition'
+    | 'drill'
+    | 'hydration'
+    | 'recovery'
+    | 'cross_training';
   scheduled_date: string;
   details: Record<string, unknown> | null;
   status: 'scheduled' | 'completed' | 'skipped' | 'modified';
   completion_note: string | null;
+  source: CalendarEventSource;
+  /** NULL until the athlete has seen this event's card in the reveal stack. */
+  revealed_at: Date | null;
   created_at: Date;
 }
 

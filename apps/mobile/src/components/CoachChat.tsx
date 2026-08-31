@@ -7,6 +7,7 @@ import {
   MessageCircle, ArrowUp, Zap, Brain, Droplet, Award, CalendarPlus, CalendarCheck,
   Crosshair, Activity, Dumbbell, CalendarDays, Utensils, Sparkles, Lightbulb,
 } from 'lucide-react-native';
+import { router } from 'expo-router';
 import { strideApi } from '../services/api';
 import { getAccessToken as getToken } from '../lib/supabase';
 import { useStrideStore } from '../store/useStrideStore';
@@ -140,7 +141,11 @@ export function CoachChat({ analysisId }: { analysisId?: string } = {}) {
       });
       const result = await resp.json();
       if (!resp.ok) throw new Error(result.error || 'Failed');
-      setMessages((m) => [...m, { role: 'assistant', content: `${result.created} workouts added. Check the Plan tab.` }]);
+      setMessages((m) => [...m, { role: 'assistant', content: `${result.created} workouts added.` }]);
+      // Hand the athlete straight to the Plan tab, where the new days reveal
+      // themselves as cards. Waiting for them to find the tab on their own
+      // would break the line from "coach scheduled it" to "it's on my calendar".
+      if (result.created > 0) router.push('/(tabs)/calendar');
     } catch (e: any) { Alert.alert('Error', e.message || 'Could not add to calendar.'); }
     finally { setLoading(false); }
   }

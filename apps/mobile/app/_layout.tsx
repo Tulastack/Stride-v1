@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { supabase } from '../src/lib/supabase';
 import { useStrideStore } from '../src/store/useStrideStore';
@@ -79,13 +80,17 @@ function InnerLayout() {
 }
 
 export default function RootLayout() {
+  // GestureHandlerRootView must wrap the whole tree (and sit above the
+  // navigator) or pan gestures — the card stack's swipes — silently never fire.
   return (
-    <ThemeProvider>
-      <QueryClientProvider client={queryClient}>
-        <SafeAreaProvider>
-          <InnerLayout />
-        </SafeAreaProvider>
-      </QueryClientProvider>
-    </ThemeProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <ThemeProvider>
+        <QueryClientProvider client={queryClient}>
+          <SafeAreaProvider>
+            <InnerLayout />
+          </SafeAreaProvider>
+        </QueryClientProvider>
+      </ThemeProvider>
+    </GestureHandlerRootView>
   );
 }

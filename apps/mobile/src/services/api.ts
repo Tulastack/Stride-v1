@@ -169,6 +169,54 @@ export const strideApi = {
     });
   },
 
+  // --- Calendar reveal (the card stack) ---
+  // Only coach- and analysis-scheduled work shows up here; anything the athlete
+  // added by hand is already known to them and never triggers the takeover.
+  listUnrevealedEvents: async () => {
+    return request<any[]>('/calendar/unrevealed');
+  },
+
+  /** Mark cards seen. Omit ids to clear every outstanding reveal (the Skip path). */
+  revealEvents: async (eventIds?: string[]) => {
+    return request<{ revealed: number }>('/calendar/reveal', {
+      method: 'POST',
+      body: JSON.stringify(eventIds ? { eventIds } : {}),
+    });
+  },
+
+  /** Left-swipe: drop a proposed day. Reversible via undoDeclineEvents. */
+  declineEvents: async (eventIds: string[]) => {
+    return request<{ declined: number; events: any[] }>('/calendar/decline', {
+      method: 'POST',
+      body: JSON.stringify({ eventIds }),
+    });
+  },
+
+  undoDeclineEvents: async (eventIds: string[]) => {
+    return request<{ restored: number; events: any[] }>('/calendar/decline/undo', {
+      method: 'POST',
+      body: JSON.stringify({ eventIds }),
+    });
+  },
+
+  /**
+   * Streak summary. `today` is the caller's LOCAL date — the server must not
+   * decide when the athlete's day ends (same reason the grid builds its date
+   * strings from local calendar fields rather than toISOString()).
+   */
+  getStreak: async (today: string) => {
+    return request<{
+      current: number;
+      longest: number;
+      lastActiveDate: string | null;
+      activeDates: string[];
+      /** Inclusive ends of the live run — the calendar draws it as one bar. */
+      streakStart: string | null;
+      streakEnd: string | null;
+      atRiskToday: boolean;
+    }>(`/calendar/streak?today=${today}`);
+  },
+
   // --- Consent & Liability ---
   giveConsent: async (params: {
     consent_version: number;

@@ -322,7 +322,9 @@ Output ONLY the raw JSON array. No markdown. No explanation. Just [ ... ]`;
       return;
     }
 
-    const created = await createCalendarEvents(userId, dbEvents);
+    // 'coach' — the athlete did not pick these dates by hand, so the plan is
+    // handed to the Plan tab's card reveal rather than appearing silently.
+    const created = await createCalendarEvents(userId, dbEvents, 'coach');
     res.json({ created: created.length, events: created });
   } catch (err) {
     next(err);
