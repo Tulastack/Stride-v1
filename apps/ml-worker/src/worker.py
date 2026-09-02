@@ -113,6 +113,11 @@ LOCAL_STORAGE_DIR = os.environ.get("LOCAL_STORAGE_DIR", "/tmp/stride-local-stora
 #   STRIDE_PIPELINE=wham    — MoveNet/RTMPose + WHAM 3D lift (needs GPU + STRIDE_WHAM_REPO)
 #   STRIDE_PIPELINE=legacy  — old 2D + Gemini LLM report
 PIPELINE = os.environ.get("STRIDE_PIPELINE", "2d").lower()
+# Bone-closure residual, as a fraction of torso length, above which the lifted
+# skeleton is rejected and the clip is analysed by the 2D path instead. Set from
+# the measured split between healthy and failed reconstructions on real clips
+# (0.14 vs 1.22); 0.35 sits clear of both.
+LIFT_FALLBACK_REL_TORSO = float(os.environ.get("STRIDE_LIFT_FALLBACK_REL", "0.35"))
 USE_WHAM_OPENCAP = PIPELINE == "wham"
 
 
@@ -473,11 +478,43 @@ def _run_3d_geo(analysis_id: str, video_path: str, capture: dict, s3_key: str | 
     # conservative UNVALIDATED_RECON_CONF default. Passing the measured value
     # here was missing — every geometric-lift clip was silently using the
     # placeholder instead of the number this module was built to produce.
-    result = analyze_3d_multisegment(
-        poses, conf, fps=eff_fps, up_world=up,
-        source_fps=source_fps, capture_fps=capture_fps,
-        recon_conf=lift_quality["reconConf"],
-        clip_id=analysis_id[:8])
+    # Measured on real clips: a healthy reconstruction closes its redundant bone
+    # constraints to within ~0.15 of a torso length (IMG_0271: 0.14, reconConf
+    # 0.92, three trusted metrics). A failed one misses by a whole torso or more
+    # (IMG_8266: 1.22, reconConf 0.014, nothing trusted) — and every angle read
+    # off that skeleton is fiction, however confident the detector was.
+    #
+    # Rather than ship those numbers hedged as "experimental", fall back to the
+    # 2D sagittal path, which does not depend on recovered depth at all. 3D
+    # stays the objective; this is what makes pursuing it safe, because the
+    # failure is detected per clip instead of assumed away.
+    if lift_quality["closingRelTorso"] > LIFT_FALLBACK_REL_TORSO:
+        logger.warning(
+            "lift closure %.3f exceeds %.2f torso lengths (reconConf %.3f) — "
+            "falling back to the 2D sagittal path for this clip",
+            lift_quality["closingRelTorso"], LIFT_FALLBACK_REL_TORSO,
+            lift_quality["reconConf"])
+        notify_progress(analysis_id, "biomechanics_calculation", 80,
+                        "2D sagittal biomechanics (3D lift rejected)")
+        result = analyze_2d_sagittal_stream(
+            iter(included), fps=eff_fps,
+            azimuth_deg=float(capture["cameraAzimuthDeg"])
+            if capture.get("cameraAzimuthDeg") is not None else 20.0,
+            clip_id=analysis_id[:8], source_fps=source_fps,
+            capture_fps=capture_fps,
+            image_down=_image_down_from_capture(capture))
+        result["reconstructionMethod"] = "2d-sagittal-fallback"
+        result.setdefault("captureQuality", {})["liftRejected"] = {
+            "closingRelTorso": lift_quality["closingRelTorso"],
+            "threshold": LIFT_FALLBACK_REL_TORSO,
+        }
+    else:
+        result = analyze_3d_multisegment(
+            poses, conf, fps=eff_fps, up_world=up,
+            source_fps=source_fps, capture_fps=capture_fps,
+            recon_conf=lift_quality["reconConf"],
+            clip_id=analysis_id[:8])
+        result["reconstructionMethod"] = "3d-mono-geometric"
 
     cq = result["captureQuality"]
     if capture.get("motionBlur"):
@@ -486,7 +523,6 @@ def _run_3d_geo(analysis_id: str, video_path: str, capture: dict, s3_key: str | 
         cq["framing"] = capture["framing"]
     cq["liftQuality"] = lift_quality
 
-    result["reconstructionMethod"] = "3d-mono-geometric"
     result["model_meta"] = {
         "backend": "geometric-bone-lift", "model_version": "lift3d-v1",
         "detector": "rtmpose", "device": "cpu", "poseFps": pose_fps,

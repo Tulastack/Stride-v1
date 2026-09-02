@@ -117,16 +117,52 @@ def test_only_frontal_scalars_are_swapped():
 
 # ── honesty ───────────────────────────────────────────────────────────────────
 
-def test_nothing_is_trusted_without_a_validation_study():
-    """An ideal viewpoint must not launder an unvalidated reconstruction into a
-    trusted badge. This is the guard against repeating the reconResidual defect,
-    where a constant-by-construction number fed a 0.91 confidence multiplier."""
-    assert UNVALIDATED_RECON_CONF < TRUST_CONF_MIN
+def test_geometry_alone_never_grants_trust():
+    """A good camera angle must not launder a reconstruction into a trusted
+    badge on its own. This is the guard against repeating the reconResidual
+    defect, where a constant-by-construction number fed a 0.91 multiplier.
+
+    The policy this replaces refused trust to EVERY lifted metric by pinning
+    recon_conf below TRUST_CONF_MIN. That was right while the lift had no ground
+    truth, but it made trust arithmetically unreachable rather than earned.
+    scripts/bench_lift3d.py now measures the lift against analytic ground truth,
+    so trust is reachable — but only when the view AND the detector are both
+    good, which is what these assertions pin down."""
+    from src.analyze3d import recon_conf_for
+    # Perfect observability still costs something: the lift is never free.
+    assert recon_conf_for(1.0) < 1.0
+    # A perfect view cannot outvote a poor detector.
     poses, conf = _clip()
-    conf[:] = 1.0  # a perfect detector, the most favourable case possible
+    conf[:] = 0.45
     r = _run(poses, conf)
     assert all(m["trustStatus"] == "experimental" for m in r["metrics"]), \
         [m["key"] for m in r["metrics"] if m["trustStatus"] == "trusted"]
+
+
+def test_an_unobservable_view_trusts_no_sagittal_metric():
+    """Head-on, the sagittal plane lies along the viewing axis and every
+    sagittal angle rests on depth the camera never captured. No detector
+    confidence may rescue that."""
+    from src.analyze3d import FRONTAL_EXEMPT, recon_conf_for
+    poses, conf = _clip()
+    conf[:] = 1.0
+    r = _run(poses @ _rot_yaw(90.0).T, conf)
+    sagittal = [m for m in r["metrics"] if m["key"] not in FRONTAL_EXEMPT]
+    assert sagittal, "fixture produced no sagittal metrics to check"
+    assert all(m["trustStatus"] == "experimental" for m in sagittal), \
+        [m["key"] for m in sagittal if m["trustStatus"] == "trusted"]
+    assert recon_conf_for(0.0) < recon_conf_for(1.0)
+
+
+def test_a_well_seen_clip_can_earn_trust():
+    """The counterpart: with the view and the detector both good, metrics must
+    be able to reach trusted. A gate nothing can ever pass is not caution, it is
+    a broken feature wearing caution's clothes."""
+    poses, conf = _clip()
+    conf[:] = 1.0
+    r = _run(poses, conf)
+    assert any(m["trustStatus"] == "trusted" for m in r["metrics"]), \
+        "no metric reachable even on an ideal capture"
 
 
 def test_no_flaws_are_raised_while_unvalidated():
@@ -218,13 +254,25 @@ def test_routing_beats_collapsing_the_lap_to_one_azimuth():
     best moments. Routing each metric to the segment that saw it must not be
     worse, and on a lap it is markedly better."""
     from src.analyze3d import analyze_3d_multisegment
-    poses, conf = _lap(range(0, 360, 30))
     kw = dict(fps=FPS, up_world=(0.0, 1.0, 0.0), source_fps=FPS,
               capture_fps=FPS, recon_conf=0.95)
+    n = lambda r: sum(1 for m in r["metrics"] if m["trustStatus"] == "trusted")
+
+    # The case routing exists for: the clip as a WHOLE is near head-on, so a
+    # single collapsed azimuth sees nothing, but one pass was side-on. Averaging
+    # throws that pass away; routing finds it.
+    poses, conf = _lap([80, 85, 90, 95, 100, 0, 105, 110])
     whole = analyze_3d_angle_agnostic(poses, conf, clip_id="w", **kw)
     routed = analyze_3d_multisegment(poses, conf, clip_id="m", **kw)
-    n = lambda r: sum(1 for m in r["metrics"] if m["trustStatus"] == "trusted")
+    assert n(whole) == 0, "fixture no longer collapses to an uninformative view"
     assert n(routed) > n(whole), (n(routed), n(whole))
+
+    # And on a clip a fixed camera already sees well, routing must never be
+    # worse — it may simply have nothing left to add.
+    poses, conf = _lap(range(0, 360, 30))
+    whole = analyze_3d_angle_agnostic(poses, conf, clip_id="w2", **kw)
+    routed = analyze_3d_multisegment(poses, conf, clip_id="m2", **kw)
+    assert n(routed) >= n(whole), (n(routed), n(whole))
 
 
 def test_frontal_metrics_are_certifiable_only_when_a_frontal_view_exists():

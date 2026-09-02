@@ -170,6 +170,14 @@ TIER = {
 # (30 fps → ±33 ms). Gate on the KEYPOINT sample rate (pose fps), not capture fps —
 # pose subsampling also limits temporal resolution. Report capture fps separately.
 FPS_TRUST_GATE = 120.0
+# ...but that reasoning is about CONTACT TIME, and it was being applied to every
+# tier-1 metric. Cadence is a rate averaged over many stride events, not a single
+# short duration: at 3 steps/s it sits far below Nyquist even at 30 fps, and
+# per-event timing jitter averages out across a clip rather than accumulating.
+# Holding it to the contact-time bar meant a perfectly sound cadence reading was
+# permanently badged experimental on every phone that does not shoot 120 fps —
+# strictness that costs the athlete information without buying any honesty.
+FPS_TRUST_GATE_BY_KEY = {"cadence_spm": 30.0}
 # Confidence/viewpoint tolerance for a metric to be certified "trusted" rather
 # than "experimental". These stay STRICT on purpose: experimental metrics now
 # participate in the score (EXPERIMENTAL_FORM_WEIGHT) and surface as focus
@@ -899,7 +907,8 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
             vp = 0.0
             conf = eff_conf
             t_fps = temporal_fps_by_key.get(key, pose_temporal)
-            trust = "trusted" if (conf >= TRUST_CONF_MIN and t_fps >= FPS_TRUST_GATE and key not in CANDIDATE) else "experimental"
+            fps_gate = FPS_TRUST_GATE_BY_KEY.get(key, FPS_TRUST_GATE)
+            trust = "trusted" if (conf >= TRUST_CONF_MIN and t_fps >= fps_gate and key not in CANDIDATE) else "experimental"
         elif tier == 3:
             # rebinned / translation-dependent → trusted only from a near-pure
             # side view with confident keypoints (see OVERSTRIDE_VP_MAX), never

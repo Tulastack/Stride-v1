@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import logging
 import math
+import os
 from typing import Any, Iterable
 
 import numpy as np
@@ -178,7 +179,29 @@ W_ANATOMY = 0.06           # degrees -> metres-ish, so limits nudge rather than 
 # direction of travel -- and that is a signed test, so it resolves the branch.
 # Only informative once the view has some depth component: at side-on the
 # knee's offset is already visible in 2D and there is no ambiguity to resolve.
-W_ANTERIOR = 0.9
+# Measured against exact ground truth (scripts/bench_lift3d.py), the
+# "knee sits anterior to the hip-ankle chord" prior holds only 48% of a running
+# stride -- a coin flip, because the chord crosses the knee twice per cycle. It
+# was penalising correct anatomy as often as wrong, and enabling it moved the
+# sweep from 5.56 to 8.10 deg MAE. Kept at zero rather than deleted so the
+# finding stays legible: this constraint is not available to separate the
+# per-limb depth-sign branches, and something else has to.
+W_ANTERIOR = 0.0
+
+# Out-of-sagittal-plane regulariser. Measured cause: a bone lying near the image
+# plane is at maximum apparent extent, so its two depth roots nearly merge and
+# depth becomes ill-conditioned exactly where the 2D path is strongest. Left
+# free, the solve drifts out of plane and corrupts the sagittal angle -- at
+# side-on the ankle landed 0.3 m off-plane, rotating the leg ~20 deg.
+#
+# Running is a predominantly sagittal activity: the knee and ankle track close
+# to their own hip's sagittal plane. This pulls them there, but softly, and only
+# bites where the data cannot speak -- off-axis the depth IS observable and the
+# bone terms dominate. Deliberately weak so the frontal-plane metrics
+# (knee_valgus, pelvic_drop) survive; those live in exactly this displacement.
+W_SAGITTAL = float(os.environ.get('STRIDE_W_SAGITTAL', '0.6'))
+# Exponent on the observability gate; 1.0 = linear in |med_z|, lower = softer.
+W_SAG_GATE = float(os.environ.get('STRIDE_W_SAG_GATE', '0.5'))
 LEGS = (("left_hip", "left_knee", "left_ankle"),
         ("right_hip", "right_knee", "right_ankle"))
 
@@ -211,7 +234,32 @@ def _closing_cost(z, rays, lengths):
     return c
 
 
-def _propagate(rays, valid, lengths, z_root, beam=BEAM):
+def _anterior_cost(z, rays, fwd) -> float:
+    """Metres by which a knee sits BEHIND the hip-ankle line, summed over legs.
+
+    This is the one constraint that separates a correctly-reconstructed leg from
+    the same leg folded backwards: both satisfy every bone length and produce an
+    identical knee angle, so closure and joint limits are blind to the
+    difference. Only the direction the knee bulges relative to travel tells them
+    apart — a knee is anterior to the hip-ankle chord, never posterior.
+
+    Returned in metres so it can be summed with `_closing_cost` on the same
+    scale during branch selection.
+    """
+    if fwd is None:
+        return 0.0
+    c = 0.0
+    for a, b, cj in LEGS:
+        i, j, k = _POS[a], _POS[b], _POS[cj]
+        if not (np.isfinite(z[i]) and np.isfinite(z[j]) and np.isfinite(z[k])):
+            continue
+        P_i, P_j, P_k = z[i] * rays[i], z[j] * rays[j], z[k] * rays[k]
+        off = P_j - 0.5 * (P_i + P_k)
+        c += max(0.0, -float(np.dot(off, fwd)))
+    return c
+
+
+def _propagate(rays, valid, lengths, z_root, beam=BEAM, fwd=None):
     """Exact perspective depth propagation down the tree, beam search on signs.
 
     For a bone of length L, given the parent depth z_i, the child depth solves
@@ -283,6 +331,34 @@ def _residuals(z, rays, bones, prev_z, valid, w_temporal, fwd=None):
             out.append(0.0); continue
         off = P[j] - 0.5 * (P[i] + P[k])
         out.append(W_ANTERIOR * max(0.0, -float(np.dot(off, fwd))))
+
+    # Mediolateral axis from the pelvis itself — the shortest, best-constrained
+    # bone in the system, and the only frame-local definition of "sideways" that
+    # needs no external heading.
+    lh, rh = _POS["left_hip"], _POS["right_hip"]
+    if valid[lh] and valid[rh]:
+        med = P[_POS["left_hip"]] - P[_POS["right_hip"]]
+        nm = float(np.linalg.norm(med))
+        if nm > 1e-6:
+            med = med / nm
+            # Apply this ONLY where the displacement it constrains is
+            # unobservable. |med_z| is that test: side-on the pelvis is edge-on,
+            # the mediolateral axis points down the viewing axis and lateral
+            # offset is pure depth the camera cannot see -- so the prior should
+            # carry it. Head-on the axis lies across the image, lateral offset
+            # is directly measured, and the prior must get out of the data's way.
+            w_sag = W_SAGITTAL * abs(float(med[2])) ** W_SAG_GATE
+            for hip, knee, ankle in LEGS:
+                h = _POS[hip]
+                for joint in (knee, ankle):
+                    jj = _POS[joint]
+                    if not (valid[h] and valid[jj]):
+                        out.append(0.0); continue
+                    out.append(w_sag * float(np.dot(P[jj] - P[h], med)))
+        else:
+            out.extend([0.0] * 4)
+    else:
+        out.extend([0.0] * 4)
     if prev_z is not None:
         out.extend((w_temporal * (z - prev_z) * valid).tolist())
     else:
@@ -429,7 +505,14 @@ def lift_sequence(
     lengths = {(a, b): L for a, b, L, _ in BONES}
 
     z_seq: list[np.ndarray] = []
-    fwd = None
+    # Seeded from the 2D rays, NOT left as None. Previously this was only
+    # assigned in the `p < passes - 1` tail, which never runs at the default
+    # passes=1 — so the knee-anterior prior silently contributed nothing on
+    # every production clip, and the per-limb depth-sign ambiguity it exists to
+    # resolve went unresolved.
+    fwd = _forward_from_rays(rays_seq, valid_seq, up_hint)
+    if fwd is None:
+        logger.info("lift: no travel detected, knee-anterior prior disabled")
     for p in range(passes):
         bones = _bone_list(lengths)
         z_seq = []
@@ -445,7 +528,7 @@ def lift_sequence(
                 zb = _root_depth_bound(rays, valid, lengths)
                 best, best_cost = None, np.inf
                 for m in DEPTH_GRID:
-                    for cand in _propagate(rays, valid, lengths, zb * m)[:4]:
+                    for cand in _propagate(rays, valid, lengths, zb * m, fwd=fwd)[:4]:
                         init = np.where(np.isfinite(cand), cand, zb * m)
                         z, cost = _solve_frame(rays, bones, valid, init, None, 0.0, fwd=fwd)
                         if cost < best_cost:
@@ -526,7 +609,25 @@ def _lift_quality(closing, anatomy, lengths) -> dict[str, float]:
     rms = float(np.sqrt(np.mean(closing)))
     rel = rms / max(torso, 1e-6)          # scale-free: fraction of a torso length
     anat = float(np.mean(anatomy))
-    conf = math.exp(-rel / 0.11) * math.exp(-anat / 26.0)
+    # Calibrated against measured angle error (scripts/bench_lift3d.py, 2 px
+    # detector noise), not chosen by feel:
+    #
+    #     relTorso   0.035  0.081  0.137  0.252  0.347
+    #     true MAE    1.44   1.38   1.51   3.21   7.63  deg
+    #
+    # The previous exp(-rel/0.11) read 0.29 at rel=0.137 — a clip whose angles
+    # were accurate to 1.5 deg — and that single number was enough to hold every
+    # metric below the trust gate. A well-closed solve now keeps its confidence,
+    # and only genuinely poor closure is penalised.
+    #
+    # This is deliberately a SOLVE-quality signal and nothing more. Closure
+    # cannot see the failure that dominates near head-on (rel actually FALLS
+    # from 0.347 to 0.308 between 70 and 90 deg while true error rises 7.6 -> 17.2),
+    # because both depth-sign branches satisfy every bone constraint exactly.
+    # View quality is carried separately by analyze3d's observability term, and
+    # the two are combined by taking the worse — never multiplied, which would
+    # discount the same clip twice and empty the report.
+    conf = math.exp(-max(0.0, rel - 0.15) / 0.25) * math.exp(-anat / 26.0)
     return {"closingRmsM": round(rms, 5),
             "closingRelTorso": round(rel, 4),
             "anatomyDeg": round(anat, 2),
@@ -550,6 +651,55 @@ def _travel_direction(poses, up=None):
     v = v - up * float(np.dot(v, up))
     n = float(np.linalg.norm(v))
     return v / n if n > 0.15 else None
+
+
+def _forward_from_rays(rays_seq, valid_seq, up=None):
+    """Travel direction estimated from the 2D rays alone, before any 3D solve.
+
+    `_travel_direction` needs lifted poses, which makes it useless for
+    constraining the lift that produces them. This breaks that circularity: the
+    pelvis ray swings across the clip as the athlete travels, and evaluating
+    those rays at a constant nominal depth recovers the direction of travel up
+    to a scale we do not need. Only the SIGN of the knee's projection onto this
+    vector is ever used, so a constant-depth approximation is sufficient — the
+    depth drift across a few seconds of running is far too small to flip it.
+
+    Returns None when the subject barely moves; a fabricated forward would bias
+    the solve rather than constrain it.
+    """
+    lh, rh = _POS["left_hip"], _POS["right_hip"]
+    ls, rs = _POS["left_shoulder"], _POS["right_shoulder"]
+    pel = []
+    for rays, valid in zip(rays_seq, valid_seq):
+        if not (valid[lh] and valid[rh] and valid[ls] and valid[rs]):
+            continue
+        hip = 0.5 * (rays[lh] + rays[rh])
+        sho = 0.5 * (rays[ls] + rays[rs])
+        # Every ray sits at z=1, so differencing rays alone yields a vector with
+        # NO depth component — useless for a runner coming toward the camera.
+        # Apparent torso height supplies the missing axis: a rigid span of true
+        # length L subtends L/Z in ray space, so Z is proportional to 1/span.
+        # Torso height is used because it is roughly perpendicular to travel and
+        # therefore barely foreshortens as the athlete turns.
+        span = float(np.linalg.norm((sho - hip)[:2]))
+        if span < 1e-6:
+            continue
+        pel.append(hip / span)          # ∝ pelvis position, arbitrary scale
+    if len(pel) < 4:
+        return None
+    pel = np.asarray(pel)
+    # Endpoints averaged over a few frames each so one bad detection at either
+    # end cannot set the direction for the whole clip.
+    k = max(1, min(3, len(pel) // 4))
+    v = pel[-k:].mean(axis=0) - pel[:k].mean(axis=0)
+    if up is not None:
+        u = np.asarray(up, float)
+        u = u / max(float(np.linalg.norm(u)), 1e-9)
+        v = v - u * float(np.dot(v, u))
+    n = float(np.linalg.norm(v))
+    # Rays are unit-depth directions, so this threshold is an angular sweep of
+    # the pelvis across the clip, not a distance in metres.
+    return v / n if n > 1e-3 else None
 
 
 def _assemble_poses(kps, rays_seq, valid_seq, z_seq, conf_seq):

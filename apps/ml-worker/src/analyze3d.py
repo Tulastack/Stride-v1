@@ -88,16 +88,42 @@ METRIC_JOINTS = (
     "left_knee", "right_knee", "left_ankle", "right_ankle",
 )
 
-# Reconstruction confidence to assume until a criterion-validity study exists.
+# Reconstruction confidence, as a MEASURED function of how much of the sagittal
+# plane the view contained.
 #
-# Sits JUST below TRUST_CONF_MIN, which gives two properties at once:
-#   * no metric from a lifted skeleton can be certified trusted even with a
-#     perfect detector, since recon_conf x 1.0 < TRUST_CONF_MIN; and
-#   * a normally-confident clip still clears the 0.35 usability floor, so the
-#     report is hedged focus areas rather than nothing at all.
-# The second half matters. A floor so low that the pipeline emits an empty
-# result is not caution, it is a broken feature wearing caution's clothes.
-# Raise this only with measured limits of agreement in hand.
+# This was a flat TRUST_CONF_MIN - 0.01, chosen so that no lifted metric could
+# ever be certified trusted even with a perfect detector. That was the right
+# call while the lift had no ground truth at all, but it makes trust
+# arithmetically unreachable rather than merely hard, so every metric on this
+# path read "experimental" regardless of how good the capture was.
+#
+# There is now an analytic ground truth (scripts/bench_lift3d.py: a figure built
+# from known joint angles, projected through a known camera, and reconstructed).
+# Joint-angle MAE at a conservative 4 px of detector noise:
+#
+#     observability   1.00   0.66   0.43   0.23   0.06   0.00
+#     joint MAE deg   2.82   2.65   2.53   3.58   8.12  18.84
+#
+# The table below maps that curve onto confidence, against the clinical bands
+# the benchmark doc already uses (<2 ideal, 2-5 interpretable, >10 unreliable).
+# It is capped at 0.90, never 1.0: the lift always costs something on top of the
+# detector, and a well-observed clip should still need a good detector to clear
+# TRUST_CONF_MIN rather than coasting on geometry alone.
+#
+# This is analytic validity with perfect keypoints, NOT criterion validity
+# against motion capture on real athletes. It justifies "can be trusted when the
+# view and the detector are both good", not "is clinically validated".
+_RECON_OBS = (0.00, 0.06, 0.23, 0.43, 1.00)
+_RECON_CONF = (0.30, 0.45, 0.78, 0.88, 0.90)
+
+
+def recon_conf_for(observability: float) -> float:
+    """Reliability of a lifted skeleton at this observability, from measurement."""
+    return float(np.interp(float(observability), _RECON_OBS, _RECON_CONF))
+
+
+# Retained for callers that have no observability to hand (and for the default
+# argument below); the observability-aware value supersedes it in practice.
 UNVALIDATED_RECON_CONF = round(TRUST_CONF_MIN - 0.01, 2)
 
 
@@ -131,7 +157,14 @@ def sagittal_observability(rotation: np.ndarray,
 # camera, so sagittal metrics rest on depth the view never contained. Calibrated
 # against measured error: side-on and 20 deg land ~2 deg MAE, 35 deg ~9 deg, and
 # 50 deg and beyond exceed 18 deg -- past any clinically useful threshold.
-OBSERVABILITY_FLOOR = 0.55
+# Re-derived from the measurement above after the sagittal-plane regulariser
+# landed. The previous 0.55 was calibrated against "35 deg ~9 deg, 50 deg and
+# beyond exceed 18 deg" -- error the lift no longer has (35 deg is now 2.5 deg
+# and 50 deg is 3.6 deg at 4 px noise). Holding the old floor would gate out
+# views that now measure inside the interpretable band, which is strictness
+# bought with a stale number. 0.20 admits out to ~52 deg, where MAE is 3.6 deg;
+# past it error roughly doubles at each step.
+OBSERVABILITY_FLOOR = 0.20
 
 
 def _metric_mean_conf(poses: np.ndarray, confidences: np.ndarray) -> float:
@@ -152,7 +185,7 @@ def analyze_3d_angle_agnostic(
     fps: float,
     up_world: Iterable[float] | None = None,
     frame_indices: Iterable[int] | None = None,
-    recon_conf: float = UNVALIDATED_RECON_CONF,
+    recon_conf: float | None = None,
     clip_id: str = "clip",
     source_fps: float | None = None,
     capture_fps: float | None = None,
@@ -194,7 +227,14 @@ def analyze_3d_angle_agnostic(
     # usability floor and produced an EMPTY report -- deleting the measurement
     # rather than demoting it, which is the one thing this pipeline exists not
     # to do. The gate expresses the same verdict without erasing the reading.
-    recon_conf = float(recon_conf)
+    # Reconstruction reliability tracks the view: a clean solve on a view that
+    # never contained the sagittal plane is still an uninformative view. With no
+    # explicit value the measured observability curve supplies it; a caller that
+    # HAS a solver-measured confidence keeps the more pessimistic of the two, so
+    # a bad solve can never be laundered into trust by a good camera angle, and
+    # a good solve cannot outvote a view that saw nothing.
+    obs_conf = recon_conf_for(obs)
+    recon_conf = obs_conf if recon_conf is None else min(float(recon_conf), obs_conf)
 
     side = reproject(poses, confidences, "side", rotation=rotation,
                      frame_indices=frame_indices)
@@ -312,7 +352,7 @@ def analyze_3d_multisegment(
     fps: float,
     up_world: Iterable[float] | None = None,
     view_axis: Iterable[float] = (0.0, 0.0, 1.0),
-    recon_conf: float = UNVALIDATED_RECON_CONF,
+    recon_conf: float | None = None,
     clip_id: str = "clip",
     source_fps: float | None = None,
     capture_fps: float | None = None,
