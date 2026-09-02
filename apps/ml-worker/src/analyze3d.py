@@ -237,8 +237,30 @@ def analyze_3d_angle_agnostic(
     # HAS a solver-measured confidence keeps the more pessimistic of the two, so
     # a bad solve can never be laundered into trust by a good camera angle, and
     # a good solve cannot outvote a view that saw nothing.
-    obs_conf = recon_conf_for(obs)
-    recon_conf = obs_conf if recon_conf is None else min(float(recon_conf), obs_conf)
+    # Frontal observability is the complement of sagittal: the view that is
+    # worst for a knee angle is the best one for knee valgus and pelvic drop.
+    # Scoring both planes with the sagittal number denied the frontal metrics
+    # the exact view they exist to be measured from, which is most of why a
+    # head-on capture reported nothing at all.
+    obs_front = 1.0 - obs
+    solver = None if recon_conf is None else float(recon_conf)
+
+    # Sagittal metrics take the worse of the solver's own closure verdict and
+    # what the view could contain. Frontal metrics take observability alone:
+    # the solver's number is a GLOBAL bone-closure residual, and off-axis it is
+    # dominated by exactly the sagittal depth uncertainty that knee valgus and
+    # pelvic drop do not depend on — head-on those are read from a virtual front
+    # camera looking straight at the frontal plane, essentially an image-plane
+    # measurement. Charging them for sagittal error is double-counting, and it
+    # was the last thing keeping a head-on capture from reporting anything.
+    #
+    # Safe because a genuinely broken reconstruction never reaches here: the
+    # worker rejects the lift and falls back to 2D above LIFT_FALLBACK_REL_TORSO,
+    # so any clip in this function already has acceptable global geometry.
+    recon_conf = {k: recon_conf_for(obs_front) for k in FRONTAL_EXEMPT}
+    recon_conf["_default"] = (
+        recon_conf_for(obs) if solver is None else min(solver, recon_conf_for(obs))
+    )
 
     side = reproject(poses, confidences, "side", rotation=rotation,
                      frame_indices=frame_indices)

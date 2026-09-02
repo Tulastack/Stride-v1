@@ -428,7 +428,15 @@ def _run_3d_geo(analysis_id: str, video_path: str, capture: dict, s3_key: str | 
     notify_progress(analysis_id, "pose_extraction", 30, "RTMPose 2D keypoints")
     max_frames = _max_frames(min(pose_fps, capture_fps))
     frames = []
-    for f in stream_frames(video_path, target_fps=pose_fps, target=target_xy):
+    # Dual-rate timing, same as the 2D path: pose is sampled at pose_fps because
+    # angles do not need more, but cadence and ground contact are measured from
+    # a full-source-rate optical-flow ankle signal. Without this the 3D path
+    # silently computed both at the pose rate (15 fps) and they could never
+    # clear their trust gate — re-projecting cannot add temporal resolution, so
+    # the signal has to be collected here, from the original clip.
+    timing_signal: list = []
+    for f in stream_frames(video_path, target_fps=pose_fps, target=target_xy,
+                           timing_out=timing_signal):
         frames.append(f)
         if len(frames) >= max_frames:
             break
@@ -512,6 +520,7 @@ def _run_3d_geo(analysis_id: str, video_path: str, capture: dict, s3_key: str | 
         result = analyze_3d_multisegment(
             poses, conf, fps=eff_fps, up_world=up,
             source_fps=source_fps, capture_fps=capture_fps,
+            timing_signal=timing_signal, timing_fps=source_fps,
             recon_conf=lift_quality["reconConf"],
             clip_id=analysis_id[:8])
         result["reconstructionMethod"] = "3d-mono-geometric"

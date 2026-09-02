@@ -678,7 +678,7 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
               capture_fps: float | None = None, source_fps: float | None = None,
               timing_signal: list | None = None, timing_fps: float | None = None,
               dropped_pct: float = 0.0, vp_override: float | None = None,
-              recon_conf: float = 1.0) -> dict[str, Any]:
+              recon_conf: float | dict[str, float] = 1.0) -> dict[str, Any]:
     """Assemble metrics. `pose_fps` = keypoint sample rate (gait timing);
     `capture_fps` = phone capture rate (reported quality + nudges);
     `source_fps` = video container fps (flaw evidence timestamps).
@@ -897,8 +897,19 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
         phase = "max_velocity"
     # Reconstruction uncertainty multiplies every tier: it is a property of the
     # skeleton we measured, independent of where the camera stood.
-    eff_conf = mean_conf * recon_conf
+    # recon_conf may be a single number or a per-metric mapping. It has to be
+    # allowed to vary per metric because reconstruction reliability is a
+    # property of the PLANE a metric lives in, not of the clip: a head-on view
+    # that cannot support a knee angle is the best possible view for knee valgus
+    # and pelvic drop. Applying one sagittal-derived discount to every metric
+    # silently denied the frontal metrics the very view they need.
+    def _recon_for(k: str) -> float:
+        if isinstance(recon_conf, dict):
+            return float(recon_conf.get(k, recon_conf.get("_default", 1.0)))
+        return float(recon_conf)
+
     for key, (val, evi) in values.items():
+        eff_conf = mean_conf * _recon_for(key)
         tier = TIER.get(key, 2)
         if tier == 1:
             # angle-robust → NO viewpoint penalty; trust gated on the ACTUAL

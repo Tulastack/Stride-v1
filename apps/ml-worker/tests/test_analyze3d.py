@@ -264,7 +264,11 @@ def test_routing_beats_collapsing_the_lap_to_one_azimuth():
     poses, conf = _lap([80, 85, 90, 95, 100, 0, 105, 110])
     whole = analyze_3d_angle_agnostic(poses, conf, clip_id="w", **kw)
     routed = analyze_3d_multisegment(poses, conf, clip_id="m", **kw)
-    assert n(whole) == 0, "fixture no longer collapses to an uninformative view"
+    # Frontal metrics survive a head-on collapse by design (they are measured
+    # from exactly that view), so the whole-clip path is not expected to reach
+    # zero — what matters is that routing recovers the sagittal ones it threw
+    # away by averaging.
+    assert n(whole) <= 2, f"fixture no longer collapses to an uninformative view ({n(whole)})"
     assert n(routed) > n(whole), (n(routed), n(whole))
 
     # And on a clip a fixed camera already sees well, routing must never be
