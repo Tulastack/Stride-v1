@@ -319,3 +319,48 @@ def test_temporal_metrics_are_not_restricted_to_one_segment():
                                 clip_id="t")
     cad = next(m for m in r["metrics"] if m["key"] == "cadence_spm")
     assert cad["measured"]["value"] > 0
+
+def test_reprojection_is_exact_and_angle_invariant():
+    """Given TRUE 3D poses, the virtual-camera layer must reproduce the angles
+    exactly, and identically from every camera position.
+
+    This separates the two halves of the 3D path. The lift's accuracy degrades
+    off-axis for real geometric reasons, and it is tempting to blame the
+    reprojection for the same symptom. Measured with the lift excluded, it is
+    not at fault: trunk lean and knee drive come back with 0.0 deg error at
+    every yaw from side-on to head-on. Anything that regresses this is a bug in
+    the reprojection itself, not in the reconstruction feeding it.
+    """
+    import math
+    from src.analyze3d import analyze_3d_multisegment
+
+    def _truth_trunk_and_knee(P):
+        sh = 0.5 * (P[KP["left_shoulder"]] + P[KP["right_shoulder"]])
+        hp = 0.5 * (P[KP["left_hip"]] + P[KP["right_hip"]])
+        torso = sh - hp
+        trunk = math.degrees(math.acos(
+            float(np.clip(torso[1] / np.linalg.norm(torso), -1, 1))))
+        knee = max(
+            math.degrees(math.acos(float(np.clip(np.dot(
+                (P[KP[f"{s}_knee"]] - P[KP[f"{s}_hip"]])
+                / np.linalg.norm(P[KP[f"{s}_knee"]] - P[KP[f"{s}_hip"]]),
+                [0.0, -1.0, 0.0]), -1, 1))))
+            for s in ("left", "right"))
+        return trunk, knee
+
+    poses, conf = _clip()
+    seen = []
+    for yaw in (0.0, 35.0, 70.0, 90.0):
+        P = poses @ _rot_yaw(yaw).T
+        r = analyze_3d_multisegment(P, conf, fps=FPS, up_world=(0.0, 1.0, 0.0),
+                                    source_fps=FPS, capture_fps=FPS,
+                                    recon_conf=0.95, clip_id=f"rp{yaw:.0f}")
+        got = {m["key"]: m["measured"]["value"] for m in r["metrics"]}
+        truths = [_truth_trunk_and_knee(P[t]) for t in range(len(P))]
+        assert abs(got["trunk_lean"] - float(np.mean([a for a, _ in truths]))) < 1.0
+        assert abs(got["knee_drive"] - max(b for _, b in truths)) < 1.0
+        seen.append((got["trunk_lean"], got["knee_drive"]))
+
+    # And identical from every angle — that is what angle-agnostic means here.
+    for a, b in seen[1:]:
+        assert abs(a - seen[0][0]) < 0.5 and abs(b - seen[0][1]) < 0.5, seen

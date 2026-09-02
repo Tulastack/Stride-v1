@@ -39,7 +39,16 @@ clip set went 0.356 -> 0.482 of a torso length, and two clips that had been
 reconstructing fell over entirely. Both minimum-displacement and
 minimum-acceleration transition costs behaved the same way. Real footage
 governs, so it is not in the pipeline; the note is here so the next person does
-not spend the same day rediscovering it.)
+not spend the same day rediscovering it.
+
+A root-depth prior from apparent torso size was also tried and removed. Torso
+extent in ray space is L/Z, so 1/size should trace the pelvis depth trajectory
+up to one constant, and that ratio survives a small subject where per-frame
+perspective does not. It made both closure and accuracy worse at every weight
+tested (synthetic sweep 5.36 -> 5.78 deg; 35 deg trunk error 1.03 -> 7.26),
+because the torso also foreshortens with trunk lean and rotation, so C/size is
+a biased depth estimate that fights the correct geometry rather than pinning
+it.)
 Each bone's quadratic has two roots: the child can lie nearer the camera or
 further. That is a real, irreducible ambiguity in a single view (the classic
 "is the arm reaching toward me or away") and no amount of optimisation removes
@@ -668,6 +677,15 @@ def lift_sequence(
 
     quality = _lift_quality(closing, anatomy, lengths)
     return poses, conf, quality
+
+
+def _closure_rel_of(rays_seq, valid_seq, z_seq, lengths) -> float:
+    """Bone-closure RMS as a fraction of torso length, over solved frames."""
+    vals = [_closing_cost(z, r, lengths)
+            for r, v, z in zip(rays_seq, valid_seq, z_seq) if np.isfinite(z).all()]
+    if not vals:
+        return float("inf")
+    return float(np.sqrt(np.mean(vals))) / max(_L(lengths, "left_shoulder", "left_hip"), 1e-6)
 
 
 def _lift_quality(closing, anatomy, lengths) -> dict[str, float]:
