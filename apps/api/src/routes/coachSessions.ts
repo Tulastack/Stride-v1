@@ -224,18 +224,35 @@ router.post('/:id/message', authenticate, async (req: any, res: Response, next: 
         onProgress: (ev) => { progress.push(ev.label); },
       });
     } catch (agentErr) {
-      if (agentErr instanceof CoachRateLimitError) {
-        // Same Groq account/quota — retrying via the fallback path would just
-        // fail again. Surface the friendly rate-limit message immediately.
-        throw agentErr;
+      const rateLimited = agentErr instanceof CoachRateLimitError;
+      if (rateLimited) {
+        // The fallback is worth ONE attempt even here. This used to rethrow on
+        // the assumption that a rate limit is a quota the fallback would hit
+        // too — true of a daily cap, but the limit that actually bites is
+        // tokens-per-minute, and the agent is far the more expensive request:
+        // it sends the tool schemas and a growing transcript across several
+        // rounds, where the fallback is one call with neither. Observed on a
+        // real clip: the agent's second round asked for 3,170 tokens against
+        // 2,773 remaining, while the single-shot needs roughly a third of that.
+        // Giving the athlete a grounded answer beats "your coach is busy"
+        // whenever the cheaper path fits.
+        console.warn('Coach agent rate-limited; trying the cheaper single-shot path');
+      } else {
+        console.error('Coach agent failed, falling back to single-shot reply:', agentErr);
       }
-      console.error('Coach agent failed, falling back to single-shot reply:', agentErr);
       progress.push('Drafting your coaching plan');
-      assistantText = await generateCoachReply({
-        analysisContext,
-        userMessage: content,
-        history: history ?? [],
-      });
+      try {
+        assistantText = await generateCoachReply({
+          analysisContext,
+          userMessage: content,
+          history: history ?? [],
+        });
+      } catch (fallbackErr) {
+        // Out of room on both paths — now the friendly message is the honest
+        // answer. Rethrow the ORIGINAL rate-limit error so the caller still
+        // sees a 429 rather than a generic 500.
+        throw rateLimited ? agentErr : fallbackErr;
+      }
     }
 
     await touchCoachSession(id);

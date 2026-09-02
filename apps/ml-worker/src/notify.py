@@ -10,6 +10,12 @@ import requests
 
 logger = logging.getLogger(__name__)
 
+# NOTE: these callbacks deliberately do NOT follow redirects. A 3xx from this
+# endpoint means something other than the Stride API is listening on the port —
+# and requests' default redirect-following turned that into a 200, so the worker
+# logged "Successfully reported", skipped its own DB-write fallback, and the
+# finished analysis was silently lost. Observed for real when another project
+# was serving :3000 and redirected to its own sign-in page.
 API_SERVER_URL = os.environ.get("API_SERVER_URL", "http://localhost:3000")
 INTERNAL_API_SECRET = os.environ.get("INTERNAL_API_SECRET", "")
 if not INTERNAL_API_SECRET:
@@ -40,7 +46,8 @@ def notify_biomech_completed(analysis_id: str, pipeline3d: dict[str, Any]) -> bo
     headers = {"Content-Type": "application/json", "X-Internal-Token": INTERNAL_API_SECRET}
     try:
         logger.info("Sending WHAM+OpenCap biomech callback for %s", analysis_id)
-        response = requests.post(endpoint, json=payload, headers=headers, timeout=120)
+        response = requests.post(endpoint, json=payload, headers=headers, timeout=120,
+                                 allow_redirects=False)
         if response.status_code == 200:
             logger.info("Biomech callback succeeded for %s", analysis_id)
             return True
@@ -86,7 +93,8 @@ def notify_analysis_completed(
             analysis_id,
             callback_endpoint,
         )
-        response = requests.post(callback_endpoint, json=payload, headers=headers, timeout=10)
+        response = requests.post(callback_endpoint, json=payload, headers=headers, timeout=10,
+                                 allow_redirects=False)
         
         if response.status_code == 200:
             logger.info("Successfully reported analysis completion for %s.", analysis_id)
@@ -136,7 +144,8 @@ def notify_analysis_failed(
             callback_endpoint,
             error_message,
         )
-        response = requests.post(callback_endpoint, json=payload, headers=headers, timeout=10)
+        response = requests.post(callback_endpoint, json=payload, headers=headers, timeout=10,
+                                 allow_redirects=False)
         
         if response.status_code == 200:
             logger.info("Successfully reported analysis failure for %s.", analysis_id)
