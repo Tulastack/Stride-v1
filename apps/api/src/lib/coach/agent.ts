@@ -10,7 +10,11 @@ import type { CoachToolset } from './tools.js';
 import { CoachRateLimitError } from './errors.js';
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const MODEL = process.env.GROQ_MODEL ?? 'llama-3.3-70b-versatile';
+// llama-3.3-70b-versatile was retired from Groq's catalog; openai/gpt-oss-120b
+// is the current closest equivalent (strong general-purpose quality, and
+// verified to return standard OpenAI-shape tool_calls, which this agent loop
+// depends on).
+const MODEL = process.env.GROQ_MODEL ?? 'openai/gpt-oss-120b';
 const MAX_TOOL_ROUNDS = 4;
 
 const AGENT_SYSTEM_PROMPT = `You are "Stride Coach", an elite Track & Field coach for sprinters and runners. You are laser-focused on TRACK: sprint & distance running form/biomechanics, event-specific race strategy (100m/200m/400m and distance), periodization & training plans, strength for speed, warm-up, sports nutrition/hydration, recovery, and injury prevention. You also help with directly athlete-adjacent topics (mental performance, recruiting/college athletics, competition prep). For anything clearly outside athletics (coding, math homework, general trivia), decline in one friendly sentence and steer back to their running.

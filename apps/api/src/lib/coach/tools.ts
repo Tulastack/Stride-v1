@@ -51,7 +51,7 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
         type: 'object',
         properties: {
           query: { type: 'string', description: 'What to look up, e.g. "fix overstriding" or "400m pacing".' },
-          event: { type: 'string', enum: ['100m', '200m', '400m', 'distance'], description: 'Optional event to bias results toward.' },
+          event: { type: ['string', 'null'], enum: ['100m', '200m', '400m', 'distance', null], description: 'Optional event to bias results toward. Pass null/omit if not applicable.' },
         },
         required: ['query'],
       },
@@ -80,7 +80,7 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
             description:
               'Metric key from analysis (aliases ok): knee_drive / knee_drive_angle, trunk_lean / torso_lean, hip_extension, contact_time_ms / ground_contact_time, arm_angle.',
           },
-          weeks: { type: 'number', description: 'How many weeks back (default 4).' },
+          weeks: { type: ['number', 'null'], description: 'How many weeks back (default 4). Pass null/omit for default.' },
         },
         required: ['metric_key'],
       },
@@ -107,7 +107,7 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
         "Get the athlete's currently scheduled training events (calendar) around today, so your advice fits their existing plan and avoids stacking hard days.",
       parameters: {
         type: 'object',
-        properties: { days: { type: 'number', description: 'Window size in days around today (default 14).' } },
+        properties: { days: { type: ['number', 'null'], description: 'Window size in days around today (default 14). Pass null/omit for default.' } },
       },
     },
   },

@@ -6,7 +6,9 @@
 import { CoachRateLimitError } from './coach/errors.js';
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const MODEL = process.env.GROQ_MODEL ?? 'llama-3.3-70b-versatile';
+// llama-3.3-70b-versatile was retired from Groq's catalog; openai/gpt-oss-120b
+// is the current closest equivalent. Keep in sync with lib/coach/agent.ts.
+const MODEL = process.env.GROQ_MODEL ?? 'openai/gpt-oss-120b';
 
 const SYSTEM_PROMPT = `You are "Stride Coach", an expert coach for runners and sprinters.
 
