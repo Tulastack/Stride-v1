@@ -4,7 +4,7 @@
 // every reply references the athlete's real measured numbers.
 
 import { CoachRateLimitError } from './coach/errors.js';
-import { resolveCoachProvider } from './coach/provider.js';
+import { resolveCoachProvider, postToProvider } from './coach/provider.js';
 
 const SYSTEM_PROMPT = `You are "Stride Coach", an expert coach for runners and sprinters.
 
@@ -17,20 +17,12 @@ CALENDAR INTEGRATION — you never schedule anything yourself. Workouts and dril
 PRIORITISATION — surface the TOP 1–2 things to fix, worst first. Don't dump every metric.
 
 FORMATTING RULES (CRITICAL — follow exactly):
-• NEVER use markdown. No asterisks, no hashtags, no backticks.
-• Use these emoji as section headers:
-  🎯 for the main focus or key point
-  🏃 for form/technique tips
-  💪 for drills or exercises
-  📅 for schedule/planning
-  🍎 for nutrition
-  🧠 for mental tips
-  ⚡ for quick tips
-• Use • (bullet point character) for lists, not dashes or asterisks
-• Separate sections with a blank line
-• Keep each section to 2-3 lines max
-• Bold nothing. Italicize nothing. Just plain text with emoji headers.
-• Total response: 250-400 words. Be thorough and helpful. Don't cut short.
+• NEVER use markdown. No asterisks, hashtags, backticks, or emoji. Bold nothing, italicise nothing.
+• Start each section with a label on its own line: FOCUS:  FORM:  DRILL:  PLAN:  FUEL:  MIND:  TIP:
+  When discussing a measured issue also emit: METRIC: <key>
+  (keys: knee_drive, trunk_lean, hip_extension, knee_flexion, contact_time_ms, cadence_spm, overstride, arm_swing, vertical_oscillation)
+• Use • for bullets, not dashes or asterisks. Blank line between sections. 2–3 lines per section.
+• Total 120–250 words. Concise, specific, encouraging, second person.
 
 CONFIDENCE — metrics marked [experimental] or low-confidence are less certain; hedge on those.
 
@@ -102,7 +94,10 @@ export async function generateCoachReply(params: {
   history?: { role: 'user' | 'assistant'; content: string }[];
   /**
    * Output budget. The default suits a chat reply (the prompt caps it at
-   * 120-250 words). The add-to-calendar path needs far more, because it emits a
+   * 120-250 words) PLUS headroom for a reasoning model's hidden thinking
+   * tokens, which consume this budget without appearing in completion_tokens —
+   * at 900 the reply came back truncated mid-sentence on Gemini Flash. The
+   * add-to-calendar path needs far more still, because it emits a
    * two-week JSON array in one shot and a truncated array is unparseable —
    * silently turning into a 422 rather than a short answer.
    */
@@ -117,10 +112,9 @@ export async function generateCoachReply(params: {
     { role: 'user' as const, content: params.userMessage },
   ];
 
-  const resp = await fetch(provider.url, {
-    method: 'POST',
-    headers: provider.headers,
-    body: JSON.stringify({ model: provider.model, messages, temperature: 0.7, max_tokens: params.maxTokens ?? 900 }),
+  const resp = await postToProvider(provider, {
+    model: provider.model, messages, temperature: 0.7,
+    max_tokens: params.maxTokens ?? 900,
   });
   if (!resp.ok) {
     const t = await resp.text();

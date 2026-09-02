@@ -18,6 +18,10 @@ export interface CoachProvider {
   name: string;
   url: string;
   model: string;
+  /** Tried once if the primary model is persistently overloaded (503). */
+  fallbackModel?: string;
+  /** Provider-specific body fields merged into every request. */
+  extraParams?: Record<string, unknown>;
   headers: Record<string, string>;
 }
 
@@ -41,8 +45,26 @@ const PROVIDERS = {
     // complete a single message there. This agent sends five tool schemas plus a
     // growing transcript across up to five rounds; a per-minute budget in the
     // thousands cannot hold that, and one in the millions does not notice it.
-    // Override with LLM_MODEL if a newer Flash model is current.
-    model: 'gemini-2.5-flash',
+    // Chosen by listing what this key can actually reach, not from docs:
+    // gemini-2.5-flash is retired for new keys, and 3.6-flash — which the
+    // retirement message itself recommends — returns 503 "experiencing high
+    // demand" persistently. 3.8-flash is the newest full (non-lite) Flash and
+    // answers immediately. Override with LLM_MODEL when Google moves again;
+    // gemini-3.1-flash-lite is a verified-working fallback with more headroom.
+    model: 'gemini-3.8-flash',
+    // Gemini returns 503 "experiencing high demand" per-model, so a busy
+    // primary is survivable by asking a different one rather than failing the
+    // athlete. Verified reachable on this key and answers immediately.
+    fallbackModel: 'gemini-3.1-flash-lite',
+    // Current Gemini Flash models think before answering, and those thinking
+    // tokens are invisible in completion_tokens while still consuming
+    // max_tokens — which truncated the coach's reply mid-sentence at 1,100.
+    // Measured on a real coaching prompt: default effort burned ~900 tokens of
+    // hidden reasoning and returned a cut-off answer, 'low' returned 0 thinking
+    // tokens, 229 completion tokens and a complete 173-word reply in the right
+    // format. It is the single biggest token saving available here, and it
+    // costs no answer quality at this task's difficulty.
+    extraParams: { reasoning_effort: 'low' },
     keyEnv: 'GOOGLE_API_KEY',
   },
   groq: {
@@ -64,8 +86,24 @@ export type ProviderName = keyof typeof PROVIDERS;
  * to OpenRouter (or the reverse) would just 401, so the key and the host are
  * never resolved independently.
  */
+/**
+ * Read an env var, treating BLANK as unset.
+ *
+ * `process.env.X ?? fallback` keeps an empty string, because '' is not nullish
+ * — so a commented-out-by-blanking `LLM_MODEL=` in a .env silently overrode the
+ * provider's default with no model at all, and Google rejected the call with
+ * "model is not specified". Blank means unset for every one of these.
+ */
+function envOr(name: string, fallback: string): string {
+  const v = process.env[name];
+  return v !== undefined && v.trim() !== '' ? v : fallback;
+}
+
 export function resolveCoachProvider(): CoachProvider {
-  const explicit = process.env.LLM_PROVIDER as ProviderName | undefined;
+  const explicitRaw = process.env.LLM_PROVIDER;
+  const explicit = (explicitRaw && explicitRaw.trim() !== ''
+    ? explicitRaw.trim()
+    : undefined) as ProviderName | undefined;
   // Preference order when nothing is pinned: Google first, because its free
   // tier is the only one measured to actually fit this agent's token footprint.
   const auto: ProviderName | undefined =
@@ -103,8 +141,53 @@ export function resolveCoachProvider(): CoachProvider {
     name: provider.name,
     // Escape hatches for a provider this file doesn't know about (a gateway, a
     // self-hosted vLLM) without another code change.
-    url: process.env.LLM_BASE_URL ?? provider.url,
-    model: process.env.LLM_MODEL ?? provider.model,
+    url: envOr('LLM_BASE_URL', provider.url),
+    model: envOr('LLM_MODEL', provider.model),
+    fallbackModel: (provider as { fallbackModel?: string }).fallbackModel,
+    extraParams: (provider as { extraParams?: Record<string, unknown> }).extraParams,
     headers,
   };
+}
+
+
+/**
+ * POST to the coach provider, retrying once on a transient upstream failure.
+ *
+ * 503 from Gemini means "this model is experiencing high demand ... usually
+ * temporary" — a queue depth on their side, not anything wrong with the
+ * request. Failing the athlete's message on a condition that clears in a second
+ * is the wrong call, and one retry is cheap: at most two calls against a
+ * 1,500/day free tier.
+ *
+ * Deliberately NOT retried: 429 (a real budget, retrying spends more of it),
+ * and every 4xx (the request is wrong and will be wrong again).
+ */
+export async function postToProvider(
+  provider: CoachProvider,
+  body: unknown,
+  fetchImpl: typeof fetch = fetch,
+): Promise<Response> {
+  const payload = { ...(provider.extraParams ?? {}), ...(body as object) };
+  const send = () =>
+    fetchImpl(provider.url, {
+      method: 'POST',
+      headers: provider.headers,
+      body: JSON.stringify(payload),
+    });
+
+  const first = await send();
+  if (first.status !== 503) return first;
+  await new Promise((r) => setTimeout(r, 1200));
+  const second = await send();
+  if (second.status !== 503 || !provider.fallbackModel) return second;
+
+  // Still overloaded after a retry. 503 is per-MODEL on Gemini, so the useful
+  // move now is a different model rather than a third attempt at the busy one.
+  // Observed: gemini-3.8-flash 503'd twice in a row while 3.1-flash-lite
+  // answered immediately.
+  return fetchImpl(provider.url, {
+    method: 'POST',
+    headers: provider.headers,
+    body: JSON.stringify({ ...payload, model: provider.fallbackModel }),
+  });
 }

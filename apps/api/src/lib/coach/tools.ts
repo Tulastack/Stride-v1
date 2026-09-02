@@ -50,8 +50,8 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
       parameters: {
         type: 'object',
         properties: {
-          query: { type: 'string', description: 'What to look up, e.g. "fix overstriding" or "400m pacing".' },
-          event: { type: ['string', 'null'], enum: ['100m', '200m', '400m', 'distance', null], description: 'Optional event to bias results toward. Pass null/omit if not applicable.' },
+          query: { type: 'string', description: 'What to look up, e.g. "fix overstriding".' },
+          event: { type: ['string', 'null'], enum: ['100m', '200m', '400m', 'distance', null], description: 'Optional event bias. null/omit if n/a.' },
         },
         required: ['query'],
       },
@@ -80,7 +80,7 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
             description:
               'Metric key from analysis (aliases ok): knee_drive / knee_drive_angle, trunk_lean / torso_lean, hip_extension, contact_time_ms / ground_contact_time, arm_angle.',
           },
-          weeks: { type: ['number', 'null'], description: 'How many weeks back (default 4). Pass null/omit for default.' },
+          weeks: { type: ['number', 'null'], description: 'Weeks back (default 4). null/omit for default.' },
         },
         required: ['metric_key'],
       },
@@ -94,7 +94,7 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
         'Look up a canonical drill by its key to get the exact cue, prescription, and any contraindications/safety warnings. Use before recommending a specific drill so cues and warnings are accurate.',
       parameters: {
         type: 'object',
-        properties: { drill_key: { type: 'string', description: 'The drill key, e.g. "drill-wickets".' } },
+        properties: { drill_key: { type: 'string', description: 'Drill key, e.g. "drill-wickets".' } },
         required: ['drill_key'],
       },
     },
@@ -107,7 +107,7 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
         "Get the athlete's currently scheduled training events (calendar) around today, so your advice fits their existing plan and avoids stacking hard days.",
       parameters: {
         type: 'object',
-        properties: { days: { type: ['number', 'null'], description: 'Window size in days around today (default 14). Pass null/omit for default.' } },
+        properties: { days: { type: ['number', 'null'], description: 'Days around today (default 14). null/omit for default.' } },
       },
     },
   },
