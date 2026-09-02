@@ -118,6 +118,10 @@ PIPELINE = os.environ.get("STRIDE_PIPELINE", "2d").lower()
 # the measured split between healthy and failed reconstructions on real clips
 # (0.14 vs 1.22); 0.35 sits clear of both.
 LIFT_FALLBACK_REL_TORSO = float(os.environ.get("STRIDE_LIFT_FALLBACK_REL", "0.35"))
+# Minimum median torso height, as a fraction of frame height, for the geometric
+# lift to be attempted at all. Clips at 0.11-0.13 reconstruct cleanly; clips at
+# 0.016-0.051 fail regardless of keypoint quality. 0.08 sits between them.
+MIN_APPARENT_SCALE = float(os.environ.get("STRIDE_MIN_APPARENT_SCALE", "0.08"))
 USE_WHAM_OPENCAP = PIPELINE == "wham"
 
 
@@ -400,7 +404,7 @@ def _run_3d_geo(analysis_id: str, video_path: str, capture: dict, s3_key: str | 
     user's brushed target) as `_run_2d`, then lifts that sequence instead of
     reading its angles directly off the 2D projection.
     """
-    from src.lift3d import lift_sequence, gravity_up_from_capture
+    from src.lift3d import lift_sequence, gravity_up_from_capture, apparent_scale
     from src.analyze3d import analyze_3d_multisegment
 
     capture_fps = float(capture.get("fps") or capture.get("preferredFps") or 30)
@@ -469,6 +473,27 @@ def _run_3d_geo(analysis_id: str, video_path: str, capture: dict, s3_key: str | 
     })
 
     up = gravity_up_from_capture(capture)
+
+    # Cheap viability check before spending anything on the solve. The lift
+    # recovers depth from perspective, and perspective strength scales with how
+    # much of the frame the athlete fills; below this the projection is very
+    # nearly orthographic and the reconstruction cannot succeed no matter how
+    # good the keypoints are. Measured as the strongest predictor of failure
+    # across the clip set (corr -0.73 with closure residual). Routing here saves
+    # a doomed 1-8 s solve AND lets the athlete be told something actionable.
+    scale = apparent_scale(keypoints, vw or 1080, vh or 1920)
+    if scale < MIN_APPARENT_SCALE:
+        logger.warning("subject too small for a 3D lift (torso %.3f of frame height, "
+                       "need %.3f) — using the 2D sagittal path", scale, MIN_APPARENT_SCALE)
+        result = _analyze_2d_fallback(analysis_id, included, eff_fps, capture,
+                                      source_fps, capture_fps)
+        result.setdefault("captureQuality", {})["subjectTooSmall"] = {
+            "torsoFrac": round(scale, 4), "min": MIN_APPARENT_SCALE,
+            "nudge": "Move closer, or zoom in — the runner needs to fill more of the frame for 3D.",
+        }
+        _finish_3d_geo(analysis_id, result, capture, pose_fps, lift_quality=None)
+        return
+
     notify_progress(analysis_id, "wham_reconstruction", 55, "Geometric 3D lift")
     poses, conf, lift_quality = lift_sequence(
         keypoints,
@@ -504,14 +529,8 @@ def _run_3d_geo(analysis_id: str, video_path: str, capture: dict, s3_key: str | 
             lift_quality["reconConf"])
         notify_progress(analysis_id, "biomechanics_calculation", 80,
                         "2D sagittal biomechanics (3D lift rejected)")
-        result = analyze_2d_sagittal_stream(
-            iter(included), fps=eff_fps,
-            azimuth_deg=float(capture["cameraAzimuthDeg"])
-            if capture.get("cameraAzimuthDeg") is not None else 20.0,
-            clip_id=analysis_id[:8], source_fps=source_fps,
-            capture_fps=capture_fps,
-            image_down=_image_down_from_capture(capture))
-        result["reconstructionMethod"] = "2d-sagittal-fallback"
+        result = _analyze_2d_fallback(analysis_id, included, eff_fps, capture,
+                                      source_fps, capture_fps)
         result.setdefault("captureQuality", {})["liftRejected"] = {
             "closingRelTorso": lift_quality["closingRelTorso"],
             "threshold": LIFT_FALLBACK_REL_TORSO,
@@ -525,12 +544,36 @@ def _run_3d_geo(analysis_id: str, video_path: str, capture: dict, s3_key: str | 
             clip_id=analysis_id[:8])
         result["reconstructionMethod"] = "3d-mono-geometric"
 
-    cq = result["captureQuality"]
+    _finish_3d_geo(analysis_id, result, capture, pose_fps, lift_quality)
+    return
+
+
+def _analyze_2d_fallback(analysis_id, included, eff_fps, capture, source_fps, capture_fps):
+    """The 2D sagittal path, reached when the 3D lift is not viable for a clip.
+
+    Shared by both rejection routes — subject too small to attempt the lift at
+    all, and a lift that was attempted and did not close.
+    """
+    result = analyze_2d_sagittal_stream(
+        iter(included), fps=eff_fps,
+        azimuth_deg=float(capture["cameraAzimuthDeg"])
+        if capture.get("cameraAzimuthDeg") is not None else 20.0,
+        clip_id=analysis_id[:8], source_fps=source_fps,
+        capture_fps=capture_fps,
+        image_down=_image_down_from_capture(capture))
+    result["reconstructionMethod"] = "2d-sagittal-fallback"
+    return result
+
+
+def _finish_3d_geo(analysis_id, result, capture, pose_fps, lift_quality):
+    """Attach capture quality + provenance and publish the result."""
+    cq = result.setdefault("captureQuality", {})
     if capture.get("motionBlur"):
         cq["motionBlur"] = capture["motionBlur"]
     if capture.get("framing"):
         cq["framing"] = capture["framing"]
-    cq["liftQuality"] = lift_quality
+    if lift_quality is not None:
+        cq["liftQuality"] = lift_quality
 
     result["model_meta"] = {
         "backend": "geometric-bone-lift", "model_version": "lift3d-v1",

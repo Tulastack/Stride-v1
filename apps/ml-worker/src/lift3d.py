@@ -805,6 +805,41 @@ def _assemble_poses(kps, rays_seq, valid_seq, z_seq, conf_seq):
     return poses, conf
 
 
+def apparent_scale(keypoints, width: int, height: int) -> float:
+    """Median torso height as a fraction of frame height.
+
+    This predicts whether the geometric lift can work AT ALL, before spending
+    any time on it. Depth from bone constraints is recovered from perspective,
+    and perspective strength scales with how much of the frame the subject
+    occupies. A torso 30-55 px tall in a 1080p frame is very nearly an
+    orthographic projection, where the depth the solve is trying to recover is
+    barely encoded in the image at all.
+
+    Measured across the clip set, this is the strongest single predictor of
+    reconstruction failure — correlation -0.73 against bone-closure residual,
+    stronger than keypoint confidence or frame count:
+
+        torso/frame   0.130  0.112  0.042  0.051  0.016
+        closure       0.086  0.254  0.356  0.459  0.470
+
+    Returns 0.0 when the torso cannot be measured.
+    """
+    lo, hi = KP["left_shoulder"], KP["right_shoulder"]
+    lh, rh = KP["left_hip"], KP["right_hip"]
+    vals = []
+    for k in keypoints:
+        k = np.asarray(k, dtype=float)
+        if not np.isfinite(k[[lo, hi, lh, rh]][:, :2]).all():
+            continue
+        sh = 0.5 * (k[lo, :2] + k[hi, :2])
+        hp = 0.5 * (k[lh, :2] + k[rh, :2])
+        # Canonical keypoints are [y, x] normalised; convert to pixels, then
+        # back to a fraction of frame height so the number is resolution-free.
+        dy, dx = (sh[0] - hp[0]) * height, (sh[1] - hp[1]) * width
+        vals.append(math.hypot(dy, dx) / max(height, 1))
+    return float(np.median(vals)) if vals else 0.0
+
+
 def gravity_up_from_capture(capture: dict[str, Any]) -> np.ndarray | None:
     """World-up in the CAMERA frame, from the phone accelerometer.
 
