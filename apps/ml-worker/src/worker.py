@@ -487,10 +487,19 @@ def _run_3d_geo(analysis_id: str, video_path: str, capture: dict, s3_key: str | 
                        "need %.3f) — using the 2D sagittal path", scale, MIN_APPARENT_SCALE)
         result = _analyze_2d_fallback(analysis_id, included, eff_fps, capture,
                                       source_fps, capture_fps)
-        result.setdefault("captureQuality", {})["subjectTooSmall"] = {
-            "torsoFrac": round(scale, 4), "min": MIN_APPARENT_SCALE,
-            "nudge": "Move closer, or zoom in — the runner needs to fill more of the frame for 3D.",
-        }
+        cq = result.setdefault("captureQuality", {})
+        cq["subjectTooSmall"] = {"torsoFrac": round(scale, 4), "min": MIN_APPARENT_SCALE}
+        # primaryNudge is the ONLY capture field the app actually renders
+        # (CaptureQualityCard). Writing the advice anywhere else means the
+        # athlete never sees it and re-films the same way next time, which
+        # leaves the single biggest cause of 3D failure uncorrected.
+        # Existing advice wins: a nudge already set by the 2D analysis is about
+        # this clip's metrics, which is more specific than framing.
+        cq.setdefault(
+            "primaryNudge",
+            "Film the runner larger in frame — move closer or zoom in. "
+            "They were too small here for 3D, so this used the 2D analysis.",
+        )
         _finish_3d_geo(analysis_id, result, capture, pose_fps, lift_quality=None)
         return
 
@@ -531,10 +540,17 @@ def _run_3d_geo(analysis_id: str, video_path: str, capture: dict, s3_key: str | 
                         "2D sagittal biomechanics (3D lift rejected)")
         result = _analyze_2d_fallback(analysis_id, included, eff_fps, capture,
                                       source_fps, capture_fps)
-        result.setdefault("captureQuality", {})["liftRejected"] = {
+        cq_r = result.setdefault("captureQuality", {})
+        cq_r["liftRejected"] = {
             "closingRelTorso": lift_quality["closingRelTorso"],
             "threshold": LIFT_FALLBACK_REL_TORSO,
         }
+        cq_r.setdefault(
+            "primaryNudge",
+            "The 3D reconstruction didn't hold together on this clip, so this "
+            "used the 2D analysis. A steadier shot with the runner filling more "
+            "of the frame usually fixes it.",
+        )
     else:
         result = analyze_3d_multisegment(
             poses, conf, fps=eff_fps, up_world=up,

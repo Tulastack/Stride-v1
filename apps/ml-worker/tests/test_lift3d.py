@@ -229,3 +229,52 @@ def test_low_confidence_joints_are_dropped_not_guessed():
     lifted, conf, _ = lift_sequence(kp, INTR, W, H)
     assert np.isnan(lifted[:, KP["left_wrist"]]).all()
     assert (conf[:, KP["left_wrist"]] == 0).all()
+
+# ── capture viability ─────────────────────────────────────────────────────────
+
+def test_apparent_scale_separates_clips_the_lift_can_and_cannot_serve():
+    """The gate that decides whether a 3D lift is even attempted.
+
+    Depth from bone constraints comes out of perspective, and perspective
+    strength scales with how much of the frame the athlete fills. Measured
+    across the real clip set this was the strongest single predictor of
+    reconstruction failure (correlation -0.73 with bone-closure residual):
+
+        torso/frame   0.130  0.112  0.055  0.051  0.042  0.016
+        closure       0.086  0.254  0.406  0.459  0.356  0.470
+
+    So it is checked before the solve rather than after it.
+    """
+    from src.lift3d import apparent_scale
+
+    def _clip_at(torso_frac: float, n: int = 12):
+        """Frames whose shoulder-hip span is a known fraction of frame height."""
+        out = []
+        for _ in range(n):
+            k = np.full((17, 3), np.nan)
+            for name in ("left_shoulder", "right_shoulder", "left_hip", "right_hip"):
+                k[KP[name]] = [0.0, 0.0, 0.9]
+            # y is normalised and increases downward; put shoulders above hips.
+            for name in ("left_shoulder", "right_shoulder"):
+                k[KP[name]] = [0.5 - torso_frac, 0.5, 0.9]
+            for name in ("left_hip", "right_hip"):
+                k[KP[name]] = [0.5, 0.5, 0.9]
+            out.append(k)
+        return out
+
+    big = apparent_scale(_clip_at(0.13), 1280, 720)
+    small = apparent_scale(_clip_at(0.02), 1920, 1080)
+    assert abs(big - 0.13) < 0.01, big
+    assert abs(small - 0.02) < 0.01, small
+    assert small < big
+
+    # Resolution-free: the same framing on a different sensor is the same number.
+    assert abs(apparent_scale(_clip_at(0.13), 1920, 1080) - big) < 0.01
+
+
+def test_apparent_scale_is_zero_when_the_torso_cannot_be_measured():
+    """Returns 0.0 rather than raising, so a clip with no usable torso routes to
+    the 2D path instead of failing the analysis."""
+    from src.lift3d import apparent_scale
+    blank = [np.full((17, 3), np.nan) for _ in range(6)]
+    assert apparent_scale(blank, 1080, 1920) == 0.0
