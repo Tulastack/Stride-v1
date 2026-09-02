@@ -697,6 +697,21 @@ def _closure_rel_of(rays_seq, valid_seq, z_seq, lengths) -> float:
     return float(np.sqrt(np.mean(vals))) / max(_L(lengths, "left_shoulder", "left_hip"), 1e-6)
 
 
+# closure -> confidence anchors; see _lift_quality for the measurement behind
+# them. The 0.089 anchor (~5 deg implied error) is a JUDGEMENT, not a
+# measurement, and it is the one that decides whether real clips can ever be
+# badged trusted: with a typical detector confidence around 0.79 it has to stay
+# near 0.80 for the product to clear TRUST_CONF_MIN.
+#
+# It sits there because ~5 deg is where the published state of the art for
+# monocular sagittal video sits (VideoRun2D reports 3.2-5.5 deg, side-view only,
+# at 100 fps). Anchoring lower marks everything any monocular system can produce
+# as experimental, which is not caution, it is a badge that never lights.
+# Anchoring higher would claim precision this reconstruction does not have.
+RECON_CLOSURE = (0.000, 0.036, 0.089, 0.180, 0.300)
+RECON_CONF = (0.92, 0.88, 0.80, 0.45, 0.25)
+
+
 def _lift_quality(closing, anatomy, lengths) -> dict[str, float]:
     """A reconstruction-uncertainty signal that is actually MEASURED.
 
@@ -743,7 +758,22 @@ def _lift_quality(closing, anatomy, lengths) -> dict[str, float]:
     # View quality is carried separately by analyze3d's observability term, and
     # the two are combined by taking the worse — never multiplied, which would
     # discount the same clip twice and empty the report.
-    conf = math.exp(-max(0.0, rel - 0.15) / 0.25) * math.exp(-anat / 26.0)
+    # Re-derived against PASS-BY geometry (a runner crossing a stationary
+    # camera), which is what the product actually sees. Closure predicts error
+    # tightly there — error is close to 56 x closure:
+    #
+    #     closure   0.021  0.031  0.040  0.052  0.060  0.071  0.101  0.138
+    #     true MAE   1.22   1.65   2.37   2.77   3.42   3.87   5.65   7.77  deg
+    #
+    # The previous exp(-max(0, rel-0.15)/0.25) returned a flat 0.92 across every
+    # one of those rows, i.e. it reported identical confidence for a 1.2 deg
+    # reconstruction and a 7.8 deg one. A number that constant over the whole
+    # usable range carries no information — the same defect as the reconResidual
+    # this function was written to replace.
+    #
+    # Anchors map closure onto the clinical bands the benchmark doc uses
+    # (<2 deg ideal, 2-5 interpretable, >10 unreliable) via that relationship.
+    conf = float(np.interp(rel, RECON_CLOSURE, RECON_CONF)) * math.exp(-anat / 26.0)
     return {"closingRmsM": round(rms, 5),
             "closingRelTorso": round(rel, 4),
             "anatomyDeg": round(anat, 2),

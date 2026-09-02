@@ -31,6 +31,20 @@ const PROVIDERS = {
     model: 'google/gemma-4-31b-it:free',
     keyEnv: 'OPENROUTER_API_KEY',
   },
+  google: {
+    name: 'Google AI Studio',
+    // Gemini's OpenAI-compatible surface: same /chat/completions wire format,
+    // same tools/tool_choice, so the agent loop needs no changes.
+    url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+    // Free tier is ~1,000,000 tokens/minute and 1,500 requests/day, against
+    // Groq's 8,000 TPM — which is the entire reason the coach agent could not
+    // complete a single message there. This agent sends five tool schemas plus a
+    // growing transcript across up to five rounds; a per-minute budget in the
+    // thousands cannot hold that, and one in the millions does not notice it.
+    // Override with LLM_MODEL if a newer Flash model is current.
+    model: 'gemini-2.5-flash',
+    keyEnv: 'GOOGLE_API_KEY',
+  },
   groq: {
     name: 'Groq',
     url: 'https://api.groq.com/openai/v1/chat/completions',
@@ -52,18 +66,24 @@ export type ProviderName = keyof typeof PROVIDERS;
  */
 export function resolveCoachProvider(): CoachProvider {
   const explicit = process.env.LLM_PROVIDER as ProviderName | undefined;
-  const hasOpenRouter = Boolean(process.env.OPENROUTER_API_KEY);
-  const hasGroq = Boolean(process.env.GROQ_API_KEY);
+  // Preference order when nothing is pinned: Google first, because its free
+  // tier is the only one measured to actually fit this agent's token footprint.
+  const auto: ProviderName | undefined =
+    process.env.GOOGLE_API_KEY ? 'google'
+      : process.env.OPENROUTER_API_KEY ? 'openrouter'
+        : process.env.GROQ_API_KEY ? 'groq'
+          : undefined;
 
   const chosen: ProviderName =
-    explicit && explicit in PROVIDERS ? explicit : hasOpenRouter ? 'openrouter' : hasGroq ? 'groq' : 'openrouter';
+    explicit && explicit in PROVIDERS ? explicit : (auto ?? 'google');
 
   const provider = PROVIDERS[chosen];
   const apiKey = process.env[provider.keyEnv];
   if (!apiKey) {
     throw new Error(
       `Coach LLM is not configured — set ${provider.keyEnv}` +
-        (chosen === 'openrouter' ? ' (free key at https://openrouter.ai/keys)' : ''),
+        (chosen === 'openrouter' ? ' (free key at https://openrouter.ai/keys)'
+          : chosen === 'google' ? ' (free key at https://aistudio.google.com/apikey)' : ''),
     );
   }
 
