@@ -211,8 +211,16 @@ W_ANTERIOR = 0.0
 # Running is a predominantly sagittal activity: the knee and ankle track close
 # to their own hip's sagittal plane. This pulls them there, but softly, and only
 # bites where the data cannot speak -- off-axis the depth IS observable and the
-# bone terms dominate. Deliberately weak so the frontal-plane metrics
-# (knee_valgus, pelvic_drop) survive; those live in exactly this displacement.
+# bone terms dominate. Bounded so the frontal-plane metrics (knee_valgus,
+# pelvic_drop) survive; those live in exactly this displacement.
+#
+# Held at 0.6 on the strength of REAL footage, and this is the constant in this
+# file least settled by evidence. The synthetic sweep prefers 0.9 (4.16 vs 5.38
+# deg mean once the fixture was corrected to enter hip extension), but on the
+# three real clips 0.6 yields 6 trusted metrics against 0.9's 4. Real runners
+# are what this is judged on, so real wins -- but two measurements disagreeing
+# means the honest read is that neither is settled, and this value should be
+# re-derived the moment there is more real footage to derive it from.
 W_SAGITTAL = float(os.environ.get('STRIDE_W_SAGITTAL', '0.6'))
 # Exponent on the observability gate; 1.0 = linear in |med_z|, lower = softer.
 W_SAG_GATE = float(os.environ.get('STRIDE_W_SAG_GATE', '0.5'))

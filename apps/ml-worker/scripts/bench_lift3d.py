@@ -57,7 +57,14 @@ def skeleton(t: float, yaw_deg: float) -> np.ndarray:
     }
     for side, off in (("left", 0.0), ("right", math.pi)):
         s, c = math.sin(ph + off), math.cos(ph + off)
-        th = math.radians(46.0 + 40.0 * s)
+        # Thigh angle from vertical, POSITIVE forward. The previous 46+40*sin
+        # spanned 6..86 deg — always in front of the body, so the figure never
+        # entered hip extension and both legs sat on the same side of the pelvis
+        # in every frame. That is not a running gait, and benchmarking a lift
+        # against it measures the wrong motion. 8+48*sin spans -40..56 deg,
+        # which carries the leg behind the hip through stance the way a real
+        # stride does and puts the two legs genuinely in antiphase.
+        th = math.radians(8.0 + 48.0 * s)
         tdir = np.array([math.sin(th), -math.cos(th), 0.0])
         knee = body[f"{side}_hip"] + tdir * THIGH
         kf = math.radians(180.0 - (108.0 - 46.0 * c))
