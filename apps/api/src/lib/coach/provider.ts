@@ -34,7 +34,10 @@ const PROVIDERS = {
   groq: {
     name: 'Groq',
     url: 'https://api.groq.com/openai/v1/chat/completions',
-    model: 'llama-3.3-70b-versatile',
+    // NOT llama-3.3-70b-versatile — that was retired from Groq's catalog and
+    // every coach call 404'd. gpt-oss-120b is the replacement, verified to
+    // return standard OpenAI-shape tool_calls, which the agent loop needs.
+    model: 'openai/gpt-oss-120b',
     keyEnv: 'GROQ_API_KEY',
   },
 } as const;

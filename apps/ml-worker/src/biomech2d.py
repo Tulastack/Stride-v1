@@ -581,8 +581,13 @@ def _gait(lank: np.ndarray, rank: np.ndarray, fps: float,
     intervals = [(strikes[i] - strikes[i - 1]) / fps for i in range(1, len(strikes))]
     intervals = [d for d in intervals if d > 0.5 / fps]
     cadence = 60.0 / float(np.mean(intervals)) if intervals else 0.0
-    # median, not mean: one missed toe-off (occlusion) must not drag the value
-    contact_ms = float(np.median(contacts_ms)) if contacts_ms else 0.0
+    # median, not mean: one missed toe-off (occlusion) must not drag the value.
+    # Same sanity bound as _gait_signal: a broken/flat signal (or a spurious
+    # late toe-off match) can produce a run far outside human stance-phase
+    # timing — discard rather than report it as a real contact time.
+    plo_ms, phi_ms = PLAUSIBLE["contact_time_ms"]
+    sane_contacts = [c for c in contacts_ms if plo_ms <= c <= phi_ms]
+    contact_ms = float(np.median(sane_contacts)) if sane_contacts else 0.0
     return round(contact_ms, 1), round(cadence, 1)
 
 
@@ -628,8 +633,18 @@ def _gait_signal(lank_y: np.ndarray, rank_y: np.ndarray, fps: float) -> tuple[fl
     intervals = [(strikes[i] - strikes[i - 1]) / fps for i in range(1, len(strikes))]
     intervals = [d for d in intervals if d > 0.5 / fps]
     cadence = 60.0 / float(np.mean(intervals)) if intervals else 0.0
-    # median, not mean: partial runs at the clip edges must not skew the value
-    contact_ms = float(np.median(contact_runs)) / fps * 1000 if contact_runs else 0.0
+    # median, not mean: partial runs at the clip edges must not skew the value.
+    # A heavily motion-blurred clip can break optical-flow tracking outright —
+    # the ankle-y signal gets stuck above contact_thr instead of oscillating,
+    # producing one run spanning most of the clip (thousands of ms). That is a
+    # broken signal, not a slow stance phase: no human stance phase is anywhere
+    # near PLAUSIBLE bounds' upper end, so a run outside them is discarded
+    # rather than reported as a physically-impossible contact time. If nothing
+    # survives, contact_ms falls through as 0 and the caller's existing
+    # pose-rate fallback (`_gait`) takes over instead of a garbage value.
+    plo_ms, phi_ms = PLAUSIBLE["contact_time_ms"]
+    sane_runs = [r for r in contact_runs if plo_ms <= (r / fps * 1000) <= phi_ms]
+    contact_ms = float(np.median(sane_runs)) / fps * 1000 if sane_runs else 0.0
     return round(contact_ms, 1), round(cadence, 1)
 
 
