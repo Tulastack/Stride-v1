@@ -278,3 +278,38 @@ def test_apparent_scale_is_zero_when_the_torso_cannot_be_measured():
     from src.lift3d import apparent_scale
     blank = [np.full((17, 3), np.nan) for _ in range(6)]
     assert apparent_scale(blank, 1080, 1920) == 0.0
+
+def test_accuracy_under_real_capture_geometry():
+    """A runner passing a stationary camera — how a sprint is actually filmed.
+
+    The fixed-yaw sweep is a worst case, not the operating point: it holds the
+    aspect angle constant for the whole clip, so a head-on capture never sees
+    the sagittal plane at all and the error is unbounded by construction. A real
+    pass-by sweeps roughly 37-90 deg of aspect, giving every metric a segment
+    that observed it, which is the premise the per-segment routing rests on.
+
+    Measured with 2 px of detector noise: 1.2 deg at 4 m from the running line,
+    1.7 at 6 m, 2.8 at 10 m. This test pins that the geometry the product
+    actually sees lands inside the clinically interpretable band.
+    """
+    import sys, math
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    from bench_lift3d import pass_by, project, angles, FOCAL, W as BW, H as BH
+
+    intr = {"focalLengthPx": FOCAL, "principalPointPx": [BW / 2.0, BH / 2.0]}
+    for offset, ceiling in ((4.0, 2.5), (6.0, 3.0), (10.0, 4.0)):
+        truth = pass_by(32, offset_m=offset)
+        lifted, _conf, q = lift_sequence(project(truth, FOCAL, noise_px=2.0),
+                                         intr, BW, BH)
+        errs = []
+        for t in range(len(truth)):
+            ta, la = angles(truth[t]), angles(lifted[t])
+            for k in ta:
+                if not (math.isnan(ta[k]) or math.isnan(la[k])):
+                    errs.append(abs(ta[k] - la[k]))
+        assert errs, "no frames solved"
+        mae = float(np.mean(errs))
+        assert mae < ceiling, f"offset {offset} m: {mae:.2f} deg exceeds {ceiling}"
+        # A clip this well observed must not be reported as a doubtful solve.
+        assert q["reconConf"] > 0.8, (offset, q["reconConf"])

@@ -90,6 +90,35 @@ def skeleton(t: float, yaw_deg: float) -> np.ndarray:
     return k
 
 
+def pass_by(frames: int, offset_m: float = 6.0, speed: float = 8.0,
+            fps: float = 30.0) -> np.ndarray:
+    """A runner travelling in a straight line PAST a stationary camera.
+
+    This is how a sprint is actually filmed, and it is not what a fixed-yaw
+    sweep measures. The aspect angle changes continuously through the clip:
+    the athlete starts oncoming, passes broadside, and recedes. Every metric
+    therefore has some segment that saw it well, which is the entire premise of
+    the per-segment routing in analyze3d — and a fixed yaw, by construction,
+    denies it that.
+
+    `offset_m` is the camera's perpendicular distance from the running line.
+    """
+    out = []
+    for i in range(frames):
+        t = i / fps
+        k = skeleton(t, 0.0)                     # built facing +X, travelling +X
+        # Re-place: run along world +X through a line `offset_m` from the camera,
+        # entering from the left and exiting right.
+        span = speed * frames / fps
+        x = -span / 2.0 + speed * t
+        base = skeleton(t, 0.0)
+        # strip the fixture's own travel/placement, then re-place on the line
+        origin = np.array([2.2 * t, 0.0, 0.0]) + np.array([0.0, 0.0, 5.4])
+        local = base - origin
+        out.append(local + np.array([x, 0.0, offset_m]))
+    return np.array(out)
+
+
 def project(poses: np.ndarray, focal: float, noise_px: float = 0.0, seed: int = 0) -> np.ndarray:
     rng = np.random.default_rng(seed)
     out = np.zeros((len(poses), 17, 3))
@@ -180,10 +209,44 @@ def main() -> None:
     ap.add_argument("--noise-px", type=float, default=0.0)
     ap.add_argument("--yaws", type=float, nargs="*",
                     default=[0.0, 20.0, 35.0, 50.0, 70.0, 90.0])
+    ap.add_argument("--pass-by", action="store_true",
+                    help="Runner travelling PAST a stationary camera (how a sprint "
+                         "is actually filmed) instead of a fixed yaw. The aspect "
+                         "angle sweeps through the clip, which is the geometry the "
+                         "per-segment routing was built for.")
+    ap.add_argument("--offsets", type=float, nargs="*", default=[4.0, 6.0, 10.0],
+                    help="Camera distances from the running line, for --pass-by.")
     ap.add_argument("--focal-error", type=float, default=1.0,
                     help="Scale the focal length HANDED TO THE LIFT, to measure "
                          "sensitivity to a mis-estimated camera (1.0 = exact).")
     args = ap.parse_args()
+
+    if args.pass_by:
+        print(f"pass-by geometry  frames={args.frames}  noise={args.noise_px}px")
+        print(f"{'offset_m':>9} {'knee':>7} {'hip':>7} {'trunk':>7} {'all':>7} {'recon':>7}")
+        print("-" * 50)
+        alls = []
+        for off in args.offsets:
+            truth = pass_by(args.frames, offset_m=off)
+            kp = project(truth, FOCAL, noise_px=args.noise_px)
+            lifted, _c, q = lift_sequence(
+                kp, {"focalLengthPx": FOCAL, "principalPointPx": [W / 2.0, H / 2.0]}, W, H)
+            errs: dict[str, list[float]] = {}
+            for t in range(len(truth)):
+                ta, la = angles(truth[t]), angles(lifted[t])
+                for k in ta:
+                    if math.isnan(ta[k]) or math.isnan(la[k]):
+                        continue
+                    errs.setdefault(k, []).append(abs(ta[k] - la[k]))
+            g = lambda *ks: float(np.mean([v for k in ks for v in errs.get(k, [math.nan])]))
+            a = float(np.mean([v for vs in errs.values() for v in vs])) if errs else math.nan
+            alls.append(a)
+            print(f"{off:>9.1f} {g('left_knee','right_knee'):>7.2f} "
+                  f"{g('left_hip','right_hip'):>7.2f} {g('trunk_lean'):>7.2f} "
+                  f"{a:>7.2f} {q.get('reconConf', math.nan):>7.2f}")
+        print("-" * 50)
+        print(f"mean joint-angle MAE, pass-by: {np.mean(alls):.2f} deg")
+        return
 
     print(f"frames={args.frames}  noise={args.noise_px}px  focal-error={args.focal_error:g}x")
     print(f"{'yaw':>5} {'solved':>7} {'knee':>7} {'hip':>7} {'trunk':>7} {'all':>7} "

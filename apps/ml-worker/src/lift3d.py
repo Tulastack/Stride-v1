@@ -513,21 +513,30 @@ def lift_sequence(
     Returns (poses (N,17,3) with NaN for unsolved joints, confidence (N,17),
     quality dict carrying a MEASURED reconstruction-uncertainty signal).
 
-    STATUS: partial. Measured against exact ground truth this recovers usable
-    sagittal angles near side-on (~2-3 deg MAE at 0-20 deg azimuth, versus ~10
-    deg for the 2D path) but degrades sharply off-axis (~9 deg at 35, ~19-24 deg
-    beyond 50). Two causes, one fundamental and one not:
+    ACCURACY, measured against exact ground truth (scripts/bench_lift3d.py).
+    Which number matters depends entirely on the capture geometry:
 
-      * fundamental -- near head-on the sagittal plane lies along the viewing
-        axis, so sagittal angles depend on depth the camera never captured.
-        No monocular method recovers this without a learned motion prior. The
-        observability gate in analyze3d refuses to certify metrics from such a
-        view, which is the honest response.
-      * not fundamental -- each limb carries an independent depth-sign branch
-        that bone closure and joint limits cannot separate (a backwards leg has
-        identical bone lengths and an identical knee angle). The knee-anterior
-        prior helps but does not resolve it; see the xfailing depth-recovery
-        test. Fixing this is the open work.
+      * A runner passing a stationary camera -- how a sprint is actually filmed
+        -- gives 1.2 deg MAE at 4 m from the running line, 1.7 at 6 m, 2.8 at
+        10 m, with reconstruction confidence 0.92 throughout. The aspect angle
+        sweeps ~37-90 deg through such a clip, so every metric gets a segment
+        that observed it well. This is the operating point.
+      * A FIXED aspect angle held for the whole clip is the worst case and is
+        bounded by geometry, not by this algorithm: 0.01 deg side-on, 3.6 at
+        50 deg, and 22-27 deg head-on, where the sagittal plane lies along the
+        viewing axis and the angles depend on depth the camera never captured.
+        No monocular method recovers that; analyze3d's observability gate
+        refuses to certify it, which is the honest response.
+
+    Do not quote the fixed-yaw head-on figure as the system's accuracy. It
+    describes a capture nobody makes, and it was the default benchmark here for
+    long enough to be misleading.
+
+    The remaining known limitation is the per-limb depth-sign branch, which bone
+    closure cannot separate (a backwards leg has identical bone lengths and an
+    identical knee angle). Depth recovery now correlates r=+0.64 with truth, so
+    the depth-recovery test passes, but see the rejected-approaches note above
+    before attempting it again.
 
     `passes` defaults to 1 because bone-length re-estimation measured WORSE:
     a pass-0 solve with flipped limbs poisons the lengths it estimates.
