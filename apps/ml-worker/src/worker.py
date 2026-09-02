@@ -92,7 +92,21 @@ LOCAL_STORAGE_DIR = os.environ.get("LOCAL_STORAGE_DIR", "/tmp/stride-local-stora
 #                           to the segment that actually observed it. Measured on
 #                           a synthetic lap: 2.45 deg vs 7.13 deg for whole-clip,
 #                           and it certifies knee valgus + pelvic drop, which no
-#                           side-on capture can supply at all.
+#                           side-on capture can supply at all. Needs
+#                           .models/rtmw3d-x.onnx, which this repo does NOT
+#                           bundle or auto-download (unresolved training-data
+#                           licence provenance — see pose3d_rtmw.py) — falls
+#                           over with "rtmw3d_model_missing" until that file is
+#                           placed manually.
+#   STRIDE_PIPELINE=3d-geo  — same per-segment/virtual-camera layer as
+#                           STRIDE_PIPELINE=3d, but the 3D poses come from the
+#                           geometric bone-length-constrained solver
+#                           (src/lift3d.py) instead of RTMW3D, so it needs no
+#                           model file and runs anywhere the 2D path does.
+#                           Weaker off-axis (lift3d degrades past ~35 deg
+#                           azimuth instead of RTMW3D's confabulate-plausibly
+#                           failure mode) but a real stand-in while RTMW3D's
+#                           weights are unavailable.
 #   STRIDE_PIPELINE=2d      (default) — RTMPose + 2D sagittal biomechanics. The
 #                           production path: accurate sagittal angles from a good
 #                           2D backbone, no fragile monocular 3D lift. CPU-friendly.
@@ -369,6 +383,133 @@ def _process_3d(analysis_id: str, s3_key: str, local_video: str) -> None:
     _run_3d(analysis_id, local_video, capture, s3_key)
 
 
+def _run_3d_geo(analysis_id: str, video_path: str, capture: dict, s3_key: str | None = None) -> None:
+    """RTMPose 2D keypoints -> geometric bone-length 3D lift -> canonical frame
+    -> virtual cameras -> AnalysisResult.
+
+    Stand-in for `_run_3d` while RTMW3D's model weights aren't available in
+    this deployment: same per-segment viewpoint routing and virtual side/front
+    camera reprojection (`analyze_3d_multisegment`), but the 3D poses come from
+    `src/lift3d.py`'s bone-length-constrained solver instead of a learned
+    network. Reuses the same 2D extraction (RTMPose + crop-tracking on the
+    user's brushed target) as `_run_2d`, then lifts that sequence instead of
+    reading its angles directly off the 2D projection.
+    """
+    from src.lift3d import lift_sequence, gravity_up_from_capture
+    from src.analyze3d import analyze_3d_multisegment
+
+    capture_fps = float(capture.get("fps") or capture.get("preferredFps") or 30)
+    os.environ.setdefault("POSE2D_BACKEND", "rtmpose")
+    pose_fps = int(os.environ.get("POSE_FPS", "15"))
+
+    import cv2
+    _cap = cv2.VideoCapture(video_path)
+    source_fps = float(_cap.get(cv2.CAP_PROP_FPS) or capture_fps)
+    if source_fps <= 1e-3:
+        source_fps = capture_fps
+    vw, vh = int(_cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    _cap.release()
+
+    tgt = capture.get("target")
+    target_xy = None
+    if isinstance(tgt, dict):
+        if all(tgt.get(k) is not None for k in ("x0", "y0", "x1", "y1")):
+            target_xy = (float(tgt["x0"]), float(tgt["y0"]), float(tgt["x1"]), float(tgt["y1"]))
+            logger.info("Target lock: brush bbox %s", target_xy)
+        elif tgt.get("xNorm") is not None and tgt.get("yNorm") is not None:
+            target_xy = (float(tgt["xNorm"]), float(tgt["yNorm"]))
+            logger.info("Target lock: point (%.2f, %.2f)", *target_xy)
+
+    notify_progress(analysis_id, "pose_extraction", 30, "RTMPose 2D keypoints")
+    max_frames = _max_frames(min(pose_fps, capture_fps))
+    frames = []
+    for f in stream_frames(video_path, target_fps=pose_fps, target=target_xy):
+        frames.append(f)
+        if len(frames) >= max_frames:
+            break
+    included = [f for f in frames if not f.get("excluded")]
+    if len(included) < 4:
+        raise ValueError("low_confidence_video")
+    keypoints = [f["keypoints"] for f in included]
+
+    # Same overlay shape src.biomech2d._collect_scalars writes for the 2D path
+    # (see its `overlay_out.append(...)` — tMs from SOURCE frame_index, not the
+    # (lower) pose sample rate, kp as raw canonical [y, x, conf] per joint).
+    # Built from the 2D keypoints, not the lifted 3D poses — the overlay draws
+    # over the flat video, so it wants screen-space points either way.
+    overlay_frames = [
+        {
+            "tMs": round(int(f["frame_index"]) / max(source_fps, 1e-6) * 1000, 1),
+            "frameIndex": int(f["frame_index"]),
+            "kp": [[round(float(v), 4), round(float(x), 4), round(float(c), 3)]
+                   for v, x, c in f["keypoints"]],
+        }
+        for f in included
+    ]
+    eff_fps = float(min(pose_fps, capture_fps))
+    _write_overlay(video_path, s3_key, {
+        "fps": eff_fps,
+        "sourceFps": source_fps,
+        "width": vw,
+        "height": vh,
+        "frames": overlay_frames,
+    })
+
+    up = gravity_up_from_capture(capture)
+    notify_progress(analysis_id, "wham_reconstruction", 55, "Geometric 3D lift")
+    poses, conf, lift_quality = lift_sequence(
+        keypoints,
+        intrinsics=capture.get("intrinsics"),
+        width=vw or int(capture.get("widthPx") or 1080),
+        height=vh or int(capture.get("heightPx") or 1920),
+        up_hint=up,
+    )
+
+    notify_progress(analysis_id, "biomechanics_calculation", 80, "Canonical-frame metrics")
+    # lift_quality["reconConf"] is a REAL, measured per-clip signal (bone-closure
+    # + anatomy-violation residuals — see lift3d._lift_quality's docstring on
+    # why it exists), unlike RTMW3D's black-box output which has no such
+    # self-consistency check and so falls back to analyze_3d_multisegment's
+    # conservative UNVALIDATED_RECON_CONF default. Passing the measured value
+    # here was missing — every geometric-lift clip was silently using the
+    # placeholder instead of the number this module was built to produce.
+    result = analyze_3d_multisegment(
+        poses, conf, fps=eff_fps, up_world=up,
+        source_fps=source_fps, capture_fps=capture_fps,
+        recon_conf=lift_quality["reconConf"],
+        clip_id=analysis_id[:8])
+
+    cq = result["captureQuality"]
+    if capture.get("motionBlur"):
+        cq["motionBlur"] = capture["motionBlur"]
+    if capture.get("framing"):
+        cq["framing"] = capture["framing"]
+    cq["liftQuality"] = lift_quality
+
+    result["reconstructionMethod"] = "3d-mono-geometric"
+    result["model_meta"] = {
+        "backend": "geometric-bone-lift", "model_version": "lift3d-v1",
+        "detector": "rtmpose", "device": "cpu", "poseFps": pose_fps,
+        "pipeline": "3d-geometric-multisegment", "keypointFormat": "coco17",
+    }
+
+    overall_score = int(result.get("economyScore") or 0)
+    notify_progress(analysis_id, "finalizing", 95, "Complete")
+    ok = notify_analysis_completed(analysis_id, overall_score, result)
+    if not ok:
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE analyses SET status='completed', overall_score=%s, result_json=%s, movenet_version=%s, completed_at=now() WHERE id=%s",
+                    (overall_score, json.dumps(result), "lift3d-v1", analysis_id),
+                )
+
+
+def _process_3d_geo(analysis_id: str, s3_key: str, local_video: str) -> None:
+    capture = download_capture_sidecar(s3_client, s3_bucket, s3_key, local_video)
+    _run_3d_geo(analysis_id, local_video, capture, s3_key)
+
+
 def _process_2d_sagittal(analysis_id: str, s3_key: str, local_video: str) -> None:
     """SQS path: download the capture sidecar from S3, then run 2D biomechanics."""
     capture = download_capture_sidecar(s3_client, s3_bucket, s3_key, local_video)
@@ -492,6 +633,9 @@ def process_sqs_message(message: dict) -> bool:
         if PIPELINE == "3d":
             logger.info("Running RTMW3D + canonical-frame pipeline (multi-segment)")
             _process_3d(analysis_id, s3_key, local_temp_file)
+        elif PIPELINE == "3d-geo":
+            logger.info("Running geometric-lift + canonical-frame pipeline (multi-segment)")
+            _process_3d_geo(analysis_id, s3_key, local_temp_file)
         elif PIPELINE == "wham":
             logger.info("Running WHAM + OpenCap pipeline (Stages 2–3)")
             _process_wham_opencap(analysis_id, s3_key, local_temp_file)
@@ -588,7 +732,10 @@ def _process_local(analysis_id: str, s3_key: str) -> None:
         capture = _read_local_capture(s3_key)
         if PIPELINE == "3d":
             logger.info("Running RTMW3D + canonical-frame pipeline (multi-segment)")
-            _process_3d(analysis_id, s3_key, local_temp_file)
+            _process_3d(analysis_id, s3_key, video_path)
+        elif PIPELINE == "3d-geo":
+            logger.info("Running geometric-lift + canonical-frame pipeline (multi-segment)")
+            _run_3d_geo(analysis_id, video_path, capture, s3_key)
         elif PIPELINE == "wham":
             _process_wham_opencap(analysis_id, s3_key, video_path)
         elif PIPELINE == "legacy":
