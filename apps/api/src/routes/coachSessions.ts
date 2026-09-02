@@ -293,6 +293,8 @@ Output ONLY the raw JSON array. No markdown. No explanation. Just [ ... ]`;
       analysisContext,
       userMessage: planPrompt,
       history: history ?? [],
+      // Two weeks of events as raw JSON — needs room the chat default doesn't give.
+      maxTokens: 2500,
     });
 
     let events: any[];

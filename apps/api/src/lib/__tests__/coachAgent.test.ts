@@ -132,6 +132,15 @@ describe('runTrackCoach agentic loop', () => {
     const secondBody = JSON.parse((fetchImpl.mock.calls[1] as any)[1].body);
     const roles = secondBody.messages.map((m: any) => m.role);
     expect(roles).toContain('tool');
+
+    // Exactly ONE system turn, carrying both the persona and the grounding.
+    // Gemma 4's chat template expects a single system turn, so a second one
+    // would silently cost the coach its athlete context on that provider.
+    const firstBody = JSON.parse((fetchImpl.mock.calls[0] as any)[1].body);
+    const systems = firstBody.messages.filter((m: any) => m.role === 'system');
+    expect(systems).toHaveLength(1);
+    expect(systems[0].content).toContain('Stride Coach');
+    expect(systems[0].content).toContain('ATHLETE: test');
   });
 
   it('throws CoachRateLimitError (not a generic Error) on a 429 from Groq', async () => {
@@ -152,13 +161,17 @@ describe('runTrackCoach agentic loop', () => {
     ).rejects.toThrow(CoachRateLimitError);
   });
 
-  it('throws when GROQ_API_KEY is missing so the route can fall back', async () => {
+  it('throws when no LLM key is configured so the route can fall back', async () => {
     const saved = process.env.GROQ_API_KEY;
+    const savedOr = process.env.OPENROUTER_API_KEY;
     delete process.env.GROQ_API_KEY;
+    delete process.env.OPENROUTER_API_KEY;
     const tools = buildCoachTools({ userId: 'u1', profile: null, deps: makeDeps() });
     await expect(
       runTrackCoach({ userMessage: 'hi', analysisContext: '', toolset: tools }),
-    ).rejects.toThrow(/GROQ_API_KEY/);
+    ).rejects.toThrow(/not configured/);
     process.env.GROQ_API_KEY = saved;
+    if (savedOr === undefined) delete process.env.OPENROUTER_API_KEY;
+    else process.env.OPENROUTER_API_KEY = savedOr;
   });
 });

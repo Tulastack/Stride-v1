@@ -8,9 +8,8 @@
 
 import type { CoachToolset } from './tools.js';
 import { CoachRateLimitError } from './errors.js';
+import { resolveCoachProvider } from './provider.js';
 
-const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const MODEL = process.env.GROQ_MODEL ?? 'llama-3.3-70b-versatile';
 const MAX_TOOL_ROUNDS = 4;
 
 const AGENT_SYSTEM_PROMPT = `You are "Stride Coach", an elite Track & Field coach for sprinters and runners. You are laser-focused on TRACK: sprint & distance running form/biomechanics, event-specific race strategy (100m/200m/400m and distance), periodization & training plans, strength for speed, warm-up, sports nutrition/hydration, recovery, and injury prevention. You also help with directly athlete-adjacent topics (mental performance, recruiting/college athletics, competition prep). For anything clearly outside athletics (coding, math homework, general trivia), decline in one friendly sentence and steer back to their running.
@@ -74,13 +73,17 @@ function parseArgs(raw: unknown): Record<string, any> {
  * is unreachable or misconfigured — callers can fall back to the simple path.
  */
 export async function runTrackCoach(params: RunCoachParams): Promise<string> {
-  const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) throw new Error('GROQ_API_KEY is not configured');
+  // Throws when no key is configured, which the route catches to fall back to
+  // the single-shot coach.
+  const provider = resolveCoachProvider();
   const doFetch = params.fetchImpl ?? fetch;
 
+  // ONE system turn, not two. Gemma 4's chat template expects a single system
+  // turn ahead of the first user turn, and every other OpenAI-compatible model
+  // is equally happy with one — so merging keeps the coach portable across
+  // providers instead of relying on a gateway to normalise it.
   const messages: any[] = [
-    { role: 'system', content: AGENT_SYSTEM_PROMPT },
-    { role: 'system', content: params.analysisContext },
+    { role: 'system', content: `${AGENT_SYSTEM_PROMPT}\n\n${params.analysisContext}` },
     ...(params.history ?? []).slice(-8),
     { role: 'user', content: params.userMessage },
   ];
@@ -89,29 +92,39 @@ export async function runTrackCoach(params: RunCoachParams): Promise<string> {
     // On the last allowed round, force a plain text answer (no more tools).
     const forceText = round === MAX_TOOL_ROUNDS;
     const body: any = {
-      model: MODEL,
+      model: provider.model,
       messages,
       temperature: 0.6,
-      max_tokens: 1500,
+      // The prompt asks for 120-250 words (~340 tokens), so 1500 was ~4x more
+      // than the coach can ever use. Providers reserve max_tokens against your
+      // per-minute budget up front, so the excess was pure rate-limit cost --
+      // enough on its own to push a two-round tool loop over an 8k TPM tier.
+      max_tokens: 700,
     };
     if (!forceText) {
       body.tools = params.toolset.schemas;
       body.tool_choice = 'auto';
     }
 
-    const resp = await doFetch(GROQ_URL, {
+    const resp = await doFetch(provider.url, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      headers: provider.headers,
       body: JSON.stringify(body),
     });
     if (!resp.ok) {
       const t = await resp.text().catch(() => '');
-      if (resp.status === 429) throw new CoachRateLimitError();
-      throw new Error(`Groq API error: ${resp.status} ${t.slice(0, 300)}`);
+      if (resp.status === 429) {
+        // The athlete gets a friendly message, but the upstream reason (which
+        // quota, whose pool, when it resets) is the only thing that makes a
+        // 429 debuggable — never swallow it.
+        console.error(`${provider.name} 429 for ${provider.model}:`, t.slice(0, 500));
+        throw new CoachRateLimitError();
+      }
+      throw new Error(`${provider.name} API error: ${resp.status} ${t.slice(0, 300)}`);
     }
     const json = (await resp.json()) as any;
     const msg = json.choices?.[0]?.message;
-    if (!msg) throw new Error('No message returned from Groq');
+    if (!msg) throw new Error(`No message returned from ${provider.name}`);
 
     const toolCalls = msg.tool_calls as any[] | undefined;
     if (!forceText && toolCalls && toolCalls.length > 0) {

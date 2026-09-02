@@ -1,12 +1,10 @@
-// Stride Coach — a Groq-backed LLM coach that is GROUNDED in the athlete's own
+// Stride Coach — an LLM coach that is GROUNDED in the athlete's own
 // biomechanic analysis and scoped to running form, track training, nutrition,
 // and recovery. It receives the ML analyzer's structured output as context so
 // every reply references the athlete's real measured numbers.
 
 import { CoachRateLimitError } from './coach/errors.js';
-
-const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const MODEL = process.env.GROQ_MODEL ?? 'llama-3.3-70b-versatile';
+import { resolveCoachProvider } from './coach/provider.js';
 
 const SYSTEM_PROMPT = `You are "Stride Coach", an expert coach for runners and sprinters.
 
@@ -97,36 +95,42 @@ export function buildAnalysisContext(result: AnalysisLike | null, profile?: Prof
     .join('\n');
 }
 
-/** Call Groq with the system prompt + grounding + the athlete's message. */
+/** Single-shot completion: system prompt + grounding + the athlete's message. */
 export async function generateCoachReply(params: {
   analysisContext: string;
   userMessage: string;
   history?: { role: 'user' | 'assistant'; content: string }[];
+  /**
+   * Output budget. The default suits a chat reply (the prompt caps it at
+   * 120-250 words). The add-to-calendar path needs far more, because it emits a
+   * two-week JSON array in one shot and a truncated array is unparseable —
+   * silently turning into a 422 rather than a short answer.
+   */
+  maxTokens?: number;
 }): Promise<string> {
-  const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) throw new Error('GROQ_API_KEY is not configured');
+  const provider = resolveCoachProvider();
 
+  // Single system turn — see the note in coach/agent.ts.
   const messages = [
-    { role: 'system' as const, content: SYSTEM_PROMPT },
-    { role: 'system' as const, content: params.analysisContext },
+    { role: 'system' as const, content: `${SYSTEM_PROMPT}\n\n${params.analysisContext}` },
     ...(params.history ?? []).slice(-10),
     { role: 'user' as const, content: params.userMessage },
   ];
 
-  const resp = await fetch(GROQ_URL, {
+  const resp = await fetch(provider.url, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: MODEL, messages, temperature: 0.7, max_tokens: 2000 }),
+    headers: provider.headers,
+    body: JSON.stringify({ model: provider.model, messages, temperature: 0.7, max_tokens: params.maxTokens ?? 900 }),
   });
   if (!resp.ok) {
     const t = await resp.text();
-    console.error('Groq API error:', resp.status, t);
+    console.error(`${provider.name} API error:`, resp.status, t);
     if (resp.status === 429) throw new CoachRateLimitError();
-    throw new Error(`Groq API error: ${resp.status}`);
+    throw new Error(`${provider.name} API error: ${resp.status}`);
   }
   const json = (await resp.json()) as any;
   const text = json.choices?.[0]?.message?.content;
-  if (!text) throw new Error('No content returned from Groq');
+  if (!text) throw new Error(`No content returned from ${provider.name}`);
   return text.trim();
 }
 
