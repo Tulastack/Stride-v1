@@ -30,6 +30,16 @@ produced a flat 3.3%-thick slab -- i.e. not a reconstruction at all.
 
 The depth-sign ambiguity
 ------------------------
+(A per-limb Viterbi over the sign SEQUENCE was tried and removed. It is the
+textbook fix -- no leg bone touches a closing edge, so bone closure is
+structurally blind to their two roots and only smoothness can choose -- and on
+the synthetic sweep it worked, cutting 35 deg knee error from 3.7 to 1.2. On
+real footage it made things consistently WORSE: median bone closure across the
+clip set went 0.356 -> 0.482 of a torso length, and two clips that had been
+reconstructing fell over entirely. Both minimum-displacement and
+minimum-acceleration transition costs behaved the same way. Real footage
+governs, so it is not in the pipeline; the note is here so the next person does
+not spend the same day rediscovering it.)
 Each bone's quadratic has two roots: the child can lie nearer the camera or
 further. That is a real, irreducible ambiguity in a single view (the classic
 "is the arm reaching toward me or away") and no amount of optimisation removes
@@ -122,6 +132,9 @@ DEPTH_GRID = (0.75, 0.9, 1.0, 1.15, 1.35)   # root-depth multipliers searched
 REFINE_MIN_FRAMES = 40
 REFINE_MAX_REL = 0.25
 REFINE_NFEV = 25
+# Depth search bounds, metres. Every seed is clipped into these before it
+# reaches least_squares.
+Z_MIN, Z_MAX = 0.4, 40.0
 
 
 def rays_from_keypoints(kp: np.ndarray, fx: float, fy: float,
@@ -393,9 +406,13 @@ def _residuals(z, rays, bones, prev_z, valid, w_temporal, fwd=None):
 
 def _solve_frame(rays, bones, valid, init, prev_z, w_temporal=W_TEMPORAL, fwd=None,
                  max_nfev=MAX_NFEV):
+    # Defensive: every caller should hand in a seed already inside the bounds,
+    # but a single out-of-range value here aborts the whole clip, so clip rather
+    # than trust.
+    init = np.clip(np.asarray(init, dtype=float), Z_MIN, Z_MAX)
     res = least_squares(
         _residuals, init, args=(rays, bones, prev_z, valid, w_temporal, fwd),
-        method="trf", bounds=(0.4, 40.0), max_nfev=max_nfev, ftol=1e-4, xtol=1e-4)
+        method="trf", bounds=(Z_MIN, Z_MAX), max_nfev=max_nfev, ftol=1e-4, xtol=1e-4)
     return res.x, float(np.sum(res.fun ** 2))
 
 
@@ -552,7 +569,15 @@ def lift_sequence(
                 best, best_cost = None, np.inf
                 for m in DEPTH_GRID:
                     for cand in _propagate(rays, valid, lengths, zb * m, fwd=fwd)[:4]:
-                        init = np.where(np.isfinite(cand), cand, zb * m)
+                        # Clip into the solver's own bounds. _root_depth_bound is
+                        # L/tan(theta), which diverges for a small or distant
+                        # subject, and the depth grid then scales it further --
+                        # so a seed could land past the 40 m ceiling and
+                        # least_squares raised "Initial guess is outside of
+                        # provided bounds", failing the ENTIRE analysis rather
+                        # than that one seed. Hit on real footage (IMG_8267).
+                        init = np.clip(np.where(np.isfinite(cand), cand, zb * m),
+                                       Z_MIN, Z_MAX)
                         z, cost = _solve_frame(rays, bones, valid, init, None, 0.0, fwd=fwd)
                         if cost < best_cost:
                             best, best_cost = z, cost
