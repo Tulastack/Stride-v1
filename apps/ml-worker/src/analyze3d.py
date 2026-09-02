@@ -102,7 +102,7 @@ METRIC_JOINTS = (
 # Joint-angle MAE at a conservative 4 px of detector noise:
 #
 #     observability   1.00   0.66   0.43   0.23   0.06   0.00
-#     joint MAE deg   2.82   2.65   2.53   3.58   8.12  18.84
+#     joint MAE deg   1.49   1.44   2.04   2.54   5.44  19.71
 #
 # The table below maps that curve onto confidence, against the clinical bands
 # the benchmark doc already uses (<2 ideal, 2-5 interpretable, >10 unreliable).
@@ -140,8 +140,12 @@ def sagittal_observability(rotation: np.ndarray,
     deliberately NOT the reconstruction's self-consistency. Bone-closure
     residual cannot detect the depth-sign ambiguity, because BOTH branches
     satisfy every bone constraint exactly -- that is precisely what makes them
-    ambiguous. Measured across camera angles, closure residual stays flat
-    (0.035 to 0.045 of a torso length) while true error grows almost tenfold.
+    ambiguous. Measured across camera angles, closure residual tracks error
+    while the sagittal plane is visible, then stops doing so exactly where it
+    matters most: at 90 deg it reads a HEALTHY 0.144 of a torso length and the
+    solver reports 0.92 confidence, while true error is 19.7 deg. Trusting the
+    solver's own verdict there would be actively dangerous, which is why the two
+    signals are combined by taking the worse.
     Observability is geometric: it says how much information the view contained,
     which is the thing that actually bounds the answer.
     """

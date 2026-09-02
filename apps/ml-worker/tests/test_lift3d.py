@@ -133,15 +133,21 @@ def test_rays_invert_the_projection():
 
 # ── the actual claim ──────────────────────────────────────────────────────────
 
-@pytest.mark.xfail(strict=False, reason=(
-    "Per-limb depth-sign ambiguity is not yet resolved: a leg reconstructed "
-    "folding backwards has identical bone lengths and an identical knee angle, "
-    "so neither bone closure nor joint limits separate it. The knee-anterior "
-    "prior moved correlation from -0.78 to positive but not to usable. This "
-    "test is the specification for that open work and must stay visible, not "
-    "be deleted or weakened to green the suite."))
 def test_recovers_depth_it_was_never_given():
-    """THE test. The 2D input contains no depth; the output must."""
+    """THE test. The 2D input contains no depth; the output must.
+
+    This was xfail for a long time: a leg reconstructed folding backwards has
+    identical bone lengths and an identical knee angle, so neither bone closure
+    nor joint limits separate it, and correlation sat at -0.78 and then +0.449.
+
+    What closed it was not a better anatomical prior — the knee-anterior prior
+    turned out to hold only 48% of a stride and was removed. It was two
+    conditioning fixes: an out-of-sagittal-plane regulariser gated on
+    observability, and lowering the temporal weight that had been compressing
+    real depth excursion. Correlation now sits at ~0.64.
+
+    Keep this strict. It is the one test that says the third dimension is real
+    rather than plausible-looking."""
     poses, kp = _clip()
     lifted, conf, q = lift_sequence(kp, INTR, W, H)
     ok = np.isfinite(lifted).all(axis=2)

@@ -104,10 +104,24 @@ TREE: tuple[tuple[str, str], ...] = (
 )
 
 CONF_FLOOR = 0.25          # below this a keypoint contributes no constraint
-W_TEMPORAL = 0.55          # depth continuity between neighbouring frames
+# Depth continuity between neighbouring frames. This term is load-bearing in
+# BOTH directions and the optimum is sharp: below ~0.15 the per-limb depth-sign
+# branches stop being held together and the sweep collapses (7.7 deg mean),
+# while at the old 0.55 it over-smooths and compresses real depth excursion --
+# measured at 70 deg the ankle only reached -0.5 m where truth swung to -0.8,
+# a +0.089 m shrinkage bias that showed up as 26 deg knee spikes mid-stride.
+# 0.25 measured best across the whole sweep (2.87 deg vs 3.87 at 0.55).
+W_TEMPORAL = float(os.environ.get('STRIDE_W_TEMPORAL', '0.25'))
 MAX_NFEV = 80
 BEAM = 24                  # hypotheses kept while walking the tree
 DEPTH_GRID = (0.75, 0.9, 1.0, 1.15, 1.35)   # root-depth multipliers searched
+# Guards on the adaptive bone-length refinement below. Both are measured: fewer
+# frames than this and the per-bone median is too noisy to trust (24 frames sent
+# IMG_8263 from 0.39 to 1.76), and a pass-0 solve worse than this is not a
+# skeleton worth measuring an athlete from.
+REFINE_MIN_FRAMES = 40
+REFINE_MAX_REL = 0.25
+REFINE_NFEV = 25
 
 
 def rays_from_keypoints(kp: np.ndarray, fx: float, fy: float,
@@ -369,10 +383,11 @@ def _residuals(z, rays, bones, prev_z, valid, w_temporal, fwd=None):
     return np.asarray(out, dtype=float)
 
 
-def _solve_frame(rays, bones, valid, init, prev_z, w_temporal=W_TEMPORAL, fwd=None):
+def _solve_frame(rays, bones, valid, init, prev_z, w_temporal=W_TEMPORAL, fwd=None,
+                 max_nfev=MAX_NFEV):
     res = least_squares(
         _residuals, init, args=(rays, bones, prev_z, valid, w_temporal, fwd),
-        method="trf", bounds=(0.4, 40.0), max_nfev=MAX_NFEV, ftol=1e-4, xtol=1e-4)
+        method="trf", bounds=(0.4, 40.0), max_nfev=max_nfev, ftol=1e-4, xtol=1e-4)
     return res.x, float(np.sum(res.fun ** 2))
 
 
@@ -570,6 +585,46 @@ def lift_sequence(
             fwd = _travel_direction(_assemble_poses(kps, rays_seq, valid_seq,
                                                     z_seq, conf_seq)[0], up_hint)
 
+    # ── Adaptive bone-length refinement ──────────────────────────────────
+    # Re-estimating the athlete's real bone lengths from the clip helps a lot
+    # when it works (IMG_0271: closure 0.137 -> 0.112, trusted metrics 3 -> 6)
+    # and catastrophically when it does not (IMG_8263, 24 frames: 0.39 -> 1.76,
+    # a poor pass-0 solve poisoning the lengths it estimates -- the failure that
+    # made `passes` default to 1 in the first place).
+    #
+    # So it is attempted, then MEASURED, and kept only if closure actually
+    # improved. That removes the need to guess which clips can take it. The
+    # attempt is skipped outright when pass 0 already looks unhealthy or the
+    # clip is too short to estimate a median from, so a failing clip does not
+    # pay the extra solve.
+    def _closure_rel(zs, lens):
+        vals = [_closing_cost(z, r, lens)
+                for r, v, z in zip(rays_seq, valid_seq, zs) if np.isfinite(z).all()]
+        if not vals:
+            return float("inf")
+        return float(np.sqrt(np.mean(vals))) / max(_L(lens, "left_shoulder", "left_hip"), 1e-6)
+
+    base_rel = _closure_rel(z_seq, lengths)
+    if len(kps) >= REFINE_MIN_FRAMES and base_rel < REFINE_MAX_REL:
+        new_lengths = _estimate_lengths(rays_seq, valid_seq, z_seq, lengths)
+        new_bones = _bone_list(new_lengths)
+        z_try, prev = [], None
+        for t, (rays, valid) in enumerate(zip(rays_seq, valid_seq)):
+            if not valid.any() or not np.isfinite(z_seq[t]).all():
+                z_try.append(z_seq[t]); prev = None; continue
+            # Warm-started from the accepted pass-0 depths, so this is a
+            # refinement rather than a fresh solve and needs far fewer
+            # iterations — that is what keeps the second pass affordable.
+            z, _ = _solve_frame(rays, new_bones, valid, z_seq[t].copy(), prev,
+                                fwd=fwd, max_nfev=REFINE_NFEV)
+            z_try.append(z); prev = z
+        if _closure_rel(z_try, new_lengths) < base_rel:
+            logger.info("lift: refined bone lengths accepted (closure %.3f -> %.3f)",
+                        base_rel, _closure_rel(z_try, new_lengths))
+            z_seq, lengths = z_try, new_lengths
+        else:
+            logger.info("lift: refined bone lengths rejected, keeping priors")
+
     poses, conf = _assemble_poses(kps, rays_seq, valid_seq, z_seq, conf_seq)
     closing, anatomy = [], []
     for rays, valid, z in zip(rays_seq, valid_seq, z_seq):
@@ -612,8 +667,8 @@ def _lift_quality(closing, anatomy, lengths) -> dict[str, float]:
     # Calibrated against measured angle error (scripts/bench_lift3d.py, 2 px
     # detector noise), not chosen by feel:
     #
-    #     relTorso   0.035  0.081  0.137  0.252  0.347
-    #     true MAE    1.44   1.38   1.51   3.21   7.63  deg
+    #     relTorso   0.032  0.056  0.093  0.167  0.234
+    #     true MAE    1.49   1.44   2.04   2.54   5.44  deg
     #
     # The previous exp(-rel/0.11) read 0.29 at rel=0.137 — a clip whose angles
     # were accurate to 1.5 deg — and that single number was enough to hold every
@@ -621,9 +676,10 @@ def _lift_quality(closing, anatomy, lengths) -> dict[str, float]:
     # and only genuinely poor closure is penalised.
     #
     # This is deliberately a SOLVE-quality signal and nothing more. Closure
-    # cannot see the failure that dominates near head-on (rel actually FALLS
-    # from 0.347 to 0.308 between 70 and 90 deg while true error rises 7.6 -> 17.2),
+    # cannot see the failure that dominates near head-on: at 90 deg closure reads
+    # a healthy 0.144 and this function returns 0.92 while true error is 19.7 deg,
     # because both depth-sign branches satisfy every bone constraint exactly.
+    # Trusting this number alone there would be actively dangerous.
     # View quality is carried separately by analyze3d's observability term, and
     # the two are combined by taking the worse — never multiplied, which would
     # discount the same clip twice and empty the report.
