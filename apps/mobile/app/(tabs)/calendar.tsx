@@ -331,7 +331,6 @@ export default function CalendarScreen() {
                           onPress={() => setDetailEvent(event)}
                           disabled={completing}
                         >
-                          <View style={[styles.eventEdge, { backgroundColor: EVENT_TYPE_COLORS[event.event_type] }]} />
                           <View style={styles.eventLeft}>
                             {completing ? (
                               <Animated.View style={checkStyle}>
@@ -341,7 +340,12 @@ export default function CalendarScreen() {
                               <Circle color={colors.muted} size={22} />
                             )}
                             <View style={styles.eventInfo}>
-                              <Text style={[styles.eventTitle, { color: colors.text }]}>{event.title}</Text>
+                              <View style={styles.eventTitleRow}>
+                                <View
+                                  style={[styles.eventDot, { backgroundColor: EVENT_TYPE_COLORS[event.event_type] }]}
+                                />
+                                <Text style={[styles.eventTitle, { color: colors.text }]}>{event.title}</Text>
+                              </View>
                               {volume ? (
                                 <Text style={[styles.eventVolume, { color: colors.muted }]}>{volume}</Text>
                               ) : null}
@@ -409,15 +413,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: space.lg,
-    paddingLeft: space.lg + 5,
     borderWidth: 1,
     borderRadius: radius.md,
     overflow: 'hidden',
   },
-  eventEdge: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 4 },
   eventLeft: { flexDirection: 'row', alignItems: 'flex-start', gap: space.md, flex: 1 },
   eventInfo: { flex: 1, gap: 3 },
-  eventTitle: { fontSize: 15, fontWeight: '800' },
+  // The day's category reads as one small mark beside the title, which keeps
+  // the card a plain rectangle instead of a dashboard row with a stripe.
+  eventTitleRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  eventDot: { width: 6, height: 6, borderRadius: 3 },
+  eventTitle: { fontSize: 15, fontWeight: '800', flex: 1 },
   eventVolume: { fontSize: 13, fontWeight: '700' },
   eventCue: { fontSize: 12, fontStyle: 'italic', lineHeight: 16 },
 });

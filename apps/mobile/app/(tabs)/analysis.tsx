@@ -254,11 +254,10 @@ export default function AnalysisScreen() {
             {topFlaws.map((flaw, index) => {
               const { label, color } = severityInfo(index, topFlaws.length);
               return (
-                <View key={flaw.id} style={[styles.issueCard, { backgroundColor: colors.card, borderLeftColor: color }]}>
+                <View key={flaw.id} style={[styles.issueCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                   <View style={styles.issueHeader}>
-                    <View style={[styles.severityBadge, { backgroundColor: color }]}>
-                      <Text style={styles.severityText}>{label}</Text>
-                    </View>
+                    <View style={[styles.severityDot, { backgroundColor: color }]} />
+                    <Text style={[styles.severityText, { color }]}>{label}</Text>
                   </View>
                   <Text style={[styles.issueTitle, { color: colors.text }]}>{flaw.name.replace(/_/g, ' ')}</Text>
                   <Text style={[styles.issueDesc, { color: colors.muted }]}>{flaw.plainExplanation}</Text>
@@ -275,7 +274,7 @@ export default function AnalysisScreen() {
           <View style={styles.section}>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>REFINE NEXT</Text>
             {result.focusAreas.map((fa) => (
-              <View key={fa.id} style={[styles.issueCard, { backgroundColor: colors.card, borderLeftColor: colors.border }]}>
+              <View key={fa.id} style={[styles.issueCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                 <Text style={[styles.focusKind, { color: colors.muted }]}>
                   {fa.kind === 'unconfirmed' ? 'UNCONFIRMED READ' : 'CLOSE TO THE EDGE'}
                 </Text>
@@ -407,13 +406,13 @@ const styles = StyleSheet.create({
   section: { marginBottom: space.xl },
   sectionTitle: { fontSize: 12, fontWeight: '900', letterSpacing: 1.5, marginBottom: space.sm },
   sectionHint: { fontSize: 12, marginBottom: space.md, lineHeight: 17 },
-  issueCard: { padding: space.lg, marginBottom: 10, borderLeftWidth: 3, borderRadius: radius.sm },
-  issueHeader: { flexDirection: 'row', marginBottom: 6 },
-  severityBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4 },
-  severityText: { fontSize: 10, fontWeight: '900', letterSpacing: 1, color: '#FFFFFF' },
-  issueTitle: { fontSize: 16, fontWeight: '700', textTransform: 'capitalize', marginBottom: 4 },
-  issueDesc: { fontSize: 13, lineHeight: 19 },
-  focusKind: { fontSize: 10, fontWeight: '800', letterSpacing: 1, marginBottom: 4 },
+  issueCard: { padding: space.lg, marginBottom: 10, borderWidth: 1, borderRadius: radius.md },
+  issueHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
+  severityDot: { width: 6, height: 6, borderRadius: 3 },
+  severityText: { fontSize: 10, fontWeight: '800', letterSpacing: 1.2 },
+  issueTitle: { fontSize: 17, fontWeight: '800', letterSpacing: -0.3, textTransform: 'capitalize', marginBottom: 5 },
+  issueDesc: { fontSize: 14, lineHeight: 20 },
+  focusKind: { fontSize: 10, fontWeight: '800', letterSpacing: 1.2, marginBottom: 6 },
   focusDrill: { fontSize: 12, fontWeight: '600', marginTop: 6 },
   // measurements breakdown
   metricRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1 },
