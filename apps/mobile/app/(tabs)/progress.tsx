@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, SafeAreaView, ActivityIndicator, Pressable, Modal, Animated } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { TrendingUp, X, Users, AlertTriangle } from 'lucide-react-native';
+import { TrendingUp, Users, AlertTriangle } from 'lucide-react-native';
 import { fetchAnalysisHistory } from '../../src/lib/analysisApi';
 import { strideApi } from '../../src/services/api';
 import { useTheme } from '../../src/context/ThemeContext';
@@ -275,11 +275,10 @@ export default function ProgressScreen() {
       <Modal visible={!!selectedAnalysis} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
+            {/* No X up here. The sheet already ends in a Close button, and two
+                ways to shut the same panel is one too many. */}
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: colors.text }]}>SCORE BREAKDOWN</Text>
-              <Pressable onPress={() => setSelectedAnalysis(null)}>
-                <X size={24} color={colors.text} />
-              </Pressable>
             </View>
             {selectedAnalysis && (
               <ScrollView>
@@ -353,7 +352,7 @@ const styles = StyleSheet.create({
   logIssues: { fontSize: 12 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
   modalContent: { borderTopLeftRadius: radius.md, borderTopRightRadius: radius.md, maxHeight: '75%', padding: space.xl },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: space.xl },
+  modalHeader: { marginBottom: space.xl },
   modalTitle: { fontSize: 14, fontWeight: '800', letterSpacing: 1 },
   modalScore: { alignItems: 'center', marginBottom: space.xl },
   modalScoreNum: { fontSize: 48, fontWeight: '900' },

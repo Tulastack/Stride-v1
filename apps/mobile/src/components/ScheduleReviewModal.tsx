@@ -3,7 +3,7 @@
 // No auto-sync, no write on analysis completion.
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, Modal, Pressable, ScrollView } from 'react-native';
-import { X, Check, Trash2 } from 'lucide-react-native';
+import { Check, Trash2 } from 'lucide-react-native';
 import { semantic, spacing, radius, borderWidth, typography } from '../ui/theme';
 import type { DrillRec } from '../types/analysis';
 import { generateProposal, type ProposedSession } from '../lib/proposal';
@@ -43,11 +43,10 @@ export function ScheduleReviewModal({
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.overlay}>
         <View style={styles.sheet} accessibilityLabel="schedule-review-modal">
+          {/* "Not now" at the foot of the sheet is the close. An X up here as
+              well just gives the same action two places to live. */}
           <View style={styles.header}>
             <Text style={styles.title}>Review your plan</Text>
-            <Pressable onPress={onClose} testID="review-close" accessibilityLabel="review-close">
-              <X size={20} color={semantic.text.muted} />
-            </Pressable>
           </View>
           <Text style={styles.subtitle}>
             Nothing is added to your calendar until you tap Add. Edit or remove sessions first.
@@ -102,7 +101,7 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     maxHeight: '80%',
   },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  header: { flexDirection: 'row', alignItems: 'center' },
   title: { ...(typography.title as object), color: semantic.text.primary },
   subtitle: { ...(typography.caption as object), color: semantic.text.muted },
   list: { maxHeight: 280 },
