@@ -7,6 +7,7 @@ import {
   focusLabel,
   dominantType,
   volumeLabel,
+  dayPanelState,
   type CalendarEvent,
 } from '../lib/planCards';
 
@@ -95,5 +96,38 @@ describe('volumeLabel', () => {
   it('returns null when the event carries neither', () => {
     expect(volumeLabel(event({ id: 'a' }))).toBeNull();
     expect(volumeLabel(event({ id: 'a', details: { cue: 'Stay tall' } }))).toBeNull();
+  });
+});
+
+describe('dayPanelState', () => {
+  const ev = (over: Partial<CalendarEvent> & { id: string }): CalendarEvent => ({
+    title: 'Wall drive',
+    event_type: 'drill',
+    scheduled_date: '2026-09-08',
+    status: 'scheduled',
+    ...over,
+  });
+
+  it('calls a day with nothing on it a rest day', () => {
+    expect(dayPanelState([]).title).toBe('Rest Day');
+  });
+
+  it('calls a day of prescribed rest a rest day', () => {
+    expect(dayPanelState([ev({ id: 'a', event_type: 'rest' })]).kind).toBe('rest');
+  });
+
+  it('does NOT call a finished training day a rest day', () => {
+    const state = dayPanelState([ev({ id: 'a', status: 'completed' })]);
+    expect(state.kind).toBe('done');
+    expect(state.title).toBe('Workouts Completed!');
+  });
+
+  it('still congratulates when part of the day is done and part is open', () => {
+    const state = dayPanelState([ev({ id: 'a', status: 'completed' }), ev({ id: 'b' })]);
+    expect(state.kind).toBe('done');
+  });
+
+  it('does not claim work that was only dropped', () => {
+    expect(dayPanelState([ev({ id: 'a', status: 'skipped' })]).kind).toBe('clear');
   });
 });

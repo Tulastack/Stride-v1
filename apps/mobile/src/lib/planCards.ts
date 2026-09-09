@@ -135,3 +135,50 @@ export function volumeLabel(event: CalendarEvent): string | null {
   if (d.volume) return d.volume;
   return null;
 }
+
+/**
+ * What an empty day panel should actually say. "Rest Day" was shown whenever
+ * there was nothing left to tick off, which meant finishing a hard session
+ * congratulated the athlete by calling it a rest day. Rest is a thing the plan
+ * prescribes, not a thing you fall into by working.
+ */
+export type DayStateKind = 'rest' | 'done' | 'clear';
+
+export interface DayPanelState {
+  kind: DayStateKind;
+  title: string;
+  subtitle: string;
+}
+
+export function dayPanelState(events: CalendarEvent[]): DayPanelState {
+  const outstanding = events.filter((e) => e.status !== 'completed' && e.status !== 'skipped');
+  const completed = events.filter((e) => e.status === 'completed');
+  const restOnly = events.length > 0 && events.every((e) => e.event_type === 'rest');
+
+  // Nothing on the day at all, or nothing but prescribed rest: a real rest day.
+  if (events.length === 0 || restOnly) {
+    return {
+      kind: 'rest',
+      title: 'Rest Day',
+      subtitle: 'No training scheduled. Recovery is progress.',
+    };
+  }
+
+  if (completed.length > 0) {
+    return {
+      kind: 'done',
+      title: 'Workouts Completed!',
+      subtitle:
+        outstanding.length > 0
+          ? 'Nice work. The rest of the day is still open.'
+          : "Everything on today's plan is done.",
+    };
+  }
+
+  // Everything that was scheduled got dropped. Not rest, not earned either.
+  return {
+    kind: 'clear',
+    title: 'Nothing left today',
+    subtitle: 'This day was cleared.',
+  };
+}

@@ -30,6 +30,7 @@ import { toDateKey, todayKey } from '../../src/lib/dates';
 import {
   groupIntoDayCards,
   volumeLabel,
+  dayPanelState,
   EVENT_TYPE_COLORS,
   type CalendarEvent,
   type PlanDayCard,
@@ -252,13 +253,19 @@ export default function CalendarScreen() {
 
   const activeDates = useMemo(() => new Set(streak.activeDates), [streak.activeDates]);
 
-  const dayEvents = useMemo(
-    () =>
-      events.filter(
-        (e) => e.scheduled_date === selectedDate && e.status !== 'completed' && e.status !== 'skipped',
-      ),
+  // Everything on the selected day, whatever its status. The panel needs the
+  // completed ones to tell "you finished" apart from "nothing was scheduled".
+  const dayAll = useMemo(
+    () => events.filter((e) => e.scheduled_date === selectedDate),
     [events, selectedDate],
   );
+
+  const dayEvents = useMemo(
+    () => dayAll.filter((e) => e.status !== 'completed' && e.status !== 'skipped'),
+    [dayAll],
+  );
+
+  const panel = useMemo(() => dayPanelState(dayAll), [dayAll]);
 
   const checkStyle = useAnimatedStyle(() => ({
     opacity: Math.min(1, checkAnim.value * 2),
@@ -314,11 +321,9 @@ export default function CalendarScreen() {
           {loading ? (
             <ActivityIndicator size="large" color={colors.accent} style={styles.loader} />
           ) : dayEvents.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Text style={[styles.emptyTitle, { color: colors.text }]}>Rest Day</Text>
-              <Text style={[styles.emptySubtitle, { color: colors.muted }]}>
-                No training scheduled. Recovery is progress.
-              </Text>
+            <View style={styles.emptyState} testID={`day-panel-${panel.kind}`}>
+              <Text style={[styles.emptyTitle, { color: colors.text }]}>{panel.title}</Text>
+              <Text style={[styles.emptySubtitle, { color: colors.muted }]}>{panel.subtitle}</Text>
             </View>
           ) : (
             <View style={styles.eventList}>
