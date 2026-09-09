@@ -15,6 +15,7 @@ import { useTheme } from '../context/ThemeContext';
 import { space, radius, iconStroke, type as typo } from '../theme';
 import { parseCoachReply, detectMetricForDiagram, type CoachSection } from '../lib/parseCoachReply';
 import { CoachMetricDiagram } from './CoachMetricDiagram';
+import { CoachThinking } from './CoachThinking';
 import { PoseLoop } from './analysis/PoseLoop';
 import { fetchAnalysisHistory } from '../lib/analysisApi';
 
@@ -34,12 +35,17 @@ const SUGGESTIONS = [
   { key: 'plan', text: 'Create a 2-week plan', Icon: CalendarPlus },
 ];
 
-const THINKING_FALLBACK = [
+// The steps a coach reply actually walks through. They are shown one after
+// another as a branch of thoughts, so the wait reads as work rather than a
+// spinner with a caption.
+const THINKING_STEPS = [
   'Understanding your question',
   'Reading your latest analysis',
   'Checking form cues',
   'Drafting your coaching plan',
 ];
+/** How long each thought holds before the next one branches off it. */
+const THINKING_STEP_MS = 1400;
 
 const SECTION_ICON: Record<string, typeof Crosshair> = {
   focus: Crosshair,
@@ -82,7 +88,8 @@ export function CoachChat({ analysisId }: { analysisId?: string } = {}) {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [draft, setDraft] = useState('');
   const [loading, setLoading] = useState(false);
-  const [thinkingLabel, setThinkingLabel] = useState<string | null>(null);
+  // Oldest first. Cleared the moment a real answer (or an error) lands.
+  const [thinkingSteps, setThinkingSteps] = useState<string[]>([]);
   const [latestAnalysisId, setLatestAnalysisId] = useState<string | null>(null);
   const sessionId = useRef<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
@@ -113,17 +120,21 @@ export function CoachChat({ analysisId }: { analysisId?: string } = {}) {
 
   function startThinking() {
     let i = 0;
-    setThinkingLabel(THINKING_FALLBACK[0]);
+    setThinkingSteps([THINKING_STEPS[0]!]);
     thinkTimer.current = setInterval(() => {
-      i = Math.min(i + 1, THINKING_FALLBACK.length - 1);
-      setThinkingLabel(THINKING_FALLBACK[i]);
-    }, 1400);
+      i += 1;
+      const next = THINKING_STEPS[i];
+      // The last step holds until the answer arrives rather than looping, so
+      // the branch never grows past the work it is describing.
+      if (!next) return;
+      setThinkingSteps((prev) => [...prev, next]);
+    }, THINKING_STEP_MS);
   }
 
   function stopThinking() {
     if (thinkTimer.current) clearInterval(thinkTimer.current);
     thinkTimer.current = null;
-    setThinkingLabel(null);
+    setThinkingSteps([]);
   }
 
   async function addToCalendar() {
@@ -166,8 +177,6 @@ export function CoachChat({ analysisId }: { analysisId?: string } = {}) {
       }
       const history = messages.filter((m) => !m.thinking).map((m) => ({ role: m.role, content: m.content }));
       const reply = await strideApi.askCoach(sessionId.current!, content, history);
-      const progress = reply.progress;
-      if (progress?.length) setThinkingLabel(progress[progress.length - 1]);
       const sections = parseCoachReply(reply.content);
       setMessages((m) => [...m, {
         role: 'assistant',
@@ -247,11 +256,10 @@ export function CoachChat({ analysisId }: { analysisId?: string } = {}) {
               )}
             </View>
           ))}
-          {loading && thinkingLabel && (
-            <View style={[styles.thinkChip, { backgroundColor: colors.cardAlt, borderColor: colors.border }]}>
-              <View style={[styles.thinkDot, { backgroundColor: colors.accent }]} />
-              <Text style={[styles.thinkText, { color: colors.muted }]}>{thinkingLabel}</Text>
-            </View>
+          {/* Unmounted the instant the reply lands, so the thoughts never sit
+              above the answer they produced. */}
+          {loading && thinkingSteps.length > 0 && (
+            <CoachThinking steps={thinkingSteps} colors={colors} />
           )}
         </ScrollView>
       )}
@@ -299,19 +307,6 @@ const styles = StyleSheet.create({
   sectionBody: { fontSize: 15, lineHeight: 21 },
   bulletRow: { flexDirection: 'row', gap: 8, paddingRight: 4 },
   bulletText: { flex: 1, fontSize: 14, lineHeight: 20 },
-  thinkChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space.sm,
-    alignSelf: 'flex-start',
-    borderWidth: 1,
-    borderRadius: radius.pill,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    marginTop: space.xs,
-  },
-  thinkDot: { width: 6, height: 6, borderRadius: 3 },
-  thinkText: { fontSize: 13, fontWeight: '500' },
   calCta: { flexDirection: 'row', alignItems: 'center', gap: space.sm, borderRadius: radius.sm, paddingVertical: space.sm, paddingHorizontal: space.md, marginTop: space.sm },
   calCtaText: { fontSize: 15, fontWeight: '700' },
   inputRow: { flexDirection: 'row', alignItems: 'flex-end', gap: space.sm, paddingHorizontal: space.lg, paddingVertical: space.md, borderTopWidth: 1 },
