@@ -1,6 +1,6 @@
-// Stride design tokens — the single source of truth (PROMPT F.0).
+// Stride design tokens, the single source of truth (PROMPT F.0).
 //
-// Aesthetic: a stadium timing board at night — dark, high-contrast, numeric,
+// Aesthetic: a stadium timing board at night, dark, high-contrast, numeric,
 // urgent. NOT a wellness app, NOT SaaS. Three tiers: primitive -> semantic ->
 // component. No purple/indigo, no gradients on surfaces, no glassmorphism, no
 // pill-everything. Corners 8 default / 12 max.
@@ -17,7 +17,7 @@ export const primitive = {
     bone100: '#ECE7DC', // text primary
     bone300: '#B8B4AB',
     muted: '#8A8E97',
-    signal: '#CDFF4F', // volt — primary actions, PRs, scan line
+    signal: '#CDFF4F', // volt, primary actions, PRs, scan line
     flaw: '#FF5237', // detected faults ONLY
     improve: '#5BE5A0', // measured improvement ONLY
   },
@@ -25,9 +25,9 @@ export const primitive = {
   radius: { sm: 4, md: 8 } as const, // sharp: 4 default, 8 max
   border: { hairline: 1 } as const,
   font: {
-    display: 'Archivo', // headers/display — weights 600/700
-    mono: 'SpaceMono', // metrics/numerals — angles, splits, cadence
-    body: 'HankenGrotesk', // body — weights 400/500
+    display: 'Archivo', // headers/display, weights 600/700
+    mono: 'SpaceMono', // metrics/numerals, angles, splits, cadence
+    body: 'HankenGrotesk', // body, weights 400/500
   },
 } as const;
 
@@ -64,7 +64,7 @@ export const typography = {
   body: { fontFamily: primitive.font.body, fontWeight: '400', fontSize: 15, lineHeight: 22 },
   bodyStrong: { fontFamily: primitive.font.body, fontWeight: '500', fontSize: 15, lineHeight: 22 },
   caption: { fontFamily: primitive.font.body, fontWeight: '400', fontSize: 12, lineHeight: 16 },
-  /** Numerals: angles, splits, cadence — always mono. */
+  /** Numerals: angles, splits, cadence, always mono. */
   metric: { fontFamily: primitive.font.mono, fontWeight: '400', fontSize: 28, lineHeight: 32 },
   metricSmall: { fontFamily: primitive.font.mono, fontWeight: '400', fontSize: 14, lineHeight: 18 },
 } as const;

@@ -1,11 +1,11 @@
 """Core ML SQS polling worker for Stride.
 
 Pipeline (PRD v2.2-B):
-  Stage 0  — capture sidecar (gyro + intrinsics)
-  Stage 1  — MoveNet 2D keypoints
-  Stage 2  — WHAM monocular 3D lift (SMPL in gravity frame)
-  Stage 3  — OpenCap-Monocular skeleton refinement
-  Stage 4–7 — API assembles canonical metrics + flaws from 3D frames
+  Stage 0, capture sidecar (gyro + intrinsics)
+  Stage 1, MoveNet 2D keypoints
+  Stage 2, WHAM monocular 3D lift (SMPL in gravity frame)
+  Stage 3, OpenCap-Monocular skeleton refinement
+  Stage 4–7, API assembles canonical metrics + flaws from 3D frames
 """
 
 from __future__ import annotations
@@ -79,13 +79,13 @@ STORAGE_DRIVER = os.environ.get("STORAGE_DRIVER", "s3").lower()
 LOCAL_STORAGE = STORAGE_DRIVER == "local"
 LOCAL_STORAGE_DIR = os.environ.get("LOCAL_STORAGE_DIR", "/tmp/stride-local-storage")
 
-# Pipeline selection — the ONLY switch between the two analysis engines. No
+# Pipeline selection, the ONLY switch between the two analysis engines. No
 # deployment config in this repo ever sets this to "wham", so every real
 # environment runs the (default) 2d branch below; the 3D TypeScript engine
 # (apps/api/src/analysis/engine/engine.ts, reached via POST
 # /internal/analysis-biomech) is kept working, not deleted, just dormant
 # until something explicitly starts this worker with STRIDE_PIPELINE=wham.
-#   STRIDE_PIPELINE=3d      — RTMW3D image->3D + canonical frame + virtual
+#   STRIDE_PIPELINE=3d, RTMW3D image->3D + canonical frame + virtual
 #                           cameras, with per-segment viewpoint routing. Handles
 #                           a clip whose viewpoint CHANGES (a rotating operator,
 #                           a runner going around a bend) by routing each metric
@@ -95,10 +95,10 @@ LOCAL_STORAGE_DIR = os.environ.get("LOCAL_STORAGE_DIR", "/tmp/stride-local-stora
 #                           side-on capture can supply at all. Needs
 #                           .models/rtmw3d-x.onnx, which this repo does NOT
 #                           bundle or auto-download (unresolved training-data
-#                           licence provenance — see pose3d_rtmw.py) — falls
+#                           licence provenance, see pose3d_rtmw.py), falls
 #                           over with "rtmw3d_model_missing" until that file is
 #                           placed manually.
-#   STRIDE_PIPELINE=3d-geo  — same per-segment/virtual-camera layer as
+#   STRIDE_PIPELINE=3d-geo, same per-segment/virtual-camera layer as
 #                           STRIDE_PIPELINE=3d, but the 3D poses come from the
 #                           geometric bone-length-constrained solver
 #                           (src/lift3d.py) instead of RTMW3D, so it needs no
@@ -107,11 +107,11 @@ LOCAL_STORAGE_DIR = os.environ.get("LOCAL_STORAGE_DIR", "/tmp/stride-local-stora
 #                           azimuth instead of RTMW3D's confabulate-plausibly
 #                           failure mode) but a real stand-in while RTMW3D's
 #                           weights are unavailable.
-#   STRIDE_PIPELINE=2d      (default) — RTMPose + 2D sagittal biomechanics. The
+#   STRIDE_PIPELINE=2d      (default), RTMPose + 2D sagittal biomechanics. The
 #                           production path: accurate sagittal angles from a good
 #                           2D backbone, no fragile monocular 3D lift. CPU-friendly.
-#   STRIDE_PIPELINE=wham    — MoveNet/RTMPose + WHAM 3D lift (needs GPU + STRIDE_WHAM_REPO)
-#   STRIDE_PIPELINE=legacy  — old 2D + Gemini LLM report
+#   STRIDE_PIPELINE=wham, MoveNet/RTMPose + WHAM 3D lift (needs GPU + STRIDE_WHAM_REPO)
+#   STRIDE_PIPELINE=legacy, old 2D + Gemini LLM report
 PIPELINE = os.environ.get("STRIDE_PIPELINE", "2d").lower()
 # Bone-closure residual, as a fraction of torso length, above which the lifted
 # skeleton is rejected and the clip is analysed by the 2D path instead. Set from
@@ -167,7 +167,7 @@ def _write_overlay(video_path: str, s3_key: str | None, payload: dict) -> None:
     """Persist the per-frame keypoint overlay next to the video so the app can
     fetch it and draw the skeleton in sync with playback.
 
-    Best-effort: the overlay is a playback nice-to-have — a storage hiccup here
+    Best-effort: the overlay is a playback nice-to-have, a storage hiccup here
     must never fail an analysis whose metrics are already computed."""
     try:
         body = json.dumps(payload)
@@ -295,7 +295,7 @@ def _run_2d(analysis_id: str, video_path: str, capture: dict, s3_key: str | None
             cq["motionBlur"] = capture["motionBlur"]
         if capture.get("framing"):
             cq["framing"] = capture["framing"]
-    # analyses.overall_score IS the running form score the app displays —
+    # analyses.overall_score IS the running form score the app displays,
     # previously this persisted capture quality, so the DB column disagreed
     # with the economyScore inside result_json.
     overall_score = int(result.get("economyScore") or 0)
@@ -436,7 +436,7 @@ def _run_3d_geo(analysis_id: str, video_path: str, capture: dict, s3_key: str | 
     # angles do not need more, but cadence and ground contact are measured from
     # a full-source-rate optical-flow ankle signal. Without this the 3D path
     # silently computed both at the pose rate (15 fps) and they could never
-    # clear their trust gate — re-projecting cannot add temporal resolution, so
+    # clear their trust gate, re-projecting cannot add temporal resolution, so
     # the signal has to be collected here, from the original clip.
     timing_signal: list = []
     for f in stream_frames(video_path, target_fps=pose_fps, target=target_xy,
@@ -450,9 +450,9 @@ def _run_3d_geo(analysis_id: str, video_path: str, capture: dict, s3_key: str | 
     keypoints = [f["keypoints"] for f in included]
 
     # Same overlay shape src.biomech2d._collect_scalars writes for the 2D path
-    # (see its `overlay_out.append(...)` — tMs from SOURCE frame_index, not the
+    # (see its `overlay_out.append(...)`, tMs from SOURCE frame_index, not the
     # (lower) pose sample rate, kp as raw canonical [y, x, conf] per joint).
-    # Built from the 2D keypoints, not the lifted 3D poses — the overlay draws
+    # Built from the 2D keypoints, not the lifted 3D poses, the overlay draws
     # over the flat video, so it wants screen-space points either way.
     overlay_frames = [
         {
@@ -484,7 +484,7 @@ def _run_3d_geo(analysis_id: str, video_path: str, capture: dict, s3_key: str | 
     scale = apparent_scale(keypoints, vw or 1080, vh or 1920)
     if scale < MIN_APPARENT_SCALE:
         logger.warning("subject too small for a 3D lift (torso %.3f of frame height, "
-                       "need %.3f) — using the 2D sagittal path", scale, MIN_APPARENT_SCALE)
+                       "need %.3f), using the 2D sagittal path", scale, MIN_APPARENT_SCALE)
         result = _analyze_2d_fallback(analysis_id, included, eff_fps, capture,
                                       source_fps, capture_fps)
         cq = result.setdefault("captureQuality", {})
@@ -497,7 +497,7 @@ def _run_3d_geo(analysis_id: str, video_path: str, capture: dict, s3_key: str | 
         # this clip's metrics, which is more specific than framing.
         cq.setdefault(
             "primaryNudge",
-            "Film the runner larger in frame — move closer or zoom in. "
+            "Film the runner larger in frame, move closer or zoom in. "
             "They were too small here for 3D, so this used the 2D analysis.",
         )
         _finish_3d_geo(analysis_id, result, capture, pose_fps, lift_quality=None)
@@ -514,16 +514,16 @@ def _run_3d_geo(analysis_id: str, video_path: str, capture: dict, s3_key: str | 
 
     notify_progress(analysis_id, "biomechanics_calculation", 80, "Canonical-frame metrics")
     # lift_quality["reconConf"] is a REAL, measured per-clip signal (bone-closure
-    # + anatomy-violation residuals — see lift3d._lift_quality's docstring on
+    # + anatomy-violation residuals, see lift3d._lift_quality's docstring on
     # why it exists), unlike RTMW3D's black-box output which has no such
     # self-consistency check and so falls back to analyze_3d_multisegment's
     # conservative UNVALIDATED_RECON_CONF default. Passing the measured value
-    # here was missing — every geometric-lift clip was silently using the
+    # here was missing, every geometric-lift clip was silently using the
     # placeholder instead of the number this module was built to produce.
     # Measured on real clips: a healthy reconstruction closes its redundant bone
     # constraints to within ~0.15 of a torso length (IMG_0271: 0.14, reconConf
     # 0.92, three trusted metrics). A failed one misses by a whole torso or more
-    # (IMG_8266: 1.22, reconConf 0.014, nothing trusted) — and every angle read
+    # (IMG_8266: 1.22, reconConf 0.014, nothing trusted), and every angle read
     # off that skeleton is fiction, however confident the detector was.
     #
     # Rather than ship those numbers hedged as "experimental", fall back to the
@@ -532,7 +532,7 @@ def _run_3d_geo(analysis_id: str, video_path: str, capture: dict, s3_key: str | 
     # failure is detected per clip instead of assumed away.
     if lift_quality["closingRelTorso"] > LIFT_FALLBACK_REL_TORSO:
         logger.warning(
-            "lift closure %.3f exceeds %.2f torso lengths (reconConf %.3f) — "
+            "lift closure %.3f exceeds %.2f torso lengths (reconConf %.3f), "
             "falling back to the 2D sagittal path for this clip",
             lift_quality["closingRelTorso"], LIFT_FALLBACK_REL_TORSO,
             lift_quality["reconConf"])
@@ -567,7 +567,7 @@ def _run_3d_geo(analysis_id: str, video_path: str, capture: dict, s3_key: str | 
 def _analyze_2d_fallback(analysis_id, included, eff_fps, capture, source_fps, capture_fps):
     """The 2D sagittal path, reached when the 3D lift is not viable for a clip.
 
-    Shared by both rejection routes — subject too small to attempt the lift at
+    Shared by both rejection routes, subject too small to attempt the lift at
     all, and a lift that was attempted and did not close.
     """
     result = analyze_2d_sagittal_stream(
@@ -631,12 +631,12 @@ def _process_wham_opencap(analysis_id: str, s3_key: str, local_video: str) -> No
     if excluded_pct > 0.40:
         raise ValueError("low_confidence_video")
 
-    notify_progress(analysis_id, "wham_reconstruction", 45, "WHAM Stage 2 — monocular 3D lift")
+    notify_progress(analysis_id, "wham_reconstruction", 45, "WHAM Stage 2, monocular 3D lift")
     pipeline_result = run_pipeline_3d(local_video, included, capture)
     pipeline_result["motionBlur"] = capture.get("motionBlur", "med")
     pipeline_result["framing"] = capture.get("framing", "full")
 
-    notify_progress(analysis_id, "skeleton_fit", 65, f"OpenCap Stage 3 — {pipeline_result.get('stage3Backend')}")
+    notify_progress(analysis_id, "skeleton_fit", 65, f"OpenCap Stage 3, {pipeline_result.get('stage3Backend')}")
     sidecar_local = local_video + ".frames3d.json"
     write_frames_sidecar(sidecar_local, pipeline_result)
     _upload_frames_sidecar(s3_key, pipeline_result)
@@ -709,7 +709,7 @@ def process_sqs_message(message: dict) -> bool:
     try:
         message_body = json.loads(message["Body"])
     except Exception:
-        logger.error("Unparseable SQS message body — deleting: %.200s", str(message.get("Body", "")))
+        logger.error("Unparseable SQS message body, deleting: %.200s", str(message.get("Body", "")))
         return True
     analysis_id = message_body.get("analysisId")
     s3_key = message_body.get("s3Key")
@@ -755,7 +755,7 @@ def process_sqs_message(message: dict) -> bool:
         logger.error("Error processing analysis %s: %s", analysis_id, err)
         traceback.print_exc()
         sentry_sdk.capture_exception(err)
-        # ValueError = a pipeline verdict (bad video, no runner, …) — permanent.
+        # ValueError = a pipeline verdict (bad video, no runner, …), permanent.
         # Anything else (S3/DB/network) gets retried until MAX_SQS_RECEIVES.
         permanent = isinstance(err, ValueError) or receive_count >= MAX_SQS_RECEIVES
         if permanent:
@@ -763,7 +763,7 @@ def process_sqs_message(message: dict) -> bool:
             notify_analysis_failed(analysis_id, str(err))
             return True
         logger.warning(
-            "Transient failure for %s (receive #%d/%d) — leaving message on queue for retry",
+            "Transient failure for %s (receive #%d/%d), leaving message on queue for retry",
             analysis_id, receive_count, MAX_SQS_RECEIVES,
         )
         return False
@@ -811,12 +811,12 @@ def _process_local(analysis_id: str, s3_key: str) -> None:
     video_path = os.path.join(LOCAL_STORAGE_DIR, s3_key)
     try:
         if not os.path.exists(video_path) or os.path.getsize(video_path) == 0:
-            # Race / incomplete upload — defer and retry rather than permanently
+            # Race / incomplete upload, defer and retry rather than permanently
             # failing (finalize should only mark pending after the PUT lands).
             first_seen, _ = _MISSING_VIDEO.get(analysis_id, (time.time(), 0.0))
             if time.time() - first_seen > MISSING_VIDEO_TIMEOUT_S:
                 _MISSING_VIDEO.pop(analysis_id, None)
-                msg = "Upload never completed — the video bytes did not arrive. Please upload again."
+                msg = "Upload never completed, the video bytes did not arrive. Please upload again."
                 logger.error(
                     "Giving up on %s after %.0fs without video (%s)",
                     analysis_id, MISSING_VIDEO_TIMEOUT_S, video_path,
@@ -826,7 +826,7 @@ def _process_local(analysis_id: str, s3_key: str) -> None:
                 return
             _MISSING_VIDEO[analysis_id] = (first_seen, time.time() + MISSING_VIDEO_RETRY_S)
             logger.warning(
-                "Claimed %s but video missing/empty (%s) — deferring retry",
+                "Claimed %s but video missing/empty (%s), deferring retry",
                 analysis_id,
                 video_path,
             )

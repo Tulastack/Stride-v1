@@ -1,12 +1,12 @@
 // Database connection config for the pg Pool.
 //
-// DEFAULT (unchanged): standard PostgreSQL via DATABASE_URL — local dev, the
+// DEFAULT (unchanged): standard PostgreSQL via DATABASE_URL, local dev, the
 // docker harness, tests, and RDS. Nothing about that path changes.
 //
 // OPT-IN: when DSQL_ENDPOINT is set, connect to Aurora DSQL, which requires
 //   • TLS, and
 //   • a short-lived IAM auth token used as the password (regenerated per new
-//     connection — pg calls this function each time it opens a socket).
+//     connection, pg calls this function each time it opens a socket).
 // This keeps the change surgical: no DSQL code runs unless DSQL_ENDPOINT is set.
 
 import type { PoolConfig } from 'pg';
@@ -18,7 +18,7 @@ export function isDsqlMode(): boolean {
 export function dbConnectionConfig(): PoolConfig {
   const endpoint = process.env.DSQL_ENDPOINT;
   if (!endpoint) {
-    // Standard Postgres path — identical to the original behavior.
+    // Standard Postgres path, identical to the original behavior.
     return { connectionString: process.env.DATABASE_URL };
   }
 

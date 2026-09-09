@@ -2,7 +2,7 @@
 //
 // Structured to later ingest real marker-based / high-fps reference data. For now
 // it is synthetic but HONEST: predicted = truth + an error that grows as the view
-// goes head-on for sagittal angles, and is worst for pelvis/hip at top speed —
+// goes head-on for sagittal angles, and is worst for pelvis/hip at top speed,
 // the documented hard case. Temporal metrics are nearly view-insensitive.
 
 import type { ValidationSample, Phase, Viewpoint, MetricKey } from './harness.js';
@@ -26,7 +26,7 @@ function lcg(seed: number): () => number {
 function biasFor(metric: MetricKey, phase: Phase, viewpoint: Viewpoint): number {
   if (SAGITTAL_KEYS.includes(metric)) {
     let b = SAGITTAL_BIAS[viewpoint];
-    // Hip at top speed is the worst case — inflate it.
+    // Hip at top speed is the worst case, inflate it.
     if (metric === 'hip_extension' && phase === 'max_velocity') b *= 1.4;
     return b;
   }

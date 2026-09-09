@@ -43,12 +43,12 @@ export function weekdayLabel(key: string): string {
   return WEEKDAYS[fromDateKey(key).getDay()]!;
 }
 
-/** "MAR" — the card pairs this with the day numeral. */
+/** "MAR", the card pairs this with the day numeral. */
 export function monthLabel(key: string): string {
   return MONTHS[fromDateKey(key).getMonth()]!;
 }
 
-/** "MAR 4" — short and unambiguous on a card that must stay light on text. */
+/** "MAR 4", short and unambiguous on a card that must stay light on text. */
 export function shortDateLabel(key: string): string {
   const d = fromDateKey(key);
   return `${MONTHS[d.getMonth()]} ${d.getDate()}`;

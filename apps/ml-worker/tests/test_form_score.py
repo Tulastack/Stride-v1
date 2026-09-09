@@ -16,7 +16,7 @@ from src.biomech2d import (
 
 
 def test_all_metrics_inside_healthy_band_score_100():
-    # Values deliberately OFF-center but inside every band — the band is a
+    # Values deliberately OFF-center but inside every band, the band is a
     # plateau, not a bullseye.
     scorable = [
         ("trunk_lean", 20.0, True),       # band 8-22, near upper edge
@@ -41,7 +41,7 @@ def test_elite_low_values_on_lower_is_better_metrics_are_not_punished():
 
 def test_one_severe_fault_costs_roughly_its_weight():
     # Everything clean except knee drive at 22° vs band 80-110 (dev≈3.9
-    # half-widths) — deduction saturates near FORM_WEIGHT["knee_drive"].
+    # half-widths), deduction saturates near FORM_WEIGHT["knee_drive"].
     scorable = [
         ("trunk_lean", 15.0, True),
         ("knee_drive", 22.0, True),
@@ -68,7 +68,7 @@ def test_worse_deviation_scores_lower_monotonically():
 
 
 def test_sparse_coverage_caps_the_score():
-    # A clip where almost nothing was measurable can't claim perfection —
+    # A clip where almost nothing was measurable can't claim perfection,
     # 1 scored metric caps at 80, 2 at 90, 3+ can reach 100.
     one = _form_score([("trunk_lean", 15.0, True)], "max_velocity")
     two = _form_score([("trunk_lean", 15.0, True), ("knee_drive", 95.0, True)], "max_velocity")
@@ -82,7 +82,7 @@ def test_sparse_coverage_caps_the_score():
 
 
 def test_experimental_faults_deduct_at_half_the_weight_of_trusted_ones():
-    # Same fault, same value — only the trust flag differs. An experimental
+    # Same fault, same value, only the trust flag differs. An experimental
     # reading still moves the score (it is not silently dropped), just less
     # than an identical trusted reading would. Three metrics so the sparse-
     # coverage cap doesn't bind and the deduction ratio is visible.
@@ -110,7 +110,7 @@ def test_thin_trusted_coverage_cannot_mask_bad_form_with_a_generous_score():
     ]
     score = _form_score(scorable, "max_velocity")
     assert score < 85  # the old, too-generous outcome
-    assert score > 50  # discounted, not full weight — still meaningfully above a full-trust equivalent
+    assert score > 50  # discounted, not full weight, still meaningfully above a full-trust equivalent
 
 
 def test_nothing_usable_scores_zero():
@@ -141,7 +141,7 @@ def test_band_midpoint_and_band_edge_score_identically():
 # ── Focus areas (_focus_candidates): honest secondary targets, never flaws ────
 
 def test_focus_candidates_prefer_unconfirmed_deviations_over_refinements():
-    # trunk_lean is OUTSIDE its band (8-22) and unflagged (i.e. experimental) —
+    # trunk_lean is OUTSIDE its band (8-22) and unflagged (i.e. experimental),
     # it must outrank every in-band refinement candidate.
     values = {
         "trunk_lean": (30.0, 0),     # out of band → unconfirmed
@@ -181,7 +181,7 @@ def test_focus_candidates_respect_the_remaining_budget():
 
 def test_focus_candidates_rank_refinements_by_distance_to_band_edge():
     # hip_extension at 161 sits 1/12.5 half-widths from its band edge;
-    # knee_drive at 95 sits dead-center — the edge-hugger comes first.
+    # knee_drive at 95 sits dead-center, the edge-hugger comes first.
     values = {"knee_drive": (95.0, 0), "hip_extension": (161.0, 0)}
     usable = {k: True for k in values}
     picks = _focus_candidates(values, usable, set(), "max_velocity", 2)

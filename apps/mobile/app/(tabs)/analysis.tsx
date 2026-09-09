@@ -11,7 +11,7 @@ import type { AnalysisResult } from '../../src/types/analysis';
 
 type Status = 'pending' | 'processing' | 'failed' | 'done';
 
-// A pending drill suggestion (the approval gate — nothing is auto-added to the plan).
+// A pending drill suggestion (the approval gate, nothing is auto-added to the plan).
 interface DrillSuggestion {
   id: string;
   drill_key: string;
@@ -74,7 +74,7 @@ export default function AnalysisScreen() {
   const [suggestions, setSuggestions] = useState<DrillSuggestion[]>([]);
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
   // How many sessions the approved program actually created, keyed by suggestion id
-  // — lets the confirmation row say "6 sessions over 3 weeks" instead of "added".
+  // - lets the confirmation row say "6 sessions over 3 weeks" instead of "added".
   const [planSizes, setPlanSizes] = useState<Record<string, number>>({});
 
   const loadSuggestions = useCallback(async (id: string) => {
@@ -196,7 +196,7 @@ export default function AnalysisScreen() {
           <PoseVideoPlayer analysisId={analysisId} seekToMs={topFlaws[0]?.evidence?.frameTimestampMs} />
         ) : null}
 
-        {/* Score — ink, not accent: the number is the fact, gold is for actions */}
+        {/* Score, ink, not accent: the number is the fact, gold is for actions */}
         <View style={styles.scoreSection}>
           <Text style={[styles.scoreLabel, { color: colors.muted }]}>FORM SCORE</Text>
           <View style={styles.scoreRow}>
@@ -207,7 +207,7 @@ export default function AnalysisScreen() {
 
         <Text style={[styles.summary, { color: colors.text }]}>{result.summary}</Text>
 
-        {/* Measurements — the full breakdown, so it's never "just a score". Every
+        {/* Measurements, the full breakdown, so it's never "just a score". Every
             metric shows its value, ideal range, and whether we could trust it. */}
         {result.metrics && result.metrics.length > 0 && (
           <View style={styles.section}>
@@ -267,7 +267,7 @@ export default function AnalysisScreen() {
           </View>
         )}
 
-        {/* Focus areas — measured but non-authoritative: unconfirmed reads and
+        {/* Focus areas, measured but non-authoritative: unconfirmed reads and
             near-edge refinements. Never mixed into AREAS TO IMPROVE, which is
             reserved for faults we stand behind. */}
         {result.focusAreas && result.focusAreas.length > 0 && (
@@ -282,7 +282,7 @@ export default function AnalysisScreen() {
                 <Text style={[styles.issueDesc, { color: colors.muted }]}>{fa.plainExplanation}</Text>
                 {fa.drill ? (
                   <Text style={[styles.focusDrill, { color: colors.muted }]}>
-                    Drill: {fa.drill.drillName} — {fa.drill.sets} sets × {fa.drill.reps} reps
+                    Drill: {fa.drill.drillName}, {fa.drill.sets} sets × {fa.drill.reps} reps
                   </Text>
                 ) : null}
               </View>
@@ -290,12 +290,12 @@ export default function AnalysisScreen() {
           </View>
         )}
 
-        {/* Approval gate — Add to your plan / Skip. Nothing is auto-scheduled. */}
+        {/* Approval gate, Add to your plan / Skip. Nothing is auto-scheduled. */}
         {(pending.length > 0 || approved.length > 0) && (
           <View style={styles.section}>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>ADD TO YOUR PLAN</Text>
             <Text style={[styles.sectionHint, { color: colors.muted }]}>
-              You choose what gets scheduled. Approving builds a multi-week program targeting this issue — not a single session.
+              You choose what gets scheduled. Approving builds a multi-week program targeting this issue, not a single session.
             </Text>
 
             {pending.map((s) => {
@@ -339,9 +339,9 @@ export default function AnalysisScreen() {
               <View key={s.id} style={[styles.approvedRow]}>
                 <Check size={16} color={colors.success} strokeWidth={2.5} />
                 <Text style={[styles.approvedText, { color: colors.muted }]}>
-                  {/* Session count is only known for approvals made this session —
+                  {/* Session count is only known for approvals made this session,
                       plan length varies per athlete, so never guess a number. */}
-                  {s.drill_name} — {planSizes[s.id] ? `${planSizes[s.id]} sessions added` : 'program scheduled'}, starting {formatDay(s.suggested_date)}
+                  {s.drill_name}, {planSizes[s.id] ? `${planSizes[s.id]} sessions added` : 'program scheduled'}, starting {formatDay(s.suggested_date)}
                 </Text>
               </View>
             ))}

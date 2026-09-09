@@ -1,5 +1,5 @@
 /**
- * PROMPT F.7 — calendar approval gate (mobile).
+ * PROMPT F.7, calendar approval gate (mobile).
  * E2E-ish: recommendation -> review modal -> approve -> onApprove fires;
  * decline -> no write. Building the proposal never writes.
  */

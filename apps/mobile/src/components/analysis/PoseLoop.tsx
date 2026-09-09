@@ -12,10 +12,10 @@ const EDGES: [number, number][] = [
 ];
 const ACCENT = '#FF453A';
 const CONF = 0.3;
-const FRAME_INTERVAL_MS = 55; // ~18fps loop — smooth enough for a small inline clip
+const FRAME_INTERVAL_MS = 55; // ~18fps loop, smooth enough for a small inline clip
 const DIM_OPACITY = 0.3;
 
-// Which EDGES indices (see comment above) are relevant to a given coach metric —
+// Which EDGES indices (see comment above) are relevant to a given coach metric,
 // used to highlight the athlete's own joints instead of drawing a generic diagram.
 const METRIC_EDGES: Record<string, number[]> = {
   trunk_lean: [0, 1, 2, 3],
@@ -33,7 +33,7 @@ const METRIC_EDGES: Record<string, number[]> = {
 // Ankle keypoints, dimmed/highlighted alongside overstride's lower-leg edges.
 const METRIC_KEYPOINTS: Record<string, number[]> = { overstride: [15, 16] };
 
-/** A small looping skeleton animation of the athlete's own running form — reuses
+/** A small looping skeleton animation of the athlete's own running form, reuses
  * the same cached overlay + letterboxing math as PoseSnapshot, but cycles
  * through the captured frames instead of holding on one. Used inline in coach
  * chat replies that discuss form. When `highlightMetricKey` is given, the

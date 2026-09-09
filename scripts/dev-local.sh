@@ -24,7 +24,7 @@ stop() {
 
 start() {
   if ! nc -z -w2 localhost 5432 >/dev/null 2>&1; then
-    echo "❌ Postgres is not running on :5432 — start it first (Postgres.app / brew services start postgresql)"; exit 1
+    echo "❌ Postgres is not running on :5432, start it first (Postgres.app / brew services start postgresql)"; exit 1
   fi
   # API
   if [ -z "$(api_pid)" ]; then
@@ -45,7 +45,7 @@ start() {
 }
 
 logs() {
-  echo "tailing $LOG_DIR/{api,worker}.log — Ctrl-C to stop"
+  echo "tailing $LOG_DIR/{api,worker}.log, Ctrl-C to stop"
   tail -n 20 -f "$LOG_DIR/api.log" "$LOG_DIR/worker.log" 2>/dev/null \
     | grep --line-buffered -viE "W0000|I0000|oneDNN|cpu_feature|absl|pkg_resources|from pkg"
 }

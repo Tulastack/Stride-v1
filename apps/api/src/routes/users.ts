@@ -77,8 +77,8 @@ router.patch('/me/injury', authenticate, async (req: any, res: Response, next: N
 
 /**
  * Account deletion (App Store Guideline 5.1.1(v)): removes the DB user (FKs
- * cascade through analyses/calendar/coach/metrics), the stored videos, and —
- * when a service-role key is configured — the Supabase auth user itself.
+ * cascade through analyses/calendar/coach/metrics), the stored videos, and,
+ * when a service-role key is configured, the Supabase auth user itself.
  */
 router.delete('/me', authenticate, async (req: any, res: Response, next: NextFunction) => {
   try {
@@ -117,7 +117,7 @@ router.delete('/me', authenticate, async (req: any, res: Response, next: NextFun
         console.warn('[users/me DELETE] Supabase auth deletion failed:', authErr);
       }
     } else {
-      console.warn('[users/me DELETE] SUPABASE_SERVICE_ROLE_KEY not set — auth user not deleted (re-registration still works via email re-link).');
+      console.warn('[users/me DELETE] SUPABASE_SERVICE_ROLE_KEY not set, auth user not deleted (re-registration still works via email re-link).');
     }
 
     res.json({ ok: true });

@@ -1,4 +1,4 @@
-// Stage 7 — capture-quality assessment.
+// Stage 7, capture-quality assessment.
 //
 // Overall score + per-metric usability + at most ONE nudge. Never nag: a nudge
 // appears only when a metric is genuinely low-confidence.
@@ -40,8 +40,8 @@ export function assessCapture(metrics: MetricConfidence[], inputs: CaptureInputs
     const worst = unusable[0];
     primaryNudge =
       worst.viewpointPenalty > 0.4
-        ? `${labelFor(worst.metric.key)} is low-confidence from this angle — a slight turn (~30° oblique) usually helps while keeping the phone handheld.`
-        : `${labelFor(worst.metric.key)} is low-confidence — re-film at 120fps with more light and less motion blur.`;
+        ? `${labelFor(worst.metric.key)} is low-confidence from this angle, a slight turn (~30° oblique) usually helps while keeping the phone handheld.`
+        : `${labelFor(worst.metric.key)} is low-confidence, re-film at 120fps with more light and less motion blur.`;
   }
 
   return {

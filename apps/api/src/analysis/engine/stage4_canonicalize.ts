@@ -1,4 +1,4 @@
-// Stage 4 — canonicalize into a pelvis-centric, gravity-aligned body frame.
+// Stage 4, canonicalize into a pelvis-centric, gravity-aligned body frame.
 //
 // THIS is what makes Stride's angles view-invariant: regardless of camera
 // azimuth, we re-express the body in its own frame (pelvis origin, lateral axis
@@ -22,8 +22,8 @@ function resolveUp(worldUp?: Vec3): Vec3 {
  *
  * `worldUp` is the true vertical expressed in the pose's own frame. Default is
  * [0,1,0] (assume the reconstruction is already gravity-aligned). Passing a
- * MEASURED gravity up (from the phone IMU) makes the canonical frame — and every
- * angle read from it — invariant to camera pitch/roll/elevation, not just yaw:
+ * MEASURED gravity up (from the phone IMU) makes the canonical frame, and every
+ * angle read from it, invariant to camera pitch/roll/elevation, not just yaw:
  * bodyBasis(R·pose, R·up) and bodyBasis(pose, up) yield the same canonical
  * angles for any rotation R.
  */

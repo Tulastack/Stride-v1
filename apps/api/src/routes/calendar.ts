@@ -153,7 +153,7 @@ router.patch('/events/:eventId', authenticate, async (req: any, res: Response, n
 /**
  * 4. Everything scheduled for the athlete that they have not been shown yet.
  *    Feeds the Plan tab's full-screen card reveal. Manual events never appear
- *    here — the athlete already knows about work they added themselves.
+ *    here, the athlete already knows about work they added themselves.
  */
 router.get('/unrevealed', authenticate, async (req: any, res: Response, next: NextFunction) => {
   try {
@@ -170,7 +170,7 @@ const revealRequestSchema = z.object({
 });
 
 /**
- * 5. Mark reveal cards as seen — sent when the stack is swiped through or
+ * 5. Mark reveal cards as seen, sent when the stack is swiped through or
  *    skipped. Idempotent: re-sending ids already revealed is a no-op.
  */
 router.post('/reveal', authenticate, async (req: any, res: Response, next: NextFunction) => {
@@ -215,14 +215,14 @@ router.post('/decline/undo', authenticate, async (req: any, res: Response, next:
 
 /**
  * 8. Streak summary. `today` is supplied by the client in its own local date
- *    so the streak flips at the athlete's midnight, not the server's — the
+ *    so the streak flips at the athlete's midnight, not the server's, the
  *    same local-date discipline the calendar grid already follows.
  */
 router.get('/streak', authenticate, async (req: any, res: Response, next: NextFunction) => {
   try {
     const todayParam = req.query.today as string | undefined;
     if (todayParam && !/^\d{4}-\d{2}-\d{2}$/.test(todayParam)) {
-      res.status(400).json({ error: "Invalid 'today' — must be YYYY-MM-DD" });
+      res.status(400).json({ error: "Invalid 'today', must be YYYY-MM-DD" });
       return;
     }
     const today = todayParam ?? new Date().toISOString().slice(0, 10);

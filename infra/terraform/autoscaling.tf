@@ -44,7 +44,7 @@ resource "aws_appautoscaling_policy" "api_memory" {
   }
 }
 
-# Request count per target — scales based on actual traffic load
+# Request count per target, scales based on actual traffic load
 resource "aws_appautoscaling_policy" "api_requests" {
   name               = "stride-api-request-scaling-${var.environment}"
   policy_type        = "TargetTrackingScaling"

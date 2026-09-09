@@ -6,7 +6,7 @@ import { getReferenceDrill, getAllReferencedrills } from '../db/queries.js';
 const router = Router();
 
 /**
- * GET /reference-drills — return all reference drills
+ * GET /reference-drills, return all reference drills
  */
 router.get('/', authenticate, async (_req: any, res: Response, next: NextFunction) => {
   try {
@@ -18,7 +18,7 @@ router.get('/', authenticate, async (_req: any, res: Response, next: NextFunctio
 });
 
 /**
- * GET /reference-drills/:key — return single drill or 404
+ * GET /reference-drills/:key, return single drill or 404
  */
 router.get('/:key', authenticate, async (req: any, res: Response, next: NextFunction) => {
   try {

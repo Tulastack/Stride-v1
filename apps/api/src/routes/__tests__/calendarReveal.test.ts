@@ -1,5 +1,5 @@
 /**
- * The calendar reveal endpoints — unrevealed / reveal / decline / undo / streak.
+ * The calendar reveal endpoints, unrevealed / reveal / decline / undo / streak.
  *
  * Strategy: these mount the REAL router (via unstable_mockModule + dynamic
  * import, which is ESM-safe) rather than re-declaring the handlers, so the
@@ -182,7 +182,7 @@ describe('GET /calendar/streak', () => {
   });
 });
 
-describe('PATCH /calendar/events/:id — completing a day', () => {
+describe('PATCH /calendar/events/:id, completing a day', () => {
   const url = `/calendar/events/${EVENT.id}`;
 
   it('refuses to complete work scheduled for a day that has not arrived', async () => {

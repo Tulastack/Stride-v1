@@ -1,4 +1,4 @@
-// Biomechanics engine — public surface.
+// Biomechanics engine, public surface.
 export type { BiomechanicsEngine } from './engine.js';
 export { BiomechanicsEngineImpl, ReducedBiomechanicsEngine } from './engine.js';
 export { detectKeypoints } from './stage1_detect.js';

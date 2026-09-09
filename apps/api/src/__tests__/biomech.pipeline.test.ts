@@ -1,6 +1,6 @@
 /**
  * End-to-end pipeline test using golden fixture sidecars (MoveNet → WHAM+OpenCap output).
- * No runtime synthetic data — fixtures are checked-in pipeline artifacts.
+ * No runtime synthetic data, fixtures are checked-in pipeline artifacts.
  */
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';

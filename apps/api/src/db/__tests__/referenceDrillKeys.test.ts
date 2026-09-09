@@ -5,7 +5,7 @@
  * actually emits (`drill-wall-drive`, `drill-hip-hitch`, ...). Every lookup
  * in approveSuggestion() (apps/api/src/db/queries.ts) matches on drill_key,
  * so a mismatch meant `refDrill` was silently undefined for every approval
- * in production — cues/rationale in every calendar event were empty.
+ * in production, cues/rationale in every calendar event were empty.
  *
  * This test has no DB and no mocks: it parses the actual seed SQL file and
  * asserts every key biomech2d.py's DRILLS dict can emit is present. It
@@ -20,7 +20,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const SEED_PATH = join(__dirname, '../seeds/reference_drills.sql');
 
 // Mirrors biomech2d.py's DRILLS dict keys (apps/ml-worker/src/biomech2d.py).
-// Cross-language, so kept in sync by hand — this test's whole purpose is to
+// Cross-language, so kept in sync by hand, this test's whole purpose is to
 // catch drift between the two, so a manual list here is the right guard
 // rather than something that could itself silently drift unnoticed.
 const REAL_DRILL_IDS = [
@@ -38,7 +38,7 @@ const REAL_DRILL_IDS = [
 ];
 
 function parseSeedKeys(sql: string): string[] {
-  // Each row starts `('<key>', ...` — the key is always the first quoted
+  // Each row starts `('<key>'...`, the key is always the first quoted
   // value in the tuple, immediately after the opening paren.
   const matches = sql.matchAll(/\(\s*'([^']+)'\s*,/g);
   return [...matches].map((m) => m[1]!);

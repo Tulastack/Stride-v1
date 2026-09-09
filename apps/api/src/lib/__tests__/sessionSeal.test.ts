@@ -56,7 +56,7 @@ beforeEach(() => {
 
 // ─── Test: seals sessions with last_activity_at > 24h ─────────────
 describe('sealInactiveSessions', () => {
-  it('seals sessions with last_activity_at older than 24h — returns count', async () => {
+  it('seals sessions with last_activity_at older than 24h, returns count', async () => {
     mockSealFn.mockResolvedValueOnce(3);
     const count = await sealInactiveSessions();
     expect(count).toBe(3);
@@ -64,7 +64,7 @@ describe('sealInactiveSessions', () => {
   });
 
   // ─── Test: does not seal recently active sessions ─────────────────
-  it('does not seal recently active sessions — returns 0', async () => {
+  it('does not seal recently active sessions, returns 0', async () => {
     // Simulates: WHERE last_activity_at < now()-24h returns 0 rows
     mockSealFn.mockResolvedValueOnce(0);
     const count = await sealInactiveSessions();
@@ -72,7 +72,7 @@ describe('sealInactiveSessions', () => {
   });
 
   // ─── Test: does not seal already-closed sessions ──────────────────
-  it('does not seal already-closed sessions — returns 0', async () => {
+  it('does not seal already-closed sessions, returns 0', async () => {
     // Simulates: WHERE status = 'open' excludes already-closed sessions
     mockSealFn.mockResolvedValueOnce(0);
     const count = await sealInactiveSessions();

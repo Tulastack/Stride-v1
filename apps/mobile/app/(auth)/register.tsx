@@ -39,7 +39,7 @@ export default function RegisterScreen() {
 
       const token = data.session?.access_token;
       if (!token) {
-        // Email confirmation is enabled — no session until they confirm.
+        // Email confirmation is enabled, no session until they confirm.
         Alert.alert(
           'Confirm your email',
           'Account created! Check your inbox to confirm your email, then sign in.',

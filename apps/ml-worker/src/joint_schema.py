@@ -1,4 +1,4 @@
-"""Shared 3D joint schema — must match apps/api/src/analysis/engine/types.ts."""
+"""Shared 3D joint schema, must match apps/api/src/analysis/engine/types.ts."""
 
 from __future__ import annotations
 
@@ -48,7 +48,7 @@ WHAM_JOINT_MAP: dict[str, str] = {
     "R_Foot": "r_toe",
 }
 
-# Anthropometric bone lengths (metres) — OpenCap-style prior
+# Anthropometric bone lengths (metres), OpenCap-style prior
 BONE_LENGTH_M: dict[str, float] = {
     "neck": 0.18,
     "l_shoulder": 0.18,

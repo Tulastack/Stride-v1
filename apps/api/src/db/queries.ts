@@ -7,7 +7,7 @@ const { Pool } = pg;
 
 // Return DATE columns (OID 1082) as raw 'YYYY-MM-DD' strings, NOT JS Date objects.
 // node-pg's default Date parsing serializes to a full ISO timestamp and can shift
-// the day across timezones — which silently broke calendar grouping (scheduled_date
+// the day across timezones, which silently broke calendar grouping (scheduled_date
 // compared against 'YYYY-MM-DD') and drill-suggestion date validation.
 pg.types.setTypeParser(1082, (v) => v);
 
@@ -138,7 +138,7 @@ export async function updateInjuryStatus(userId: string, is_injured: boolean): P
 // ─── Analyses ─────────────────────────────────────────────────────
 
 export async function createAnalysis(userId: string, s3Key: string): Promise<Analysis> {
-  // 'uploading' — NOT 'pending'. The ML worker claims pending rows; if we mark
+  // 'uploading', NOT 'pending'. The ML worker claims pending rows; if we mark
   // pending at upload-url time it races the phone's PUT and fails with
   // "video not found in local storage". Finalize promotes to pending.
   const { rows } = await pool.query<Analysis>(
@@ -258,7 +258,7 @@ export async function createCalendarEvents(
   const sourceParam = paramIndex++;
 
   for (const event of events) {
-    // The source param is cast to text everywhere it appears — see the note in
+    // The source param is cast to text everywhere it appears, see the note in
     // createCalendarEvent; an uncast reuse across the column and the CASE makes
     // Postgres deduce two different types for the same parameter (42P08).
     valueClauses.push(
@@ -347,7 +347,7 @@ export async function updateCalendarEvent(
 
 /**
  * Everything the coach or the analysis engine has scheduled that the athlete
- * has not been shown yet. This is the card stack's entire input — one row per
+ * has not been shown yet. This is the card stack's entire input, one row per
  * event; the client groups them into one card per day.
  */
 export async function getUnrevealedEvents(userId: string): Promise<CalendarEvent[]> {
@@ -361,7 +361,7 @@ export async function getUnrevealedEvents(userId: string): Promise<CalendarEvent
 }
 
 /**
- * Mark events as seen. Called when the stack is swiped through *or* skipped —
+ * Mark events as seen. Called when the stack is swiped through *or* skipped,
  * both count as shown, so a skip can never leave the reveal to nag again.
  * Passing no ids clears every outstanding reveal for the user.
  */
@@ -385,7 +385,7 @@ export async function markEventsRevealed(userId: string, eventIds?: string[]): P
  * Left-swipe: the athlete drops a day the coach proposed. The rows are kept
  * (status 'skipped') rather than deleted so the decision stays auditable and
  * the undo below is a plain status flip rather than a re-insert. A skipped day
- * is neutral for the streak — declining work is a decision, not a miss.
+ * is neutral for the streak, declining work is a decision, not a miss.
  *
  * Scoped to ids the client actually showed on the card, so this can never
  * touch other events that happen to share the date.
@@ -402,7 +402,7 @@ export async function declineEvents(userId: string, eventIds: string[]): Promise
   return rows;
 }
 
-/** Undo a decline — puts the day back exactly as the coach scheduled it. */
+/** Undo a decline, puts the day back exactly as the coach scheduled it. */
 export async function restoreEvents(userId: string, eventIds: string[]): Promise<CalendarEvent[]> {
   if (eventIds.length === 0) return [];
   const { rows } = await pool.query<CalendarEvent>(
@@ -588,7 +588,7 @@ export async function approveSuggestion(
       }
       // Legacy approvals predate program tagging: their single event matches
       // on title/date instead of drill_suggestion_id. Return it rather than
-      // silently stacking a whole new program on top of it — only a true
+      // silently stacking a whole new program on top of it, only a true
       // drift (no event at all) falls through to the rebuild below.
       const { rows: legacyRows } = await client.query<CalendarEvent>(
         `SELECT * FROM calendar_events
@@ -637,7 +637,7 @@ export async function approveSuggestion(
     const flaw = flaws?.find((f) => f.id === rec?.flawId);
 
     // Athlete context that shapes plan length/frequency/progression (see
-    // calendar/trainingPlan.ts AthleteProgramInput) — reuses the open
+    // calendar/trainingPlan.ts AthleteProgramInput), reuses the open
     // transaction client rather than a separate pooled query.
     const { rows: userRows } = await client.query<{
       experience_level: 'beginner' | 'intermediate' | 'advanced' | null;
@@ -656,7 +656,7 @@ export async function approveSuggestion(
         }
       : undefined;
 
-    // "Why this drill" text for the calendar detail view — already sitting
+    // "Why this drill" text for the calendar detail view, already sitting
     // unused on reference_drills, so no schema change needed to surface it.
     const { rows: refDrillRows } = await client.query<{
       description: string | null;
@@ -673,7 +673,7 @@ export async function approveSuggestion(
     // (reference_drills.recovery_phases non-empty). Reviewed metrics get the
     // real 4-phase recovery arc (Stability -> Strength -> Plyometrics &
     // Movement -> Back to Sport); everything else falls back to the
-    // original flat, progressively-loaded single-drill block — never an
+    // original flat, progressively-loaded single-drill block, never an
     // error, just less content than a reviewed metric has earned.
     const sessions =
       refDrill?.recovery_phases && refDrill.recovery_phases.length > 0
@@ -1006,9 +1006,9 @@ export async function getMetricsTrend(
 // ─── Sweep stuck analyses ─────────────────────────────────────────
 // Every non-terminal state needs a timeout, or a crash at the wrong moment
 // leaves the user staring at a spinner forever:
-//   uploading  — client died before finalize (generous window for slow LTE)
-//   pending    — queued but never claimed (worker down / backlog)
-//   processing — worker died mid-job (OOM, deploy) and never released the row
+//   uploading, client died before finalize (generous window for slow LTE)
+//   pending, queued but never claimed (worker down / backlog)
+//   processing, worker died mid-job (OOM, deploy) and never released the row
 
 export async function sweepStuckAnalyses(): Promise<number> {
   const { rowCount } = await pool.query(

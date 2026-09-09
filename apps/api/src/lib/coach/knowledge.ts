@@ -1,4 +1,4 @@
-// Stride Coach — curated Track & Field knowledge base + a dependency-free
+// Stride Coach, curated Track & Field knowledge base + a dependency-free
 // lexical retriever.
 //
 // This is what makes the coach "not a ChatGPT wrapper": instead of leaning on
@@ -7,7 +7,7 @@
 // the source. Entries are attributed to well-established bodies of coaching
 // science (NSCA, USATF, sprint-biomechanics review literature, the Charlie
 // Francis short-to-long system, clinical gait analysis). Keep entries short and
-// LLM-friendly; add rows here to widen coverage — retrieval scales automatically.
+// LLM-friendly; add rows here to widen coverage, retrieval scales automatically.
 
 export interface KnowledgeEntry {
   id: string;
@@ -50,7 +50,7 @@ export const KNOWLEDGE: KnowledgeEntry[] = [
     event: '100m',
     tags: ['max velocity', 'top speed', 'front side mechanics', 'knee drive', 'ground contact', 'posture', 'dorsiflexion'],
     content:
-      'At top speed, force is applied briefly and vertically. Cues: tall posture with a neutral pelvis, high knee (front-side mechanics — thigh reaches ~horizontal), a dorsiflexed foot that strikes under or just ahead of the hips, and a fast "stepping over the opposite knee" recovery. Short ground-contact times (~0.08–0.10 s for elites) and stiff, springy ankles matter more than reaching/overstriding. Overstriding (foot landing well ahead of the center of mass) brakes the athlete.',
+      'At top speed, force is applied briefly and vertically. Cues: tall posture with a neutral pelvis, high knee (front-side mechanics, thigh reaches ~horizontal), a dorsiflexed foot that strikes under or just ahead of the hips, and a fast "stepping over the opposite knee" recovery. Short ground-contact times (~0.08–0.10 s for elites) and stiff, springy ankles matter more than reaching/overstriding. Overstriding (foot landing well ahead of the center of mass) brakes the athlete.',
     source: 'Sprint biomechanics review literature (e.g., front-side mechanics model)',
   },
   {
@@ -60,7 +60,7 @@ export const KNOWLEDGE: KnowledgeEntry[] = [
     event: 'all',
     tags: ['arms', 'arm swing', 'shoulders', 'cadence', 'rhythm'],
     content:
-      'Arms drive from the shoulder with ~90° elbows, hand traveling from cheek to hip pocket, relaxed hands. Arms counterbalance the legs and help set cadence — a faster, compact arm drive supports a higher stride frequency. Avoid crossing the midline (causes rotation) and avoid tensing the hands/traps.',
+      'Arms drive from the shoulder with ~90° elbows, hand traveling from cheek to hip pocket, relaxed hands. Arms counterbalance the legs and help set cadence, a faster, compact arm drive supports a higher stride frequency. Avoid crossing the midline (causes rotation) and avoid tensing the hands/traps.',
     source: 'USATF sprint coaching fundamentals',
   },
   {
@@ -80,12 +80,12 @@ export const KNOWLEDGE: KnowledgeEntry[] = [
     event: 'all',
     tags: ['ground contact time', 'gct', 'stiffness', 'reactive', 'plyometric', 'bounce'],
     content:
-      'Shorter ground-contact time with a stiff, reactive ankle/lower limb is associated with faster running and better economy. It is trained with plyometrics (pogo hops, ankle stiffness drills, wickets) and by cueing a quick, elastic "off the ground fast" contact rather than a soft, collapsing one. Do not confuse short contact with tiny steps — it is about elastic recoil.',
+      'Shorter ground-contact time with a stiff, reactive ankle/lower limb is associated with faster running and better economy. It is trained with plyometrics (pogo hops, ankle stiffness drills, wickets) and by cueing a quick, elastic "off the ground fast" contact rather than a soft, collapsing one. Do not confuse short contact with tiny steps, it is about elastic recoil.',
     source: 'Spring-mass model of running; plyometric training literature',
   },
   {
     id: 'overstriding-flaw',
-    title: 'Overstriding — why it is a flaw',
+    title: 'Overstriding, why it is a flaw',
     topic: 'mechanics',
     event: 'all',
     tags: ['overstriding', 'braking', 'heel strike', 'foot ahead', 'injury', 'flaw'],
@@ -120,7 +120,7 @@ export const KNOWLEDGE: KnowledgeEntry[] = [
     event: 'all',
     tags: ['wickets', 'mini hurdles', 'cadence', 'ground contact', 'front side', 'drill'],
     content:
-      'Wickets (evenly spaced mini-hurdles) force a high knee, quick turnover, and a foot strike under the hips — training rhythm and short ground contact at speed. Spacing is set to the athlete\'s max-velocity stride. Cue "quick feet, step over the wicket, land under you." Great for fixing overstriding and low cadence.',
+      'Wickets (evenly spaced mini-hurdles) force a high knee, quick turnover, and a foot strike under the hips, training rhythm and short ground contact at speed. Spacing is set to the athlete\'s max-velocity stride. Cue "quick feet, step over the wicket, land under you." Great for fixing overstriding and low cadence.',
     source: 'USATF / speed-development coaching',
   },
   {
@@ -150,7 +150,7 @@ export const KNOWLEDGE: KnowledgeEntry[] = [
     event: '100m',
     tags: ['blocks', 'start', 'set position', 'reaction', 'first move', 'clearance'],
     content:
-      'In the set position, hips slightly above shoulders, weight forward over the hands, shins driving into the blocks. On the gun, push both feet hard and drive the lead-arm/opposite-knee aggressively, exiting at a low angle. Do not stand up — the first steps should be pushed, not reached. Reaction is trained; block clearance angle is trained with wall drives and sled pushes.',
+      'In the set position, hips slightly above shoulders, weight forward over the hands, shins driving into the blocks. On the gun, push both feet hard and drive the lead-arm/opposite-knee aggressively, exiting at a low angle. Do not stand up, the first steps should be pushed, not reached. Reaction is trained; block clearance angle is trained with wall drives and sled pushes.',
     source: 'USATF sprint start coaching',
   },
   {
@@ -160,7 +160,7 @@ export const KNOWLEDGE: KnowledgeEntry[] = [
     event: '100m',
     tags: ['100m', 'race plan', 'phases', 'acceleration', 'max velocity', 'speed endurance'],
     content:
-      'A 100 m is roughly: reaction + block clearance, acceleration (0–30 m), transition to upright, max velocity (~30–60 m; even elites cannot hold top speed the whole way), and speed-endurance/maintenance (60–100 m) where the goal is to decelerate the least. Amateurs often over-tense at the end — cue relaxation ("fast and loose") to preserve mechanics.',
+      'A 100 m is roughly: reaction + block clearance, acceleration (0–30 m), transition to upright, max velocity (~30–60 m; even elites cannot hold top speed the whole way), and speed-endurance/maintenance (60–100 m) where the goal is to decelerate the least. Amateurs often over-tense at the end, cue relaxation ("fast and loose") to preserve mechanics.',
     source: 'Sprint race-phase modeling',
   },
   {
@@ -170,7 +170,7 @@ export const KNOWLEDGE: KnowledgeEntry[] = [
     event: '200m',
     tags: ['200m', 'bend', 'curve', 'race plan', 'speed endurance', 'lean'],
     content:
-      'The 200 m combines curve running and speed endurance. Run the bend aggressively but relaxed, leaning into the turn and driving the outside arm. Accelerate off the bend into the straight, then focus on relaxed maintenance. The last 50 m is about decelerating least — trained with speed-endurance reps (120–150 m).',
+      'The 200 m combines curve running and speed endurance. Run the bend aggressively but relaxed, leaning into the turn and driving the outside arm. Accelerate off the bend into the straight, then focus on relaxed maintenance. The last 50 m is about decelerating least, trained with speed-endurance reps (120–150 m).',
     source: 'Sprint event coaching',
   },
   {
@@ -180,7 +180,7 @@ export const KNOWLEDGE: KnowledgeEntry[] = [
     event: '400m',
     tags: ['400m', 'pacing', 'speed endurance', 'lactate', 'even split', 'rhythm'],
     content:
-      'The 400 m is a long sprint: aim for a controlled fast first 200 m (typically ~1–2 s faster than the second) with relaxed, rhythmic mechanics, then hold form as fatigue hits. Do not sprint the first 100 m all-out. Training emphasizes special endurance (150–300 m reps) and lactate tolerance. Late-race form breakdown is the main time-loss — cue posture and arm drive when tired.',
+      'The 400 m is a long sprint: aim for a controlled fast first 200 m (typically ~1–2 s faster than the second) with relaxed, rhythmic mechanics, then hold form as fatigue hits. Do not sprint the first 100 m all-out. Training emphasizes special endurance (150–300 m reps) and lactate tolerance. Late-race form breakdown is the main time-loss, cue posture and arm drive when tired.',
     source: 'USATF 400 m / long-sprint coaching',
   },
   {
@@ -220,7 +220,7 @@ export const KNOWLEDGE: KnowledgeEntry[] = [
     event: 'all',
     tags: ['strength', 'squat', 'power clean', 'rfd', 'plyometrics', 'weights', 'force'],
     content:
-      'Sprinting is a force-in-short-time skill. Prioritize heavy compound lifts (squat, trap-bar deadlift, hip thrust) for maximal force, explosive lifts/jumps (cleans, trap-bar jumps, box jumps) for rate of force development, and plyometrics for elastic stiffness. Keep reps low and quality high; lift on high-intensity days so low days stay easy. Strength supports speed — it does not replace sprinting.',
+      'Sprinting is a force-in-short-time skill. Prioritize heavy compound lifts (squat, trap-bar deadlift, hip thrust) for maximal force, explosive lifts/jumps (cleans, trap-bar jumps, box jumps) for rate of force development, and plyometrics for elastic stiffness. Keep reps low and quality high; lift on high-intensity days so low days stay easy. Strength supports speed, it does not replace sprinting.',
     source: 'NSCA strength & conditioning for speed',
   },
   {
@@ -240,7 +240,7 @@ export const KNOWLEDGE: KnowledgeEntry[] = [
     event: 'all',
     tags: ['hamstring', 'injury', 'nordic', 'eccentric', 'prevention', 'pain', 'strain'],
     content:
-      'Hamstring strains are the most common sprint injury, usually in late swing when the hamstring decelerates the shin eccentrically. Prevention: eccentric strength (Nordic hamstring curls), high-speed running exposure (do not avoid sprinting), posterior-chain strength, and good warm-up. Any sharp posterior-thigh pain warrants rest and a professional assessment — never train through it.',
+      'Hamstring strains are the most common sprint injury, usually in late swing when the hamstring decelerates the shin eccentrically. Prevention: eccentric strength (Nordic hamstring curls), high-speed running exposure (do not avoid sprinting), posterior-chain strength, and good warm-up. Any sharp posterior-thigh pain warrants rest and a professional assessment, never train through it.',
     source: 'Sports-medicine hamstring injury literature',
   },
   {
@@ -250,7 +250,7 @@ export const KNOWLEDGE: KnowledgeEntry[] = [
     event: 'all',
     tags: ['achilles', 'shin splints', 'calf', 'overuse', 'load management', 'tendon', 'pain'],
     content:
-      'Achilles and shin complaints are usually load-management problems — too much sprint/plyo volume increased too quickly on hard surfaces. Manage by progressing volume gradually, adding calf/tibialis strength, ensuring recovery between high days, and rotating surfaces/footwear. Persistent tendon pain needs a professional; do not push through worsening pain.',
+      'Achilles and shin complaints are usually load-management problems, too much sprint/plyo volume increased too quickly on hard surfaces. Manage by progressing volume gradually, adding calf/tibialis strength, ensuring recovery between high days, and rotating surfaces/footwear. Persistent tendon pain needs a professional; do not push through worsening pain.',
     source: 'Tendon load-management / clinical guidance',
   },
   {
@@ -280,7 +280,7 @@ export const KNOWLEDGE: KnowledgeEntry[] = [
     event: 'all',
     tags: ['mental', 'relaxation', 'focus', 'cues', 'nerves', 'confidence', 'arousal'],
     content:
-      'Sprinting fast requires relaxation — tension slows you down. Use one or two simple external cues (e.g., "tall", "quick feet") rather than thinking about many things. Manage pre-race arousal with breathing and a consistent routine. Confidence comes from preparation; trust your training and let the race happen instead of forcing it.',
+      'Sprinting fast requires relaxation, tension slows you down. Use one or two simple external cues (e.g., "tall", "quick feet") rather than thinking about many things. Manage pre-race arousal with breathing and a consistent routine. Confidence comes from preparation; trust your training and let the race happen instead of forcing it.',
     source: 'Sport-psychology performance practice',
   },
 ];
@@ -324,7 +324,7 @@ export interface RetrievedChunk {
 
 /**
  * Return the top-K knowledge entries most relevant to `query`, optionally
- * boosting entries for the athlete's event. Pure and fast — safe to call every
+ * boosting entries for the athlete's event. Pure and fast, safe to call every
  * turn. Returns [] when nothing scores above zero.
  */
 export function retrieveKnowledge(

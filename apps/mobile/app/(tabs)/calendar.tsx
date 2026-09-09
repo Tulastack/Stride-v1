@@ -1,9 +1,9 @@
 // Plan tab. Three things live here, in the order the athlete meets them:
 //
-//   1. The reveal — work the coach or the analysis engine just scheduled takes
+//   1. The reveal, work the coach or the analysis engine just scheduled takes
 //      the screen over as a stack of day cards, then folds into the grid.
-//   2. The grid — the month, with the live streak drawn as one continuous run.
-//   3. The day — whatever is scheduled for the date currently selected.
+//   2. The grid, the month, with the live streak drawn as one continuous run.
+//   3. The day, whatever is scheduled for the date currently selected.
 //
 // Manually-added events never trigger step 1 (see calendar_events.source).
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -39,7 +39,7 @@ import {
 const CHECK_ANIM_MS = 220;
 const CHECK_HOLD_MS = 220;
 
-// Workouts and drills lead — they are the coach's focus. The rest are things
+// Workouts and drills lead, they are the coach's focus. The rest are things
 // the athlete adds for themselves.
 const CATEGORY_ORDER: { type: CalendarEvent['event_type']; label: string }[] = [
   { type: 'workout', label: 'WORKOUTS' },
@@ -142,7 +142,7 @@ export default function CalendarScreen() {
         setCards(groupIntoDayCards(list));
       }
     } catch {
-      // No reveal is a fine failure mode — the plan is still in the grid.
+      // No reveal is a fine failure mode, the plan is still in the grid.
     }
   }, []);
 
@@ -160,7 +160,7 @@ export default function CalendarScreen() {
   );
 
   // Month navigation refetches without re-triggering the reveal. The first run
-  // is skipped because focus has already loaded this month — otherwise every
+  // is skipped because focus has already loaded this month, otherwise every
   // mount would fire the same request twice.
   const monthMounted = useRef(false);
   useEffect(() => {
@@ -304,7 +304,7 @@ export default function CalendarScreen() {
         {streak.current > 0 ? (
           <Text style={[styles.streakLine, { color: colors.muted }]}>
             {streak.atRiskToday
-              ? `${streak.current}-day streak — today is still open`
+              ? `${streak.current}-day streak. Today is still open`
               : `${streak.current}-day streak · best ${streak.longest}`}
           </Text>
         ) : null}

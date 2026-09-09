@@ -22,7 +22,7 @@ export function errorHandler(
   }
 
   // Postgres 22P02 (invalid text representation) = a malformed UUID/enum in a
-  // path or body param reached a query — client error, not an outage.
+  // path or body param reached a query, client error, not an outage.
   if ((err as unknown as { code?: string }).code === '22P02') {
     res.status(400).json({ error: 'Invalid identifier', requestId });
     return;

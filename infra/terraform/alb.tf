@@ -115,7 +115,7 @@ resource "aws_lb_listener" "http" {
   }
 }
 
-# HTTPS listener — created as soon as acm_certificate_arn is provided.
+# HTTPS listener, created as soon as acm_certificate_arn is provided.
 # LAUNCH BLOCKER until then: JWTs and biometric data must not transit plain HTTP,
 # and iOS ATS rejects http:// APIs in store builds.
 resource "aws_lb_listener" "https" {

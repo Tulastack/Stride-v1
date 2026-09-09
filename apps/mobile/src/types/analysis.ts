@@ -63,7 +63,7 @@ export interface CaptureQuality {
 }
 
 /**
- * Measured, non-authoritative improvement target — flaws stay trusted-only.
+ * Measured, non-authoritative improvement target, flaws stay trusted-only.
  * 'unconfirmed' = experimental reading outside its healthy band;
  * 'refinement' = in-band value close to the band edge.
  */

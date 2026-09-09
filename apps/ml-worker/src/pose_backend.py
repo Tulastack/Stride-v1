@@ -1,4 +1,4 @@
-"""PoseBackend registry — resolve a 2D pose backend by name (no more if/elif).
+"""PoseBackend registry, resolve a 2D pose backend by name (no more if/elif).
 
 Adding a backbone = register its module here (name → import path). Each backend
 module is expected to expose:
@@ -30,7 +30,7 @@ def resolve(name: str | None):
     key = (name or DEFAULT_BACKEND).lower()
     if key not in REGISTRY:
         raise ValueError(
-            f"unknown POSE2D_BACKEND {name!r} — registered backends: {sorted(REGISTRY)}"
+            f"unknown POSE2D_BACKEND {name!r}, registered backends: {sorted(REGISTRY)}"
         )
     return importlib.import_module(REGISTRY[key])
 

@@ -1,5 +1,5 @@
 /**
- * PROMPT B.1 — gait events, confidence model, capture quality (unit).
+ * PROMPT B.1, gait events, confidence model, capture quality (unit).
  */
 import { dropLowConfidence, gapFill, lowPass, meanConfidence } from '../stage1_keypoints.js';
 import { detectStances, computeMetrics } from '../stage5_metrics.js';

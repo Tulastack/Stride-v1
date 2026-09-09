@@ -5,7 +5,7 @@
  * Runs the biomechanics engine / labeled validation set, computes per-metric
  * RMSE/MAE/ICC by phase and viewpoint, gates each cell against its threshold,
  * and writes docs/validation/REPORT.md. The errors here are the documented
- * basis for the in-app confidence bands — we do not invent confidence.
+ * basis for the in-app confidence bands, we do not invent confidence.
  *
  * Usage: npx tsx apps/api/scripts/validate-biomech.ts
  */

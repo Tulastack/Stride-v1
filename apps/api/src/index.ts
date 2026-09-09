@@ -19,7 +19,7 @@ import * as Sentry from '@sentry/node';
     }
   }
   if (missing.length > 0) {
-    console.error(`[Stride API] Refusing to start — missing required env vars: ${missing.join(', ')}`);
+    console.error(`[Stride API] Refusing to start, missing required env vars: ${missing.join(', ')}`);
     process.exit(1);
   }
 }
@@ -91,7 +91,7 @@ const coachLimiter = rateLimit({
   limit: 30,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'Too many coach messages — take a breather and try again in a few minutes.' },
+  message: { error: 'Too many coach messages, take a breather and try again in a few minutes.' },
 });
 app.use(globalLimiter);
 app.use('/coach-sessions', coachLimiter);
@@ -155,7 +155,7 @@ app.get('/', (_req, res) => {
 // Error handling middleware
 app.use(errorHandler);
 
-// Start Server — bind 0.0.0.0 so phones on the LAN can reach the API
+// Start Server, bind 0.0.0.0 so phones on the LAN can reach the API
 // (default Node bind is sometimes loopback-only depending on env/platform).
 const host = process.env.HOST ?? '0.0.0.0';
 const server = app.listen(Number(port), host, () => {
@@ -187,7 +187,7 @@ function shutdown(signal: string) {
   });
 
   // Long-lived SSE connections (15s heartbeats) keep server.close() waiting
-  // forever — drop them so the close callback can actually run, and hard-exit
+  // forever, drop them so the close callback can actually run, and hard-exit
   // as a backstop if something still hangs.
   setTimeout(() => server.closeAllConnections(), 2_000).unref();
   setTimeout(() => {

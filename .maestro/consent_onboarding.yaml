@@ -1,5 +1,5 @@
 appId: com.stride.mobile
-name: "Consent Onboarding — cannot proceed without both checkboxes"
+name: "Consent Onboarding, cannot proceed without both checkboxes"
 ---
 # Fresh launch → register → consent screen
 - launchApp:
@@ -30,7 +30,7 @@ name: "Consent Onboarding — cannot proceed without both checkboxes"
 - assertVisible:
     id: "consent-continue-btn"
 
-# Continue button should be disabled — tapping should not advance the screen
+# Continue button should be disabled, tapping should not advance the screen
 - tapOn:
     id: "consent-continue-btn"
 
@@ -38,7 +38,7 @@ name: "Consent Onboarding — cannot proceed without both checkboxes"
     id: "terms-checkbox"
     # Still on consent screen
 
-# Check only terms — still blocked
+# Check only terms, still blocked
 - tapOn:
     id: "terms-checkbox"
 
@@ -49,7 +49,7 @@ name: "Consent Onboarding — cannot proceed without both checkboxes"
     id: "medical-checkbox"
     # Still on consent screen
 
-# Check medical too — now should be able to continue
+# Check medical too, now should be able to continue
 - tapOn:
     id: "medical-checkbox"
 

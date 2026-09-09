@@ -1,5 +1,5 @@
 /**
- * Stage 1 live pipeline — detect → hygiene → azimuth on golden fixture keypoints.
+ * Stage 1 live pipeline, detect → hygiene → azimuth on golden fixture keypoints.
  */
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';

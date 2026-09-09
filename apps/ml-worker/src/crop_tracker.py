@@ -1,16 +1,16 @@
-"""Single-target crop tracker — owns athlete identity across frames.
+"""Single-target crop tracker, owns athlete identity across frames.
 
 Replaces the old "run pose on the crop, keep the detection nearest the crop
 centre, EMA the box" heuristic (`rtmpose_backend`), which switched onto
 bystanders in multi-person / staggered sprint-start clips and could latch a
 standing figure. Instead the target is tracked with:
 
-  1. a MOTION model — a constant-velocity Kalman filter on the bbox, so the
+  1. a MOTION model, a constant-velocity Kalman filter on the bbox, so the
      search region is *predicted* from where the athlete is going (not widened
      isotropically from a stale box);
-  2. an APPEARANCE gate — an HSV colour histogram of the athlete's torso, so a
+  2. an APPEARANCE gate, an HSV colour histogram of the athlete's torso, so a
      different-looking person nearby is rejected even if geometrically close;
-  3. a CASCADED selection — position first, appearance to break ties, confidence
+  3. a CASCADED selection, position first, appearance to break ties, confidence
      last; a candidate that is BOTH far from the prediction AND dissimilar in
      appearance is refused (counts as a miss) rather than accepted as a switch.
 
@@ -41,7 +41,7 @@ _RESET_MISS = 4           # after this many misses the position lock is stale �
 _GLOBAL_APP_GATE = 0.45   # in global search, candidate must match the first-lock anchor this well
 _REENTRY_APP_GATE = 0.35  # an "exited" target only re-locks on a STRONG anchor match
 _SEED_INFLATE = 0.15      # first-lock: widen the brush box by this much per miss (imprecise brushes)
-_SEED_INFLATE_MAX = 2.5   # ... up to this factor — spatial tolerance grows, user intent still anchors it
+_SEED_INFLATE_MAX = 2.5   # ... up to this factor, spatial tolerance grows, user intent still anchors it
 _EDGE = 0.03              # normalized margin that counts as "at the frame edge"
 _EXIT_VEL = 0.005         # min outward velocity (normalized/frame) for an edge touch to mean "leaving"
 
@@ -136,7 +136,7 @@ class CropTracker:
     def predict(self) -> None:
         """Advance the Kalman filter one sampled step."""
         if self.miss > 0:
-            # Once the target is lost, its future motion is unknown — don't let
+            # Once the target is lost, its future motion is unknown, don't let
             # the filter coast on stale velocity (that chases the box off-frame
             # and re-acquires edge noise). Hold position instead.
             self.kf.statePost[4, 0] = 0.0
@@ -159,7 +159,7 @@ class CropTracker:
         return (cx - w / 2 - mx, cy - h / 2 - my, cx + w / 2 + mx, cy + h / 2 + my)
 
     def needs_global_search(self) -> bool:
-        """True once the position lock can no longer be trusted — the caller
+        """True once the position lock can no longer be trusted, the caller
         should hand select() the FULL frame so the athlete can be re-found
         anywhere (identity then rests on the appearance anchor, not position).
         Applies after a long miss run or an exit latch; never during first lock,
@@ -180,7 +180,7 @@ class CropTracker:
         cand_dbg = []
 
         # Once the athlete has tracked off a frame edge, do NOT free-run on
-        # noise — but the exit call itself can be wrong (a runner ENTERING near
+        # noise, but the exit call itself can be wrong (a runner ENTERING near
         # an edge, an occlusion at the boundary). A candidate that strongly
         # matches the first-lock appearance anchor re-locks the target; anything
         # weaker stays refused, which keeps the bystander protection.
@@ -212,7 +212,7 @@ class CropTracker:
             # the blocks), because the y-distance dominates. Overlap doesn't.
             # The box INFLATES with each miss: an imprecise brush (or an athlete
             # who enters the region a beat later) must not leave the whole clip
-            # unlocked and every frame excluded — the user's intent stays the
+            # unlocked and every frame excluded, the user's intent stays the
             # anchor, the spatial tolerance around it grows.
             inflate = min(1.0 + _SEED_INFLATE * self.miss, _SEED_INFLATE_MAX)
             scx = (self.seed_box[0] + self.seed_box[2]) / 2.0
@@ -269,18 +269,18 @@ class CropTracker:
                 i, motion, app, app_anchor = best
                 decision = i
                 if global_search:
-                    # Position lock is stale — accept on appearance alone, against
+                    # Position lock is stale, accept on appearance alone, against
                     # either the recent look or the immutable first-lock anchor.
                     if not (app <= _REACQ_APP_GATE or app_anchor <= _GLOBAL_APP_GATE):
                         decision = None
                 # Position continuity is PRIMARY: a detection within the motion
-                # gate of the prediction is the target — accept it even if the
+                # gate of the prediction is the target, accept it even if the
                 # colour histogram drifted (a set→drive pose change makes appearance
                 # an unreliable hard gate).
                 elif motion > _MOTION_GATE:
                     decision = None
                 # Appearance only matters when RE-ACQUIRING after a loss, and
-                # against the RECENT (EMA) look — this rejects grabbing a nearby
+                # against the RECENT (EMA) look, this rejects grabbing a nearby
                 # bystander once the athlete has actually left.
                 elif self.miss >= _REACQ_MISS and app > _REACQ_APP_GATE:
                     decision = None
@@ -304,8 +304,8 @@ class CropTracker:
         self._locks += 1
         # Exit = torso centroid at a frame edge AND velocity pointing OUT of it,
         # once the filter has settled (>= 3 locks). A bare position test latched
-        # on athletes legitimately near an edge — above all a runner ENTERING
-        # the shot, whose very first lock is at the edge — and the first locks'
+        # on athletes legitimately near an edge, above all a runner ENTERING
+        # the shot, whose very first lock is at the edge, and the first locks'
         # velocity is dominated by the seed-box innovation, not real motion.
         # A false latch here used to blind the tracker for the rest of the clip.
         vx = float(self.kf.statePost[4, 0])

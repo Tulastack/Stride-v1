@@ -34,7 +34,7 @@ export interface DrillProgramBase {
 }
 
 /** Athlete/flaw context used to shape plan length, frequency and progression.
- * All fields optional — an omitted `athlete` resolves to the original fixed
+ * All fields optional, an omitted `athlete` resolves to the original fixed
  * 3-week / 2-session template below, unchanged. */
 export interface AthleteProgramInput {
   experienceLevel?: 'beginner' | 'intermediate' | 'advanced' | null;
@@ -46,7 +46,7 @@ export interface AthleteProgramInput {
 const DEFAULT_WEEKS = 3;
 const DEFAULT_SESSIONS_PER_WEEK = 2;
 const DAYS_BETWEEN_SESSIONS = 3;
-// Hold volume for the first two weeks to groove the pattern, then step it up —
+// Hold volume for the first two weeks to groove the pattern, then step it up,
 // a real progression instead of repeating the same session N times.
 const DEFAULT_REP_PROGRESSION = [1, 1, 1.25];
 
@@ -70,7 +70,7 @@ function resolveWeeks(athlete?: AthleteProgramInput): number {
 }
 
 // A severity-3 flaw (the biggest fault found) gets reinforced more often per
-// week than a minor one — same logic as any skill: bigger gap, more reps at
+// week than a minor one, same logic as any skill: bigger gap, more reps at
 // it. Injury/intensity cap overrides this back down regardless of severity.
 function resolveSessionsPerWeek(athlete?: AthleteProgramInput): number {
   if (!athlete) return DEFAULT_SESSIONS_PER_WEEK;
@@ -106,7 +106,7 @@ function addDays(iso: string, days: number): string {
  * Build the full progressive program for one approved drill suggestion. Pure:
  * same inputs always yield the same output. `athlete` shapes plan length,
  * weekly frequency and progression around the specific athlete and the flaw
- * being addressed — omit it to get the original fixed template.
+ * being addressed, omit it to get the original fixed template.
  */
 export function generateDrillProgram(
   base: DrillProgramBase,
@@ -152,7 +152,7 @@ export function generateDrillProgram(
 // sequence of 4 phases (Stability -> Strength -> Plyometrics & Movement ->
 // Back to Sport), each with its own FIXED exercise group that entirely
 // replaces the previous phase's group at the boundary. Every athlete who
-// gets this metric's flaw goes through the same phase order — phase
+// gets this metric's flaw goes through the same phase order, phase
 // selection is not an athlete-level difficulty choice the way
 // AthleteProgramInput shapes generateDrillProgram().
 
@@ -202,7 +202,7 @@ function spreadDayOffsets(daysPerWeek: number): number[] {
  * Build the full multi-phase recovery program for one approved drill
  * suggestion whose reference_drills row has reviewed recovery_phases. Pure:
  * same inputs always yield the same output. Uses each phase's
- * `durationWeeksMin` (the conservative default) — extending a phase because
+ * `durationWeeksMin` (the conservative default), extending a phase because
  * an athlete needs more time is a future check-in feature, not something
  * this function guesses at up front.
  */
@@ -220,7 +220,7 @@ export function generateRecoveryProgram(
     for (let week = 0; week < phase.durationWeeksMin; week++) {
       for (const offset of offsets) {
         sessions.push({
-          title: `${phase.name} — ${metricKey}`,
+          title: `${phase.name}, ${metricKey}`,
           eventType: 'drill',
           scheduledDate: addDays(startDate, dayCursor + offset),
           details: {

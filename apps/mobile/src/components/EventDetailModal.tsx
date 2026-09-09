@@ -1,4 +1,4 @@
-// Calendar entry detail sheet — tapping a day's event used to mark it complete
+// Calendar entry detail sheet, tapping a day's event used to mark it complete
 // instantly, with no way to see what the session actually involves. This shows
 // what to do and why (drawn from the reference drill / flaw that generated the
 // session) before the athlete commits to "done".
@@ -85,7 +85,7 @@ export function EventDetailModal({
 
                 {!event.details?.why && !event.details?.cues?.length ? (
                   <Text style={[styles.noDetail, { color: colors.muted }]}>
-                    No extra detail for this session — follow the cue above.
+                    No extra detail for this session, follow the cue above.
                   </Text>
                 ) : null}
               </ScrollView>

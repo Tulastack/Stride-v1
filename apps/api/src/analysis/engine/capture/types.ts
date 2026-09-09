@@ -1,4 +1,4 @@
-// Stage 0 capture metadata — video + gyro + intrinsics from the phone.
+// Stage 0 capture metadata, video + gyro + intrinsics from the phone.
 import type { CameraIntrinsics } from '@stride/types';
 
 export interface GyroSample {
@@ -27,7 +27,7 @@ export interface CaptureManifest {
   durationMs: number;
   motionBlur: 'low' | 'med' | 'high';
   framing: 'full' | 'partial';
-  /** Handheld is expected — gyro enables camera-motion decoupling. */
+  /** Handheld is expected, gyro enables camera-motion decoupling. */
   handheld: boolean;
   gyro: GyroSample[];
   /** Optional accelerometer stream; fused with gyro to recover gravity. */
@@ -35,7 +35,7 @@ export interface CaptureManifest {
   /**
    * Measured world-up (unit) in the SAME frame as the reconstructed 3D pose.
    * When present, Stage 4 canonicalizes against this instead of the hardcoded
-   * [0,1,0] — making angles invariant to camera pitch/roll/elevation, not just
+   * [0,1,0], making angles invariant to camera pitch/roll/elevation, not just
    * yaw. Produced by fusing accelerometer + gyro (see engine/gravity.ts) and
    * mapping into the pose frame (a calibrated capture-layer step).
    */

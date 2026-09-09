@@ -1,5 +1,5 @@
 // Capture-quality card (PROMPT F.3-UI revised, task 3).
-// A single, calm line. Shows captureQuality.primaryNudge ONLY when present —
+// A single, calm line. Shows captureQuality.primaryNudge ONLY when present,
 // never nag when the capture is good.
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
@@ -25,7 +25,7 @@ export function CaptureQualityCard({ capture, testID }: { capture: CaptureQualit
         </Text>
       ) : (
         <Text style={styles.good} accessibilityLabel="capture-good">
-          Great angle — every metric on this run is trustworthy.
+          Great angle, every metric on this run is trustworthy.
         </Text>
       )}
     </View>

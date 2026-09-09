@@ -10,7 +10,7 @@ import type { AnalysisResult } from '../../src/types/analysis';
 import { TrendChart } from '../../src/components/progress/TrendChart';
 import { pickRunnerOfTheDay } from '../../src/data/exampleRunners';
 
-/** Real score for an analysis — the computed running-economy index when
+/** Real score for an analysis, the computed running-economy index when
  * available, falling back to a flaw-count heuristic (same formula as the
  * Analysis screen, see app/(tabs)/analysis.tsx). */
 function scoreFor(analysis: AnalysisResult): number {
@@ -20,7 +20,7 @@ function scoreFor(analysis: AnalysisResult): number {
 const TRACKED_METRICS = ['knee_drive', 'cadence_spm'];
 const METRIC_LABELS: Record<string, string> = { knee_drive: 'Knee drive', cadence_spm: 'Cadence' };
 
-/** Short trend sentence derived from the already-loaded history — compares
+/** Short trend sentence derived from the already-loaded history, compares
  * the average score of the most recent sprints against the earliest ones. */
 function improvementSummary(history: AnalysisResult[]): string {
   if (history.length < 2) return 'Log a couple more sprints to start seeing a trend.';
@@ -29,8 +29,8 @@ function improvementSummary(history: AnalysisResult[]): string {
   const earlierAvg = scores.slice(0, windowSize).reduce((a, b) => a + b, 0) / windowSize;
   const recentAvg = scores.slice(-windowSize).reduce((a, b) => a + b, 0) / windowSize;
   const delta = Math.round(recentAvg - earlierAvg);
-  if (delta > 2) return `Trending up — your form score is averaging ${delta} points higher than when you started.`;
-  if (delta < -2) return `Your form score has dipped ${Math.abs(delta)} points recently — worth a look at what changed.`;
+  if (delta > 2) return `Trending up. Your form score is averaging ${delta} points higher than when you started.`;
+  if (delta < -2) return `Your form score has dipped ${Math.abs(delta)} points recently. Worth a look at what changed.`;
   return `Your form score has stayed steady over your last ${scores.length} sprints.`;
 }
 
@@ -116,7 +116,7 @@ export default function ProgressScreen() {
           <Text style={[styles.subtitle, { color: colors.muted }]}>{history.length} sprint{history.length !== 1 ? 's' : ''} analyzed</Text>
         </View>
 
-        {/* Top segmented view — History (default) vs. Insights, Progress tab only */}
+        {/* Top segmented view, History (default) vs. Insights, Progress tab only */}
         <View style={styles.segmentRow}>
           <Pressable
             accessibilityLabel="progress-view-history"
@@ -290,7 +290,7 @@ export default function ProgressScreen() {
                 </View>
 
                 {selectedAnalysis.flaws.length === 0 ? (
-                  <Text style={[styles.modalNoIssues, { color: colors.success }]}>No issues — great form!</Text>
+                  <Text style={[styles.modalNoIssues, { color: colors.success }]}>No issues. Great form.</Text>
                 ) : (
                   selectedAnalysis.flaws.map((flaw) => (
                     <View key={flaw.id} style={[styles.modalFlaw, { borderBottomColor: colors.border }]}>

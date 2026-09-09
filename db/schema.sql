@@ -1,13 +1,13 @@
--- Stride — Aurora DSQL schema (canonical).
+-- Stride, Aurora DSQL schema (canonical).
 -- Aurora DSQL is PostgreSQL-compatible. Run this against the DSQL cluster:
 --   region:   us-east-1
 --   endpoint: gft3jhbw2zbldbhnokioha5epm.dsql.us-east-1.on.aws
 --
 -- DSQL-specific rules applied throughout (these are DSQL limitations, not design choices):
---   • No `CREATE EXTENSION` — `gen_random_uuid()` is built in, so none is needed.
---   • No FOREIGN KEY constraints — referential integrity is enforced in app code.
+--   • No `CREATE EXTENSION`, `gen_random_uuid()` is built in, so none is needed.
+--   • No FOREIGN KEY constraints, referential integrity is enforced in app code.
 --   • Secondary indexes use `CREATE INDEX ASYNC`.
---   • No partial indexes (WHERE …) — those are written as full indexes.
+--   • No partial indexes (WHERE …), those are written as full indexes.
 -- Column types, CHECK constraints, defaults, and PRIMARY KEYs mirror the
 -- Postgres schema in apps/api/src/db/schema.sql exactly.
 
@@ -58,7 +58,7 @@ CREATE INDEX ASYNC IF NOT EXISTS idx_analyses_user_id ON analyses(user_id);
 CREATE INDEX ASYNC IF NOT EXISTS idx_analyses_status ON analyses(status);
 CREATE INDEX ASYNC IF NOT EXISTS idx_analyses_created ON analyses(created_at);
 
--- NOTE: no `conversations` table (PRD v2.2 F.5 — structured-only coaching, no chat).
+-- NOTE: no `conversations` table (PRD v2.2 F.5, structured-only coaching, no chat).
 
 -- ─── Calendar Events ──────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS calendar_events (

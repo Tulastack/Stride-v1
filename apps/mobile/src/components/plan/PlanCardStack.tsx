@@ -38,7 +38,7 @@ import type { PlanDayCard } from '../../lib/planCards';
 const VISIBLE_DEPTH = 3;
 // The deck fans like a hand of cards. Each card further back turns a little
 // more about a pivot at its OWN BOTTOM EDGE, so the cards splay from a shared
-// point at the base and their tops sweep an arc — that pivot is the whole
+// point at the base and their tops sweep an arc, that pivot is the whole
 // difference between a fanned hand and a pile of offset rectangles. The angle
 // is small now that a card fills the page: at full size, 4.5° threw the corners
 // clean off the screen.
@@ -62,7 +62,7 @@ export interface PlanCardStackProps {
   onAccept: (card: PlanDayCard) => void;
   /** Every remaining card was dismissed at once. */
   onSkipAll: (remaining: PlanDayCard[]) => void;
-  /** Stack is finished and has folded away — play the calendar bounce now. */
+  /** Stack is finished and has folded away, play the calendar bounce now. */
   onDone: () => void;
 }
 
@@ -219,7 +219,7 @@ export function PlanCardStack({ cards, colors, onAccept, onSkipAll, onDone }: Pl
       />
 
       {/* The deck explains itself: cards, a date, and something to swipe. No
-          banner, no counter, no instructions — just a way out. */}
+          banner, no counter, no instructions, just a way out. */}
       <Animated.View style={[styles.chrome, chromeStyle]} pointerEvents={folding ? 'none' : 'box-none'}>
         <Pressable
           onPress={skipAll}
@@ -299,7 +299,7 @@ function BehindCard({
   height: number;
   depth: number;
   fold: SharedValue<number>;
-  /** Pixels travelled upward during the fold — shared with the top card. */
+  /** Pixels travelled upward during the fold, shared with the top card. */
   foldLift: number;
   /** Half the card height: the pivot sits on the card's own bottom edge. */
   fanPivot: number;

@@ -1,4 +1,4 @@
-// Mobile capture pipeline — gyro + accelerometer recording, intrinsics, capture manifest.
+// Mobile capture pipeline, gyro + accelerometer recording, intrinsics, capture manifest.
 // Stage 0 sidecar consumed by the biomechanics engine (PRD v2.2-B addendum).
 
 import { Dimensions } from 'react-native';
@@ -42,7 +42,7 @@ export interface CaptureManifest {
   imageGravity2D?: [number, number];
   intrinsics: CameraIntrinsics;
   sloMoRequested: boolean;
-  /** User-selected target runner (normalized 0..1) for multi-person clips —
+  /** User-selected target runner (normalized 0..1) for multi-person clips,
    * a brush-traced bbox {x0,y0,x1,y1} (preferred) or a point {xNorm,yNorm}. */
   target?: {
     xNorm?: number; yNorm?: number;
@@ -207,7 +207,7 @@ export async function uploadCaptureVideo(
   const part = parts[0];
   if (!part?.url) throw new Error('Upload URL missing from server response');
 
-  // Local-storage mode echoes an API blob URL whose host can be stale — rewrite
+  // Local-storage mode echoes an API blob URL whose host can be stale, rewrite
   // it to the host the app already talks to. Real presigned URLs (e.g. S3) are
   // used exactly as signed.
   const uploadUrl = rewriteUploadUrl(part.url, analysisId, opts?.apiBaseUrl, opts?.token);
@@ -218,7 +218,7 @@ export async function uploadCaptureVideo(
     put = await fetch(uploadUrl, {
       method: 'PUT',
       body: fileBlob,
-      // For S3 presigned PUTs this header must match what was signed — the
+      // For S3 presigned PUTs this header must match what was signed, the
       // server signs 'video/mp4', which is also what the API blob PUT expects.
       headers: { 'Content-Type': 'video/mp4' },
     });
@@ -238,7 +238,7 @@ export async function uploadCaptureVideo(
 }
 
 /** Rewrite ONLY the API's local-storage blob URL (…/videos/:id/blob) to the
- * app's known API base + fresh token — that URL's host can be a stale LAN IP.
+ * app's known API base + fresh token, that URL's host can be a stale LAN IP.
  * Anything else (e.g. an amazonaws.com presigned URL) is returned unchanged:
  * rewriting it would 404 and break the signature. */
 function rewriteUploadUrl(

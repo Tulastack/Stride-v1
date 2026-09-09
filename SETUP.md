@@ -1,4 +1,4 @@
-# Stride — Local Setup & Startup Guide
+# Stride, Local Setup & Startup Guide
 
 This monorepo contains the **mobile app** (Expo), **API** (Express + Postgres), **ML worker** (MoveNet → WHAM/OpenCap → biomechanics), and shared packages (`@stride/types`, `@stride/design-tokens`, `@stride/content`).
 
@@ -6,7 +6,7 @@ Use this guide to run everything from **UI-only exploration** up to the **full c
 
 ---
 
-## Quick reference — startup methods
+## Quick reference, startup methods
 
 | Method | What runs | Best for |
 |--------|-----------|----------|
@@ -25,12 +25,12 @@ Use this guide to run everything from **UI-only exploration** up to the **full c
 
 | Tool | Version | Notes |
 |------|---------|-------|
-| **Node.js** | ≥ 22 (root `package.json`) | API Docker image uses Node 20 — both work locally |
+| **Node.js** | ≥ 22 (root `package.json`) | API Docker image uses Node 20, both work locally |
 | **npm** | 10+ | Monorepo workspaces |
 | **Docker + Docker Compose** | Recent | Postgres, LocalStack, optional full stack |
-| **Expo Go** or **Xcode Simulator** | — | Mobile |
+| **Expo Go** or **Xcode Simulator** | n/a | Mobile |
 | **Python** | 3.11–3.12 (optional) | Only if running ML worker **outside** Docker |
-| **Supabase project** | — | **Required for real uploads** (see Auth below) |
+| **Supabase project** | n/a | **Required for real uploads** (see Auth below) |
 
 ---
 
@@ -56,7 +56,7 @@ npm run build --workspace=@stride/types \
 
 ## 1. Environment configuration
 
-### API — `apps/api/.env`
+### API, `apps/api/.env`
 
 Copy the example and edit:
 
@@ -88,7 +88,7 @@ SQS_QUEUE_URL=http://localhost:4566/000000000000/stride-analysis
 INTERNAL_API_SECRET=dev-internal-secret-change-in-prod
 ```
 
-### ML worker — environment
+### ML worker, environment
 
 When running via Docker Compose, env is set in `infra/docker-compose.yml`. For **native** worker runs, export the same values:
 
@@ -112,7 +112,7 @@ export STRIDE_WHAM_REPO=/path/to/wham/checkout   # learned WHAM Stage 2
 export STRIDE_LEGACY_PIPELINE=1                  # old 2D + LLM path (not PRD v2.2)
 ```
 
-### Mobile — API URL
+### Mobile, API URL
 
 Default in `apps/mobile/src/store/useStrideStore.ts`:
 
@@ -130,7 +130,7 @@ Change at runtime by patching the store or adding a dev settings screen.
 
 ---
 
-## 2. Auth — read this before testing uploads
+## 2. Auth, read this before testing uploads
 
 The API verifies **real Supabase JWTs** via JWKS (`apps/api/src/middleware/auth.ts`).
 
@@ -149,7 +149,7 @@ The mobile login screen currently sets a **mock token** for Quick Demo. That let
 
 ---
 
-## 3. Method A — Full Docker stack (recommended for E2E)
+## 3. Method A, Full Docker stack (recommended for E2E)
 
 Runs Postgres (with schema auto-init), LocalStack (S3 + SQS), API, and ML worker.
 
@@ -187,11 +187,11 @@ docker compose -f infra/docker-compose.yml down
 
 ---
 
-## 4. Method B — Hybrid (Docker infra + native API/worker)
+## 4. Method B, Hybrid (Docker infra + native API/worker)
 
 Useful when iterating on API or worker code with hot reload.
 
-### Step 1 — Infrastructure only
+### Step 1, Infrastructure only
 
 ```bash
 docker compose -f infra/docker-compose.yml up -d postgres localstack localstack-init
@@ -199,7 +199,7 @@ docker compose -f infra/docker-compose.yml up -d postgres localstack localstack-
 
 Wait until Postgres is healthy and LocalStack init completes (S3 bucket + SQS queue created).
 
-### Step 2 — API (native, hot reload)
+### Step 2, API (native, hot reload)
 
 ```bash
 # Ensure apps/api/.env is configured (§1)
@@ -209,7 +209,7 @@ npm run dev:api
 
 API listens on **http://localhost:3000**.
 
-### Step 3 — ML worker (native Python)
+### Step 3, ML worker (native Python)
 
 ```bash
 cd apps/ml-worker
@@ -223,11 +223,11 @@ python -c "import tensorflow_hub as hub; hub.load('https://tfhub.dev/google/move
 python -u src/worker.py
 ```
 
-> **Python version:** Use 3.11 or 3.12 locally. Very new Python versions may lack TensorFlow wheels — use Docker for the worker if `pip install tensorflow` fails.
+> **Python version:** Use 3.11 or 3.12 locally. Very new Python versions may lack TensorFlow wheels, use Docker for the worker if `pip install tensorflow` fails.
 
 ---
 
-## 5. Method C — Native API only
+## 5. Method C, Native API only
 
 For route/handler work without processing videos:
 
@@ -241,7 +241,7 @@ Hit `http://localhost:3000/health`. Upload/analysis endpoints need the ML worker
 
 ---
 
-## 6. Method D — Mobile app only (UI)
+## 6. Method D, Mobile app only (UI)
 
 No backend required for browsing screens with Quick Demo.
 
@@ -264,7 +264,7 @@ Login → **Quick Demo (Skip Auth)** → explore tabs. Analysis/coach/progress w
 
 ---
 
-## 7. Method E — Turbo dev (API + mobile)
+## 7. Method E, Turbo dev (API + mobile)
 
 ```bash
 npm run build --workspace=@stride/types \
@@ -315,18 +315,18 @@ Optional pipeline modes (worker env, **not** toggled in the mobile UI):
 | Env var | Effect |
 |---------|--------|
 | `STRIDE_WHAM_REPO=/path/to/wham` | Stage 2 uses learned WHAM (GPU) instead of SMPL-gravity fallback |
-| `STRIDE_LEGACY_PIPELINE=1` | Old 2D + LLM report path — **not** the PRD v2.2 contract |
-| `ANALYSIS_PROVIDER_MODE=fixture` | API dev provider only — **does not** affect SQS upload path |
+| `STRIDE_LEGACY_PIPELINE=1` | Old 2D + LLM report path, **not** the PRD v2.2 contract |
+| `ANALYSIS_PROVIDER_MODE=fixture` | API dev provider only, **does not** affect SQS upload path |
 | `ANALYSIS_PROVIDER_MODE=local` | API runs engine against on-disk sidecars (dev/scripts) |
 
 ---
 
-## 9. Method F — Test infrastructure
+## 9. Method F, Test infrastructure
 
 CI-style Postgres + LocalStack on different ports:
 
 ```bash
-npm run test:env:up    # infra/docker-compose.test.yml — Postgres :5433, LocalStack :4567
+npm run test:env:up    # infra/docker-compose.test.yml, Postgres :5433, LocalStack :4567
 npm run test:env:down
 ```
 
@@ -339,7 +339,7 @@ PGPASSWORD=stride_dev psql -h localhost -p 5433 -U stride -d stride_test \
 
 ---
 
-## 10. Method G — Running tests
+## 10. Method G, Running tests
 
 Build packages first (same as §0):
 
@@ -386,7 +386,7 @@ cd apps/api && npm run validate:biomech
 
 ---
 
-## 11. Method H — Biomech validation gate
+## 11. Method H, Biomech validation gate
 
 Regenerates the per-metric trust report used for in-app `experimental` tags:
 
@@ -467,7 +467,7 @@ Run the worker in Docker (Method A) instead of native Python.
 
 ### Analysis failed / low confidence
 
-Real pipeline — poor video quality, head-on angle, or >40% excluded MoveNet frames triggers failure or low-confidence bands. Re-record side-on with full body in frame.
+Real pipeline, poor video quality, head-on angle, or >40% excluded MoveNet frames triggers failure or low-confidence bands. Re-record side-on with full body in frame.
 
 ---
 

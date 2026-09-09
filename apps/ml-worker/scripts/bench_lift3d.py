@@ -5,7 +5,7 @@ There is no motion-capture reference for running in this repo, but the lift can
 still be measured exactly: build an articulated figure from known joint ANGLES,
 place it at a known yaw, project it through a known camera, and ask the lift to
 recover what we already know. Because the figure is constructed from angles,
-every bone length is rigid by construction and the truth is exact — this
+every bone length is rigid by construction and the truth is exact, this
 measures the algorithm, not a fixture's inconsistency.
 
 This isolates the LIFT. It says nothing about pose-estimator error on real
@@ -33,7 +33,7 @@ from src.lift3d import lift_sequence  # noqa: E402
 
 W, H = 1080, 1920
 # The camera the projection actually uses. The harness hands the SAME value to
-# the lift, so intrinsics error is excluded here on purpose — it is measured
+# the lift, so intrinsics error is excluded here on purpose, it is measured
 # separately by --focal-error.
 FOCAL = H / (2 * math.tan(math.radians(30.0)))
 
@@ -42,7 +42,7 @@ def skeleton(t: float, yaw_deg: float) -> np.ndarray:
     """Articulated figure in its own body frame, yawed into the camera frame.
 
     Facing +X, up +Y, left side toward +Z. Limbs swing in the body's sagittal
-    plane, so after the yaw they carry a real depth component — the thing a flat
+    plane, so after the yaw they carry a real depth component, the thing a flat
     projection cannot reproduce and the lift therefore has to recover.
     """
     k = np.full((17, 3), np.nan)
@@ -58,7 +58,7 @@ def skeleton(t: float, yaw_deg: float) -> np.ndarray:
     for side, off in (("left", 0.0), ("right", math.pi)):
         s, c = math.sin(ph + off), math.cos(ph + off)
         # Thigh angle from vertical, POSITIVE forward. The previous 46+40*sin
-        # spanned 6..86 deg — always in front of the body, so the figure never
+        # spanned 6..86 deg, always in front of the body, so the figure never
         # entered hip extension and both legs sat on the same side of the pelvis
         # in every frame. That is not a running gait, and benchmarking a lift
         # against it measures the wrong motion. 8+48*sin spans -40..56 deg,
@@ -98,7 +98,7 @@ def pass_by(frames: int, offset_m: float = 6.0, speed: float = 8.0,
     sweep measures. The aspect angle changes continuously through the clip:
     the athlete starts oncoming, passes broadside, and recedes. Every metric
     therefore has some segment that saw it well, which is the entire premise of
-    the per-segment routing in analyze3d — and a fixed yaw, by construction,
+    the per-segment routing in analyze3d, and a fixed yaw, by construction,
     denies it that.
 
     `offset_m` is the camera's perpendicular distance from the running line.

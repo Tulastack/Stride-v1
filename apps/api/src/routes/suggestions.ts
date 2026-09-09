@@ -17,7 +17,7 @@ const approveSkipSchema = z.object({
 });
 
 /**
- * GET /analyses/:analysisId/suggestions — list suggestions for an analysis.
+ * GET /analyses/:analysisId/suggestions, list suggestions for an analysis.
  * NOTE: this router is mounted at '/analyses', so the path here is relative
  * ('/:analysisId/suggestions') to avoid a double '/analyses/analyses' prefix.
  */
@@ -48,7 +48,7 @@ router.get('/:analysisId/suggestions', authenticate, async (req: any, res: Respo
 });
 
 /**
- * POST /suggestions/:id/approve — approve + create calendar_event (idempotent)
+ * POST /suggestions/:id/approve, approve + create calendar_event (idempotent)
  */
 router.post('/:id/approve', authenticate, async (req: any, res: Response, next: NextFunction) => {
   try {
@@ -69,7 +69,7 @@ router.post('/:id/approve', authenticate, async (req: any, res: Response, next: 
     }
 
     // suggested_date comes back from a DATE column as a JS Date (node-pg), so
-    // coerce to YYYY-MM-DD using LOCAL parts (pg parses to local midnight —
+    // coerce to YYYY-MM-DD using LOCAL parts (pg parses to local midnight,
     // toISOString() would shift the day in negative-UTC timezones) before validating.
     const rawDate: unknown = suggestion.suggested_date;
     const dateStr =
@@ -95,7 +95,7 @@ router.post('/:id/approve', authenticate, async (req: any, res: Response, next: 
 });
 
 /**
- * POST /suggestions/:id/skip — skip a suggestion
+ * POST /suggestions/:id/skip, skip a suggestion
  */
 router.post('/:id/skip', authenticate, async (req: any, res: Response, next: NextFunction) => {
   try {

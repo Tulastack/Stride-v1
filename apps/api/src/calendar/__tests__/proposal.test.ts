@@ -1,5 +1,5 @@
 /**
- * PROMPT F.7 — calendar approval gate.
+ * PROMPT F.7, calendar approval gate.
  * Unit: proposal generation is pure/no side effects; approval is the only write.
  * Integration: analysis completion never creates events; only commit() does.
  */

@@ -59,7 +59,7 @@ export default function LoginScreen() {
         return;
       }
 
-      setError('Backend not configured — set EXPO_PUBLIC_SUPABASE_URL / EXPO_PUBLIC_SUPABASE_ANON_KEY');
+      setError('Backend not configured. Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY.');
     } catch (err: any) {
       setError(err.message || 'Authentication failed');
     } finally {

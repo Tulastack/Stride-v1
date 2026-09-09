@@ -19,7 +19,7 @@ _pool: SimpleConnectionPool | None = None
 _pool_created_at: float = 0.0
 
 # DSQL IAM auth tokens expire after ~15 min. The pool captures the token into
-# its connect kwargs at construction, so recycle the whole pool before expiry —
+# its connect kwargs at construction, so recycle the whole pool before expiry,
 # otherwise every NEW connection opened after ~15 min fails auth.
 _DSQL_POOL_MAX_AGE_S = 600.0
 

@@ -2,7 +2,7 @@
 
 The previous estimator divided hip width by shoulder width. Both are
 mediolateral spans, so both foreshorten by the same sin(azimuth) factor and it
-cancels — it returned the athlete's bi-iliac/biacromial ratio, an anthropometric
+cancels, it returned the athlete's bi-iliac/biacromial ratio, an anthropometric
 constant, for every camera position. That pinned azimuth near 41° on every clip
 and made the tier-2 trust gate unreachable, so no joint angle could ever raise a
 flaw.
@@ -96,7 +96,7 @@ def test_degenerate_torso_yields_no_estimate():
 def test_sagittal_metrics_can_reach_the_trust_gate_from_a_side_view():
     """The bug's real consequence: with azimuth pinned at ~41°, tier-2
     confidence maxed out at mean_conf * 0.562, so `>= 0.6` needed mean_conf
-    >= 1.07 — unreachable. A genuine side-on view must clear it."""
+    >= 1.07, unreachable. A genuine side-on view must clear it."""
     az = estimate_azimuth_from_keypoints(_frame_at(0))
     vp = _viewpoint_penalty(az, "sagittal")
     mean_conf = 0.75  # a realistic good clip

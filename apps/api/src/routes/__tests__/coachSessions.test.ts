@@ -188,7 +188,7 @@ describe('POST /coach-sessions/:id/message on closed session', () => {
 
 // ─── Test: free_coach session message without action chip ─────────
 describe('POST /coach-sessions/:id/message on free_coach session', () => {
-  it('attempts Gemini call — not 409 SESSION_CLOSED', async () => {
+  it('attempts Gemini call, not 409 SESSION_CLOSED', async () => {
     mockGetCoachSession.mockResolvedValueOnce(SESSION_FREE);
 
     const app = buildApp();
@@ -199,7 +199,7 @@ describe('POST /coach-sessions/:id/message on free_coach session', () => {
     // Should not be 409 (not SESSION_CLOSED)
     expect(res.status).not.toBe(409);
     expect(res.body.code).not.toBe('SESSION_CLOSED');
-    // Will be 500 because GEMINI_API_KEY is not set in test env — that's expected
+    // Will be 500 because GEMINI_API_KEY is not set in test env, that's expected
     expect(res.status).toBe(500);
   });
 });

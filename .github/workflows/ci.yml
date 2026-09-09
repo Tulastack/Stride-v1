@@ -60,7 +60,7 @@ jobs:
         working-directory: apps/ml-worker
 
   biomech-validation:
-    # PROMPT B.2 — regenerate the validation report and fail if a metric whose
+    # PROMPT B.2, regenerate the validation report and fail if a metric whose
     # validated error exceeds its threshold is NOT marked 'experimental'. The
     # report is the basis for in-app confidence bands; we do not invent confidence.
     runs-on: ubuntu-latest

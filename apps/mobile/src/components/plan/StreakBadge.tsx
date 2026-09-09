@@ -2,7 +2,7 @@
 // number actually goes up: the flame pops, a ring bursts outward, and the digits
 // roll to the new total.
 //
-// A streak with unfinished work today is drawn hollow — the day is live but not
+// A streak with unfinished work today is drawn hollow, the day is live but not
 // yet banked, and claiming it early would be a lie the athlete can check.
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet } from 'react-native';

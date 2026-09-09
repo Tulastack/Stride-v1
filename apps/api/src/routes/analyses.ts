@@ -58,7 +58,7 @@ async function authenticateSSE(req: any, res: Response, next: NextFunction): Pro
 }
 
 /**
- * GET /analyses/:analysisId/progress — SSE stream for single analysis progress.
+ * GET /analyses/:analysisId/progress, SSE stream for single analysis progress.
  * If analysis is already completed/failed, sends a terminal event and closes immediately.
  * Otherwise, subscribes the client and removes on disconnect.
  */
@@ -115,7 +115,7 @@ router.get('/:analysisId/progress', authenticateSSE, async (req: any, res: Respo
     return;
   }
 
-  // Still in progress — subscribe client to SSE updates
+  // Still in progress, subscribe client to SSE updates
   sseManager.addConnection(userId, res);
 
   // Close the race: if the analysis reached a terminal state between the

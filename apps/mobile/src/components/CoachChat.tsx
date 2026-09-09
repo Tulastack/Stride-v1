@@ -101,7 +101,7 @@ export function CoachChat({ analysisId }: { analysisId?: string } = {}) {
   useEffect(() => () => { if (thinkTimer.current) clearInterval(thinkTimer.current); }, []);
 
   // Fallback analysis id for the pose animation when the chat wasn't opened
-  // from a specific analysis — use the athlete's most recent completed one.
+  // from a specific analysis, use the athlete's most recent completed one.
   useEffect(() => {
     if (analysisId) return;
     fetchAnalysisHistory()
@@ -109,7 +109,7 @@ export function CoachChat({ analysisId }: { analysisId?: string } = {}) {
       .catch(() => {});
   }, [analysisId]);
 
-  // Opened from "Want personalized tips?" on a specific analysis — ground the
+  // Opened from "Want personalized tips?" on a specific analysis, ground the
   // session in it and have the coach open with advice instead of waiting.
   useEffect(() => {
     if (!analysisId || kickedOff.current) return;
@@ -189,7 +189,7 @@ export function CoachChat({ analysisId }: { analysisId?: string } = {}) {
       setMessages((m) => [...m, {
         role: 'assistant',
         content: busy
-          ? "Your coach is a little busy right now — give it a few minutes and try again."
+          ? "Your coach is busy right now. Give it a few minutes and try again."
           : "Couldn't reach the coach. Check connection.",
       }]);
     } finally {
@@ -236,7 +236,7 @@ export function CoachChat({ analysisId }: { analysisId?: string } = {}) {
                     const showsForm = m.sections!.some((s) => s.type === 'form');
                     if (!metricKey && !showsForm) return null;
                     // Prefer the athlete's own pose data whenever a run is linked to
-                    // this session — a generic stick figure only when none is.
+                    // this session, a generic stick figure only when none is.
                     if (effectiveAnalysisId) {
                       return <PoseLoop analysisId={effectiveAnalysisId} highlightMetricKey={metricKey ?? undefined} />;
                     }

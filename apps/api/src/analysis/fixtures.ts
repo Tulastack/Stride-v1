@@ -11,12 +11,12 @@
 
 import type { AnalysisResult } from '@stride/types';
 
-/** HIGH-quality, side-on, 120fps acceleration capture — everything trusted. */
+/** HIGH-quality, side-on, 120fps acceleration capture, everything trusted. */
 export const highQualitySideFixture: AnalysisResult = {
   id: 'fixture-accel-side-hq',
   phase: 'acceleration',
   summary:
-    'Strong drive phase. You stand up a touch early and your knee drive is slightly low — both are quick fixes.',
+    'Strong drive phase. You stand up a touch early and your knee drive is slightly low, both are quick fixes.',
   flaws: [
     {
       id: 'flaw-pop-up',
@@ -69,7 +69,7 @@ export const highQualitySideFixture: AnalysisResult = {
       flawId: 'flaw-pop-up',
       drillId: 'drill-wall-drive',
       drillName: 'Wall drives',
-      cue: 'Stay LOWER and more horizontal than feels natural — drive the wall away.',
+      cue: 'Stay LOWER and more horizontal than feels natural, drive the wall away.',
       demoAssetId: 'demo-wall-drive',
       sets: 3,
       reps: 8,
@@ -79,7 +79,7 @@ export const highQualitySideFixture: AnalysisResult = {
       flawId: 'flaw-low-knee',
       drillId: 'drill-high-knee-switch',
       drillName: 'High-knee wall switches',
-      cue: 'Punch the knee UP to hip height — higher than feels comfortable.',
+      cue: 'Punch the knee UP to hip height, higher than feels comfortable.',
       demoAssetId: 'demo-high-knee-switch',
       sets: 3,
       reps: 10,
@@ -121,12 +121,12 @@ export const highQualitySideFixture: AnalysisResult = {
   createdAt: '2026-01-15T10:30:00.000Z',
 };
 
-/** LOW-quality, head-on, 60fps max-velocity capture — hip data not trustworthy. */
+/** LOW-quality, head-on, 60fps max-velocity capture, hip data not trustworthy. */
 export const lowQualityHeadOnFixture: AnalysisResult = {
   id: 'fixture-maxv-headon-lq',
   phase: 'max_velocity',
   summary:
-    'We could read your trunk position at top speed, but this head-on angle hides your hip extension — turn ~30° next time to confirm it.',
+    'We could read your trunk position at top speed, but this head-on angle hides your hip extension, turn ~30° next time to confirm it.',
   flaws: [
     {
       id: 'flaw-hip-ext',
@@ -175,7 +175,7 @@ export const lowQualityHeadOnFixture: AnalysisResult = {
       flawId: 'flaw-trunk-late',
       drillId: 'drill-posture-march',
       drillName: 'Tall posture marches',
-      cue: 'Run TALL with hips forward — ribs stacked over your pelvis.',
+      cue: 'Run TALL with hips forward, ribs stacked over your pelvis.',
       demoAssetId: 'demo-posture-march',
       sets: 3,
       reps: 8,
@@ -185,7 +185,7 @@ export const lowQualityHeadOnFixture: AnalysisResult = {
   metrics: [
     { key: 'trunk_lean', measured: { value: 7.5, low: 5.2, high: 9.8, confidence: 0.79 }, unit: '°', normalRange: [-3, 3], comparableAcrossViews: true },
     { key: 'knee_drive', measured: { value: 101.0, low: 96.0, high: 106.0, confidence: 0.71 }, unit: '°', normalRange: [95, 115], comparableAcrossViews: true },
-    // Hip extension: wide band, low confidence — head-on view is degenerate for this angle.
+    // Hip extension: wide band, low confidence, head-on view is degenerate for this angle.
     { key: 'hip_extension', measured: { value: 158.0, low: 140.0, high: 176.0, confidence: 0.34 }, unit: '°', normalRange: [170, 185], comparableAcrossViews: true },
     // Contact time: head-on cannot resolve foot-ground timing well at 60fps.
     { key: 'contact_time_ms', measured: { value: 98, low: 78, high: 118, confidence: 0.29 }, unit: 'ms', normalRange: [80, 100], comparableAcrossViews: true },
@@ -204,7 +204,7 @@ export const lowQualityHeadOnFixture: AnalysisResult = {
       cadence_spm: true,
     },
     primaryNudge:
-      'Hip data is low-confidence from this head-on angle — turn ~30° next time for trustworthy hip extension.',
+      'Hip data is low-confidence from this head-on angle, turn ~30° next time for trustworthy hip extension.',
   },
   reconstructionMethod: '3d-mono',
   createdAt: '2026-01-15T11:05:00.000Z',

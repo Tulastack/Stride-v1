@@ -52,7 +52,7 @@ describe('computeStreak', () => {
   });
 
   it('bridges a day with nothing scheduled instead of breaking', () => {
-    // Mar 2 has no row at all — a true rest day the plan never filled.
+    // Mar 2 has no row at all, a true rest day the plan never filled.
     const days = [day('2026-03-01', 1), day('2026-03-03', 1)];
     const { current } = computeStreak(days, '2026-03-03');
     expect(current).toBe(3); // Mar 1 active + Mar 2 bridged + Mar 3 active
@@ -90,7 +90,7 @@ describe('computeStreak', () => {
       day('2026-03-01', 1),
       day('2026-03-02', 1),
       day('2026-03-03', 1),
-      day('2026-03-04', 0, 1), // miss — breaks the 3-day run
+      day('2026-03-04', 0, 1), // miss, breaks the 3-day run
       day('2026-03-05', 1),
     ];
     const summary = computeStreak(days, '2026-03-05');

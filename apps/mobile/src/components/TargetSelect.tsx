@@ -47,7 +47,7 @@ export function TargetSelect({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
       onPanResponderGrant: (e) => {
-        // Capture coords before setState — RN reuses synthetic events and
+        // Capture coords before setState, RN reuses synthetic events and
         // nulls nativeEvent by the time a functional updater runs.
         const x = e.nativeEvent.locationX;
         const y = e.nativeEvent.locationY;

@@ -4,7 +4,7 @@
 # appear in DescribeTaskDefinition output or the ECS console.
 #
 # Values are seeded from the same tfvars the task definitions previously used;
-# rotate by updating the secret version (no task-definition change needed —
+# rotate by updating the secret version (no task-definition change needed,
 # force a new deployment to pick up the new value).
 
 resource "aws_secretsmanager_secret" "internal_api_secret" {

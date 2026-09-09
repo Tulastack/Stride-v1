@@ -1,7 +1,7 @@
-// AwsAnalysisProvider — intentionally inert.
+// AwsAnalysisProvider, intentionally inert.
 //
 // ARCHITECTURE NOTE (seam vs. live path): in production, analysis is NOT driven
-// through this provider's submit({ localVideoUri }) signature — on AWS the client
+// through this provider's submit({ localVideoUri }) signature, on AWS the client
 // uploads directly to S3 via a presigned multipart URL, so the API server never
 // holds a local file. The real production pipeline is the HTTP route flow:
 //
@@ -25,7 +25,7 @@ import type {
 } from './provider.js';
 
 const DEFERRED =
-  'AWS pipeline not wired through the AnalysisProvider seam (deferred to AWS phase) — ' +
+  'AWS pipeline not wired through the AnalysisProvider seam (deferred to AWS phase), ' +
   'production analysis runs via the /videos → SQS → ml-worker → /internal route pipeline (see comment above).';
 
 export class AwsAnalysisProvider implements AnalysisProvider {

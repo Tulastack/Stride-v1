@@ -1,4 +1,4 @@
-"""Readability of the 2D-path metric formatting/explanation text — the actual
+"""Readability of the 2D-path metric formatting/explanation text, the actual
 production path for real (side-on, single-camera) uploads. Regression guard
 against reintroducing 'deg' text, missing thousands separators, or a metric
 label leaking its unit suffix (e.g. 'contact time ms')."""
@@ -40,7 +40,7 @@ def test_every_metric_has_a_why_reason():
 
 
 def test_contact_time_plausibility_rejects_values_actually_seen_in_production():
-    # These exact figures were pulled from real stored analyses — a gait-timing
+    # These exact figures were pulled from real stored analyses, a gait-timing
     # bug (dual-rate optical-flow timing since fixed) produced physically
     # impossible ground-contact readings that then poisoned the economy score
     # to a flat 0. No human's foot is on the ground for over a second while

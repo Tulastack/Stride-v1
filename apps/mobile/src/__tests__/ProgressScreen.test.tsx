@@ -1,5 +1,5 @@
 /**
- * Progress timeline — score log + re-test loop (reconciled with current UI).
+ * Progress timeline, score log + re-test loop (reconciled with current UI).
  */
 import React from 'react';
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
@@ -8,7 +8,7 @@ jest.mock('expo-router', () => ({
   useLocalSearchParams: () => ({}),
   useRouter: () => ({ push: jest.fn() }),
   router: { push: jest.fn() },
-  // Run focus effects like a plain effect — the screen is "focused" in tests.
+  // Run focus effects like a plain effect, the screen is "focused" in tests.
   useFocusEffect: (cb: () => void | (() => void)) => {
     const { useEffect } = require('react');
     useEffect(cb, [cb]);

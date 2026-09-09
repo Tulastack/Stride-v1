@@ -42,7 +42,7 @@ const finalizeSchema = z.object({
   captureManifest: z.record(z.unknown()).optional(),
 });
 
-// JWKS is cached at module scope (lazily) — constructing it per request
+// JWKS is cached at module scope (lazily), constructing it per request
 // defeats jose's key cache and turns every blob PUT / stream / SSE connect
 // into a fresh HTTPS fetch of Supabase's JWKS.
 let _jwks: ReturnType<typeof createRemoteJWKSet> | null = null;
@@ -56,7 +56,7 @@ function getJwks(): ReturnType<typeof createRemoteJWKSet> {
 
 // Token auth from a query param OR Authorization header (used by SSE and the
 // local blob-upload endpoint, whose URL carries the token so the client needs
-// no extra headers — the same way S3 presigned URLs are self-authenticating).
+// no extra headers, the same way S3 presigned URLs are self-authenticating).
 async function authenticateSSE(req: any, res: Response, next: NextFunction): Promise<void> {
   const headerToken = req.headers.authorization?.startsWith('Bearer ')
     ? req.headers.authorization.slice(7)
@@ -115,7 +115,7 @@ router.post('/upload-url', authenticate, requireConsent, async (req: any, res: R
 
     // ── Local storage: return a single upload URL pointing back at this API.
     // The URL carries the caller's token so the plain PUT is self-authenticating
-    // (mirrors an S3 presigned URL — the mobile client sends no extra headers).
+    // (mirrors an S3 presigned URL, the mobile client sends no extra headers).
     if (isLocalStorage) {
       const { pool } = await import('../db/queries.js');
       await pool.query('UPDATE analyses SET s3_key = $1 WHERE id = $2', [actualS3Key, analysisId]);
@@ -123,7 +123,7 @@ router.post('/upload-url', authenticate, requireConsent, async (req: any, res: R
         ? req.headers.authorization.slice(7)
         : '';
       // Build the upload URL from the SAME host the client reached us on (the
-      // phone's Metro-derived LAN IP), not a hardcoded env — otherwise a changed
+      // phone's Metro-derived LAN IP), not a hardcoded env, otherwise a changed
       // DHCP IP makes the upload target unreachable. Falls back to PUBLIC_API_URL.
       const host = req.headers.host;
       const base = host ? `${req.protocol}://${host}` : PUBLIC_API_URL;
@@ -181,7 +181,7 @@ router.post('/finalize', authenticate, requireConsent, async (req: any, res: Res
       const videoPath = localKeyPath(analysis.s3_key);
       if (!fs.existsSync(videoPath) || fs.statSync(videoPath).size === 0) {
         res.status(409).json({
-          error: 'Video bytes not on server yet — wait for the upload PUT to finish, then finalize again.',
+          error: 'Video bytes not on server yet, wait for the upload PUT to finish, then finalize again.',
         });
         return;
       }
@@ -194,7 +194,7 @@ router.post('/finalize', authenticate, requireConsent, async (req: any, res: Res
       // Promote uploading → pending so the worker can claim it (only now that
       // the file exists). createAnalysis intentionally starts as 'uploading'.
       // Idempotency: a retried finalize on a row that's already processing or
-      // terminal matches 0 rows — return current state WITHOUT re-enqueueing.
+      // terminal matches 0 rows, return current state WITHOUT re-enqueueing.
       const { pool } = await import('../db/queries.js');
       const promoted = await pool.query(
         `UPDATE analyses SET status = 'pending' WHERE id = $1 AND status IN ('uploading','pending')`,
@@ -263,7 +263,7 @@ router.put(
         res.status(404).json({ error: 'Analysis not found' });
         return;
       }
-      // Bytes are only writable while the upload is open — never over a video
+      // Bytes are only writable while the upload is open, never over a video
       // that's already processing or has results attached to it.
       if (analysis.status !== 'uploading' && analysis.status !== 'pending') {
         res.status(409).json({ error: `Upload window closed (analysis is ${analysis.status})` });

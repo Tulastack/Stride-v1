@@ -106,7 +106,7 @@ resource "aws_ecs_task_definition" "api" {
         { name = "DSQL_ENDPOINT", value = aws_dsql_cluster.main.endpoint },
         { name = "SENTRY_DSN", value = var.sentry_dsn_api },
       ]
-      # Injected at launch from Secrets Manager — never plaintext in the task def.
+      # Injected at launch from Secrets Manager, never plaintext in the task def.
       secrets = [
         { name = "INTERNAL_API_SECRET", valueFrom = aws_secretsmanager_secret.internal_api_secret.arn },
         { name = "GROQ_API_KEY", valueFrom = aws_secretsmanager_secret.groq_api_key.arn },

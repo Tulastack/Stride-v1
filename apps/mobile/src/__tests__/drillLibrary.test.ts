@@ -1,5 +1,5 @@
 /**
- * PROMPT F.4 — drill library coverage.
+ * PROMPT F.4, drill library coverage.
  * Unit: every DrillRec resolves to a drill with a loadable demoAssetId; orphans fail.
  * Integration: the library covers every flaw id the fixtures can emit.
  */

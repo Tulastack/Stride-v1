@@ -2,7 +2,7 @@
 //
 // Every feature depends on this interface, never on AWS. The AWS pipeline can
 // be wired later (AwsAnalysisProvider) with zero feature changes. No feature or
-// UI file may import S3/SQS clients directly — they go through this seam.
+// UI file may import S3/SQS clients directly, they go through this seam.
 
 import type {
   AnalysisResult,

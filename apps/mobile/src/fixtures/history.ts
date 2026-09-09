@@ -1,4 +1,4 @@
-// TEST-ONLY multi-upload history fixture (imported by src/__tests__ only — never
+// TEST-ONLY multi-upload history fixture (imported by src/__tests__ only, never
 // rendered to users). Same metric keys across uploads so deltas/trends compute.
 // Designed so knee_drive improves, trunk_lean regresses, and one hip is low-confidence.
 import type { AnalysisResult } from '../types/analysis';
@@ -56,7 +56,7 @@ export const uploadTwo: AnalysisResult = {
     // hip low-confidence on this upload -> delta should be gated as not comparable
     { key: 'hip_extension', measured: band(170, 0.34, 18), unit: '°', normalRange: [165, 180], comparableAcrossViews: true },
   ],
-  captureQuality: { overall: 0.6, fps: 120, motionBlur: 'med', framing: 'full', perMetricUsable: { knee_drive: true, trunk_lean: true, cadence_spm: true, hip_extension: false }, primaryNudge: 'Hip data was low-confidence — re-film from a side-ish angle.' },
+  captureQuality: { overall: 0.6, fps: 120, motionBlur: 'med', framing: 'full', perMetricUsable: { knee_drive: true, trunk_lean: true, cadence_spm: true, hip_extension: false }, primaryNudge: 'Hip data was low-confidence, re-film from a side-ish angle.' },
   reconstructionMethod: '3d-mono',
   createdAt: '2026-01-08T10:00:00.000Z',
 };

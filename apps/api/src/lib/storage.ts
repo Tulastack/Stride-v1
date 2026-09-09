@@ -1,9 +1,9 @@
 // Storage driver selection.
 //
-// STORAGE_DRIVER=s3    (default) — S3 / LocalStack multipart + presigned URLs.
-// STORAGE_DRIVER=local          — Docker-free local dev: video bytes are PUT
+// STORAGE_DRIVER=s3    (default), S3 / LocalStack multipart + presigned URLs.
+// STORAGE_DRIVER=local, Docker-free local dev: video bytes are PUT
 //   straight to the API (LAN-reachable from a phone) and written to a shared
-//   directory the ML worker reads directly. No S3, no SQS, no LocalStack — so
+//   directory the ML worker reads directly. No S3, no SQS, no LocalStack, so
 //   the upload path can't fail on a flaky container.
 //
 // The worker uses the SAME dir (LOCAL_STORAGE_DIR) and a DB-polling queue.

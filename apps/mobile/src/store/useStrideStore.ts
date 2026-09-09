@@ -4,7 +4,7 @@ import { NativeModules } from 'react-native';
 /**
  * Resolve the API base URL. In dev we DERIVE the host from the Metro bundle URL
  * (the phone already connected to it), so it always matches the machine running
- * the dev server + API — no more stale hardcoded LAN IPs when DHCP changes it.
+ * the dev server + API, no more stale hardcoded LAN IPs when DHCP changes it.
  * Falls back to the env var (e.g. a staging/prod URL) then localhost.
  */
 function resolveApiBaseUrl(): string {
@@ -13,10 +13,10 @@ function resolveApiBaseUrl(): string {
     const m = scriptURL?.match(/^https?:\/\/([^/:]+)/);
     if (m?.[1] && m[1] !== 'localhost' && m[1] !== '127.0.0.1') return `http://${m[1]}:3000`;
   } catch {
-    /* not in a dev client (e.g. production build) — fall through */
+    /* not in a dev client (e.g. production build), fall through */
   }
   if (process.env.EXPO_PUBLIC_API_BASE_URL) return process.env.EXPO_PUBLIC_API_BASE_URL;
-  // Never silently point a release build at localhost — leave it empty so
+  // Never silently point a release build at localhost, leave it empty so
   // request() throws a self-explanatory "API URL not configured" error.
   return __DEV__ ? 'http://localhost:3000' : '';
 }

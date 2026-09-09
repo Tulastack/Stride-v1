@@ -140,7 +140,7 @@ def test_recovers_depth_it_was_never_given():
     identical bone lengths and an identical knee angle, so neither bone closure
     nor joint limits separate it, and correlation sat at -0.78 and then +0.449.
 
-    What closed it was not a better anatomical prior — the knee-anterior prior
+    What closed it was not a better anatomical prior, the knee-anterior prior
     turned out to hold only 48% of a stride and was removed. It was two
     conditioning fixes: an out-of-sagittal-plane regulariser gated on
     observability, and lowering the temporal weight that had been compressing
@@ -280,7 +280,7 @@ def test_apparent_scale_is_zero_when_the_torso_cannot_be_measured():
     assert apparent_scale(blank, 1080, 1920) == 0.0
 
 def test_accuracy_under_real_capture_geometry():
-    """A runner passing a stationary camera — how a sprint is actually filmed.
+    """A runner passing a stationary camera, how a sprint is actually filmed.
 
     The fixed-yaw sweep is a worst case, not the operating point: it holds the
     aspect angle constant for the whole clip, so a head-on capture never sees

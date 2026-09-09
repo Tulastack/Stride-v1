@@ -2,14 +2,14 @@
  * Real-database regression for calendar_events.source / revealed_at.
  *
  * Every other route test mocks db/queries.js, which means no test could catch a
- * malformed *statement* — and one shipped: reusing the source parameter in both
+ * malformed *statement*, and one shipped: reusing the source parameter in both
  * the varchar column and a CASE comparison made Postgres deduce two types for
  * it and reject the insert with 42P08 ("inconsistent types deduced"). These
  * cases execute the actual SQL.
  *
  * Opt-in via STRIDE_DB_TESTS=1, because this is the only suite that opens a
- * real connection. Gating on DATABASE_URL would not work — src/__tests__/setup.ts
- * always defaults it — and every other test runs happily with no database at
+ * real connection. Gating on DATABASE_URL would not work, src/__tests__/setup.ts
+ * always defaults it, and every other test runs happily with no database at
  * all, a contract worth keeping. Bring the stack up with `npm run test:env:up`,
  * then: STRIDE_DB_TESTS=1 npm test
  */
@@ -128,7 +128,7 @@ describeDb('calendar_events source tagging (real DB)', () => {
       'coach',
     );
     expect(await queries.markEventsRevealed(userId, [row!.id])).toBe(1);
-    // Already revealed — a repeat send must be a no-op, not a second write.
+    // Already revealed, a repeat send must be a no-op, not a second write.
     expect(await queries.markEventsRevealed(userId, [row!.id])).toBe(0);
   });
 });

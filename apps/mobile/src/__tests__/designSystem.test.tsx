@@ -1,5 +1,5 @@
 /**
- * PROMPT F.0 — design-system guardrails.
+ * PROMPT F.0, design-system guardrails.
  *
  * Fails the build if any component file uses a forbidden "AI look" style:
  * gradients, glassmorphism/blur, purple/indigo hex, or Inter/Roboto/System
@@ -15,7 +15,7 @@ const MOBILE_ROOT = path.resolve(__dirname, '../..');
 const SCAN_DIRS = [path.join(MOBILE_ROOT, 'app'), path.join(MOBILE_ROOT, 'src')];
 
 // Strip comments so developer prose mentioning a forbidden word (e.g. "no
-// gradients") doesn't trip the scanner — only real usage in code should fail.
+// gradients") doesn't trip the scanner, only real usage in code should fail.
 function stripComments(src: string): string {
   return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
 }

@@ -1,4 +1,4 @@
-// Stage 2 — monocular 3D lift with gyro-based camera-motion decoupling.
+// Stage 2, monocular 3D lift with gyro-based camera-motion decoupling.
 //
 // CPU-realizable path (not full WHAM/SMPL GPU fit): weak-perspective lift from
 // 2D keypoints + anthropometric bone lengths, then subtract integrated gyro yaw

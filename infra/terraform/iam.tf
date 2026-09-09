@@ -87,7 +87,7 @@ resource "aws_iam_role_policy" "api_dsql_access" {
 }
 
 # ─── ML Worker ECS Task Role ──────────────────────────────────────
-# Used as the Fargate task_role_arn (ecs.tf) — the trust principal MUST be
+# Used as the Fargate task_role_arn (ecs.tf), the trust principal MUST be
 # ecs-tasks.amazonaws.com or ECS refuses to launch the task.
 
 resource "aws_iam_role" "ml_worker_role" {

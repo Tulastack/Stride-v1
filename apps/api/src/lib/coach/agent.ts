@@ -1,9 +1,9 @@
-// Stride Coach — the agentic core.
+// Stride Coach, the agentic core.
 //
 // Instead of one blind LLM completion, this runs a bounded tool-calling loop:
 // the model can search the vetted track knowledge base, pull the athlete's real
 // metrics/trends, look up canonical drills, and read the current plan BEFORE it
-// answers. That grounding — plus a tight track-only scope — is what makes this a
+// answers. That grounding, plus a tight track-only scope, is what makes this a
 // real coaching agent rather than a generic chatbot wrapper.
 
 import type { CoachToolset } from './tools.js';
@@ -78,7 +78,7 @@ function parseArgs(raw: unknown): Record<string, any> {
 
 /**
  * Run the agentic coach. Returns the final assistant text. Throws only if Groq
- * is unreachable or misconfigured — callers can fall back to the simple path.
+ * is unreachable or misconfigured, callers can fall back to the simple path.
  */
 export async function runTrackCoach(params: RunCoachParams): Promise<string> {
   // Throws when no key is configured, which the route catches to fall back to
@@ -88,7 +88,7 @@ export async function runTrackCoach(params: RunCoachParams): Promise<string> {
 
   // ONE system turn, not two. Gemma 4's chat template expects a single system
   // turn ahead of the first user turn, and every other OpenAI-compatible model
-  // is equally happy with one — so merging keeps the coach portable across
+  // is equally happy with one, so merging keeps the coach portable across
   // providers instead of relying on a gateway to normalise it.
   const messages: any[] = [
     { role: 'system', content: `${AGENT_SYSTEM_PROMPT}\n\n${params.analysisContext}` },
@@ -109,7 +109,7 @@ export async function runTrackCoach(params: RunCoachParams): Promise<string> {
       //
       // Not trimmed to ~250 though: current Gemini Flash models think before
       // answering, and those reasoning tokens are invisible in completion_tokens
-      // but DO consume this budget — a probe with max_tokens 10 returned empty
+      // but DO consume this budget, a probe with max_tokens 10 returned empty
       // content and 80 total tokens for a one-word reply. Too tight a cap
       // truncates the answer into nothing on exactly the providers worth using.
       max_tokens: 550,
@@ -125,7 +125,7 @@ export async function runTrackCoach(params: RunCoachParams): Promise<string> {
       if (resp.status === 429) {
         // The athlete gets a friendly message, but the upstream reason (which
         // quota, whose pool, when it resets) is the only thing that makes a
-        // 429 debuggable — never swallow it.
+        // 429 debuggable, never swallow it.
         console.error(`${provider.name} 429 for ${provider.model}:`, t.slice(0, 500));
         throw new CoachRateLimitError();
       }
@@ -155,7 +155,7 @@ export async function runTrackCoach(params: RunCoachParams): Promise<string> {
 
     const text = (msg.content ?? '').trim();
     if (text) return text;
-    // Model returned neither text nor tools — nudge once more toward an answer.
+    // Model returned neither text nor tools, nudge once more toward an answer.
     messages.push({ role: 'user', content: 'Please give me your coaching answer now.' });
   }
 

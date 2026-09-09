@@ -1,7 +1,7 @@
 """RTMPose 2D pose backend (YOLOX person detector + RTMPose keypoints).
 
 Open-source, ONNX/CPU-deployable via `rtmlib`. Top-down: detect the athlete,
-crop, then estimate keypoints — which is why it survives small/off-centre
+crop, then estimate keypoints, which is why it survives small/off-centre
 subjects that MoveNet SinglePose (no detector) cannot. (The rtmlib `Body`
 wrapper ships a YOLOX detector, not RTMDet, for all modes.) Emits the SAME
 per-frame contract as movenet.process_video so the rest of the pipeline is
@@ -30,14 +30,14 @@ logger = logging.getLogger(__name__)
 KEYPOINT_FORMAT = "coco17"
 
 # RTMPose uses SimCC (coordinate-classification) keypoint scores, whose
-# distribution is NOT the same shape as MoveNet's heatmap-argmax confidences —
+# distribution is NOT the same shape as MoveNet's heatmap-argmax confidences,
 # so it must NOT borrow MoveNet's threshold (that was bug B4). 0.3 is kept as a
 # behaviour-preserving starting point; calibrate on running-crop data.
 # Override via env RTMPOSE_CONFIDENCE_THRESHOLD.
 _CONF_THRESHOLD = float(os.environ.get("RTMPOSE_CONFIDENCE_THRESHOLD", "0.3"))
 
 # Max pixel dimension fed to YOLOX+RTMPose. Frames wider/taller than this are
-# downscaled before inference and coordinates are rescaled back — no accuracy
+# downscaled before inference and coordinates are rescaled back, no accuracy
 # impact for running gait analysis (joints are large, not fine-detail).
 # Override via env RTMPOSE_MAX_DIM (set to 0 to disable).
 _MAX_DIM = int(os.environ.get("RTMPOSE_MAX_DIM", "640"))
@@ -132,7 +132,7 @@ def iter_frames(video_path: str, target_fps: int = 30, target=None, timing_out=N
 
     `target` = the athlete to analyze, as a normalized point (x, y) OR a
     brush-traced bbox (x0, y0, x1, y1). When set, each frame is CROPPED to the
-    tracked person's region and pose is run only on that crop — so other people
+    tracked person's region and pose is run only on that crop, so other people
     are not even in the model's input. This is what stops keypoints jumping to
     bystanders in a multi-person clip. No target → full-frame lock-and-follow.
 
@@ -162,8 +162,8 @@ def iter_frames(video_path: str, target_fps: int = 30, target=None, timing_out=N
     frame_idx = 0
     next_sample = 0.0
     la, ra = KEYPOINT_INDEX["left_ankle"], KEYPOINT_INDEX["right_ankle"]
-    prev_gray = None            # previous frame (grayscale) for LK — timing path only
-    ankle_pts = None            # float32 [[Lx,Ly],[Rx,Ry]] full-frame px — LK state
+    prev_gray = None            # previous frame (grayscale) for LK, timing path only
+    ankle_pts = None            # float32 [[Lx,Ly],[Rx,Ry]] full-frame px, LK state
     try:
         while True:
             ret, frame = cap.read()
@@ -186,7 +186,7 @@ def iter_frames(video_path: str, target_fps: int = 30, target=None, timing_out=N
                     cx1 = min(w, int(sx1 * w)); cy1 = min(h, int(sy1 * h))
                     # Recovery: once the position lock is stale (long miss run /
                     # exit latch) or the predicted box has drifted degenerate,
-                    # search the FULL frame instead of a blind crop — a lost
+                    # search the FULL frame instead of a blind crop, a lost
                     # target must be re-findable anywhere, or every remaining
                     # frame gets excluded and the whole analysis dies.
                     if tracker.needs_global_search() or cx1 - cx0 < 24 or cy1 - cy0 < 24:

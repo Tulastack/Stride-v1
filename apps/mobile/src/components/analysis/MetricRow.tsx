@@ -1,5 +1,5 @@
 // A single metric with its confidence band + meter (PROMPT F.3-UI revised).
-// Low-confidence metrics are visually demoted (muted) and labeled — never hidden
+// Low-confidence metrics are visually demoted (muted) and labeled, never hidden
 // silently, never shown as if solid. False precision is a bug.
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';

@@ -1,4 +1,4 @@
-/** Shared overlay timestamp helpers — prefer wall-clock tMs over frame index. */
+/** Shared overlay timestamp helpers, prefer wall-clock tMs over frame index. */
 
 export interface OverlayFrame {
   tMs: number;
@@ -18,7 +18,7 @@ export interface OverlayData {
 /**
  * Correct legacy overlays that stored tMs = frameIndex / poseFps instead of
  * frameIndex / sourceFps (inflating timestamps by sourceFps/poseFps).
- * New sidecars include sourceFps and already-correct tMs — leave them alone
+ * New sidecars include sourceFps and already-correct tMs, leave them alone
  * when frames look consistent with sourceFps.
  */
 export function correctedFrameTimes(overlay: OverlayData): OverlayFrame[] {
@@ -41,13 +41,13 @@ export function correctedFrameTimes(overlay: OverlayData): OverlayFrame[] {
     return frames;
   }
 
-  // No frameIndex — if tMs spacing looks like pose-rate inflation, scale.
+  // No frameIndex, if tMs spacing looks like pose-rate inflation, scale.
   if (frames.length >= 2) {
     const dt = frames[1].tMs - frames[0].tMs;
     const expectedDt = 1000 / fps; // pose sample interval in ms if tMs were correct
-    // Bug stored frameIndex/poseFps so spacing ≈ (source/pose) * (1000/pose) wait —
+    // Bug stored frameIndex/poseFps so spacing ≈ (source/pose) * (1000/pose) wait,
     // Actually bug: tMs = frameIndex/poseFps*1000, and frameIndex jumps by source/pose,
-    // so ΔtMs ≈ (source/pose)/poseFps*1000 = source/(pose²)*1000 — messy.
+    // so ΔtMs ≈ (source/pose)/poseFps*1000 = source/(pose²)*1000, messy.
     // Simpler legacy fix: scale by poseFps/sourceFps when sourceFps known and
     // max tMs exceeds video-ish bound (poseFps * duration inflated).
     const scale = fps / sourceFps;

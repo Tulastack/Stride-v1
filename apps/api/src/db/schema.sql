@@ -113,7 +113,7 @@ CREATE TABLE suggestion_audit (
 );
 
 -- Migration: Allow 'hydration'/'recovery'/'cross_training' calendar events
--- (run against existing DBs — workout/drill remain the coach's primary focus,
+-- (run against existing DBs, workout/drill remain the coach's primary focus,
 -- these exist so the athlete can add other things themselves if they want to)
 -- ALTER TABLE calendar_events DROP CONSTRAINT IF EXISTS calendar_events_event_type_check;
 -- ALTER TABLE calendar_events ADD CONSTRAINT calendar_events_event_type_check
@@ -138,7 +138,7 @@ CREATE TABLE suggestion_audit (
 -- ALTER TABLE users ADD COLUMN IF NOT EXISTS is_injured BOOLEAN NOT NULL DEFAULT FALSE;
 
 -- Migration: Add reference_drills.recovery_phases + the metric_biomechanics
--- table (run against existing DBs — see the metric_biomechanics research pipeline)
+-- table (run against existing DBs, see the metric_biomechanics research pipeline)
 -- ALTER TABLE reference_drills ADD COLUMN IF NOT EXISTS recovery_phases JSONB NOT NULL DEFAULT '[]';
 -- CREATE TABLE IF NOT EXISTS metric_biomechanics (
 --     metric_key VARCHAR(100) PRIMARY KEY,
@@ -167,7 +167,7 @@ CREATE TABLE reference_drills (
     cues JSONB NOT NULL DEFAULT '[]',
     contraindications JSONB NOT NULL DEFAULT '[]',
     target_metrics JSONB NOT NULL DEFAULT '[]',
-    -- An ORDERED, TIME-BASED 4-phase corrective program — NOT interchangeable
+    -- An ORDERED, TIME-BASED 4-phase corrective program, NOT interchangeable
     -- difficulty tiers picked by athlete level. Every athlete who gets this
     -- metric's flaw progresses phase 1 -> 2 -> 3 -> 4 in order; each phase has
     -- its own FIXED exercise group, done for that phase's duration, then the
@@ -182,7 +182,7 @@ CREATE TABLE reference_drills (
     --   advanceCriteria: string
     -- }]
     -- Populated from metric_biomechanics once a metric's research has been
-    -- human-reviewed (see metric_biomechanics.reviewed_by) — '[]' means no
+    -- human-reviewed (see metric_biomechanics.reviewed_by), '[]' means no
     -- reviewed phase content exists yet, not an error; approveSuggestion()
     -- falls back to the flat drillId/sets/reps dosing when empty.
     recovery_phases JSONB NOT NULL DEFAULT '[]',
@@ -194,7 +194,7 @@ CREATE TABLE reference_drills (
 -- (biometrics agent -> 2 independent checkers -> human review), then synced
 -- into biomech2d.py's WHY dict, coach/knowledge.ts, and
 -- reference_drills.recovery_phases ONLY once reviewed_by is set. This table
--- is the durable, auditable SOURCE — not read at runtime by the analysis
+-- is the durable, auditable SOURCE, not read at runtime by the analysis
 -- pipeline or the coach agent,
 -- by design (see docs/research/metric-biomechanics.md).
 CREATE TABLE metric_biomechanics (

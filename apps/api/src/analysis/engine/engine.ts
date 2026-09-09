@@ -1,16 +1,16 @@
-// Biomechanics engine — full capture-agnostic 3D pipeline (Stages 0–7).
+// Biomechanics engine, full capture-agnostic 3D pipeline (Stages 0–7).
 //
 // NOT the active production path. Real uploads today run apps/ml-worker/src/
-// biomech2d.py (2D sagittal-plane, single side-on view) — the default and
+// biomech2d.py (2D sagittal-plane, single side-on view), the default and
 // only pipeline any deployed environment actually configures. This 3D engine
 // (Stage 1 hygiene → WHAM Stage 2 → OpenCap Stage 3 GPU sidecar → Stages 4-7
 // metrics/confidence here) is kept intentionally, not deleted: it's exercised
 // by apps/api/scripts/validate-biomech.ts and the engine/__tests__ suite, and
-// is reachable in production via POST /internal/analysis-biomech — but that
+// is reachable in production via POST /internal/analysis-biomech, but that
 // route is only ever called by ml-worker when STRIDE_PIPELINE=wham, which
 // nothing in this repo's configs sets. Flip that env var on the worker to
 // activate it; until then it's a deliberately dormant, not dead, pipeline.
-// Missing sidecars fail loudly — no inline synthetic lift.
+// Missing sidecars fail loudly, no inline synthetic lift.
 
 import type {
   AnalysisResult,
@@ -232,7 +232,7 @@ export function assembleAnalysisFromFrames(ctx: AssembleContext): AnalysisResult
   };
 }
 
-/** @deprecated Use BiomechanicsEngineImpl — alias for existing tests. */
+/** @deprecated Use BiomechanicsEngineImpl, alias for existing tests. */
 export class ReducedBiomechanicsEngine extends BiomechanicsEngineImpl {
   /** Run Stages 4–7 directly on a precomputed 3D clip (unit tests). */
   run(clip: PrecomputedClip): AnalysisResult {
@@ -256,13 +256,13 @@ function explain(m: ComputedMetric): string {
   const readable = explainMetric(m.key, m.value, m.unit, m.normalRange);
   if (readable) return readable;
   const dir = m.value < m.normalRange[0] ? 'below' : 'above';
-  return `Your ${m.key.replace(/_/g, ' ')} (${m.value}${m.unit}) is ${dir} the typical range of ${m.normalRange[0]}–${m.normalRange[1]}${m.unit}.`;
+  return `Your ${m.key.replace(/_/g, ' ')} is ${m.value}${m.unit}, ${dir} the typical range of ${m.normalRange[0]} to ${m.normalRange[1]}${m.unit}.`;
 }
 
 function summarize(phase: Phase, nFlaws: number, nudge?: string): string {
   const head =
     nFlaws === 0
-      ? `Clean ${phase.replace('_', ' ')} mechanics — nothing flagged this run.`
+      ? `Clean ${phase.replace('_', ' ')} mechanics, nothing flagged this run.`
       : `We found ${nFlaws} thing${nFlaws > 1 ? 's' : ''} to work on in your ${phase.replace('_', ' ')} phase.`;
   return nudge ? `${head} ${nudge}` : head;
 }

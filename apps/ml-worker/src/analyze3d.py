@@ -14,14 +14,14 @@ Why one `_assemble` rather than merging two results
 Flaws, focus areas and the form score are all derived from the whole metric set
 inside `_assemble`. Running it twice and stitching the outputs would mean
 re-deriving the score, the FOCUS_TARGET cap and the flaw/focus split outside the
-function that owns them — two implementations of the same policy, drifting. So
+function that owns them, two implementations of the same policy, drifting. So
 the scalar series are merged BEFORE assembly and the athlete is scored once.
 
 What this fixes that the single-view path cannot
 ------------------------------------------------
 `knee_valgus` and `pelvic_drop` are frontal-plane quantities. Measured from a
 side-on clip, `_valgus` computes horizontal deviation of the knee from the
-hip→ankle line — but in a sagittal image the horizontal axis is the
+hip→ankle line, but in a sagittal image the horizontal axis is the
 ANTEROPOSTERIOR axis, so it returns anterior knee displacement, a function of
 knee flexion. That is not a degraded measurement of valgus; it is a different
 quantity wearing the label. The single-view path can only respond by discounting
@@ -31,14 +31,14 @@ the construct is right and the discount is unnecessary.
 
 Honesty
 -------
-The viewpoint penalty really is zero on this path — we chose the camera, so
+The viewpoint penalty really is zero on this path, we chose the camera, so
 there is no off-axis foreshortening to model. That is stated as
 `vp_override=0.0`. It would be easy and wrong to stop there: a monocular 3D
 reconstruction carries its own error, which the azimuth term never described.
 That rides separately in `recon_conf`, and it defaults to a value that keeps
 every metric EXPERIMENTAL until a validation study exists. An ideal viewpoint
 must not be allowed to launder an unvalidated reconstruction into a trusted
-badge — that would repeat the exact defect this pipeline was built to remove,
+badge, that would repeat the exact defect this pipeline was built to remove,
 where `reconResidual` was constant by construction yet fed a 0.91 confidence
 multiplier straight to the user.
 """
@@ -75,8 +75,8 @@ VIRTUAL_IMAGE_DOWN = (1.0, 0.0)
 # Joints any metric in biomech2d actually reads. Confidence is averaged over
 # THESE, not over all 17 canonical keypoints.
 #
-# `_frame_scalars` averages the whole COCO-17 array, so nose/eyes/ears — which
-# no metric depends on — pull the number that gates every metric. On the 2D path
+# `_frame_scalars` averages the whole COCO-17 array, so nose/eyes/ears, which
+# no metric depends on, pull the number that gates every metric. On the 2D path
 # that is merely imprecise. On this path it is systematic: 2D->3D lifters emit
 # H36M-class joint sets with no eyes or ears, so those four slots arrive absent
 # on EVERY clip and would depress confidence by ~24% forever. Measured on the
@@ -216,7 +216,7 @@ def analyze_3d_angle_agnostic(
     src_fps = float(source_fps if source_fps is not None else pose_fps)
     cap_fps = float(capture_fps if capture_fps is not None else pose_fps)
 
-    # One rotation, both views — otherwise the two passes describe the athlete
+    # One rotation, both views, otherwise the two passes describe the athlete
     # in two different frames and the merged scalars would not be commensurable.
     rotation = canonical_rotation(poses, up_world)
 
@@ -249,7 +249,7 @@ def analyze_3d_angle_agnostic(
     # what the view could contain. Frontal metrics take observability alone:
     # the solver's number is a GLOBAL bone-closure residual, and off-axis it is
     # dominated by exactly the sagittal depth uncertainty that knee valgus and
-    # pelvic drop do not depend on — head-on those are read from a virtual front
+    # pelvic drop do not depend on, head-on those are read from a virtual front
     # camera looking straight at the frontal plane, essentially an image-plane
     # measurement. Charging them for sagittal error is double-counting, and it
     # was the last thing keeping a head-on capture from reporting anything.
@@ -273,7 +273,7 @@ def analyze_3d_angle_agnostic(
 
     # azimuth is stated, never estimated: a virtual side camera IS 0 degrees and
     # a virtual front camera IS 90 degrees. The keypoint azimuth heuristic is
-    # not merely unnecessary here, it is meaningless — there is no real camera.
+    # not merely unnecessary here, it is meaningless, there is no real camera.
     S_side, idxs, _, _, dropped_pct, _trunc = _collect_scalars(iter(side), 0.0, **common)
     S_front, idxs_front, _, _, _, _ = _collect_scalars(iter(front), 90.0, **common)
 

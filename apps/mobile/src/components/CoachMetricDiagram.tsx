@@ -16,7 +16,7 @@ const LABELS: Record<string, { title: string; cue: string }> = {
   vertical_oscillation: { title: 'Vertical bounce', cue: 'Stay tall and flat' },
 };
 
-/** Compact sagittal stick-figure highlighting a metric — coach thread only. */
+/** Compact sagittal stick-figure highlighting a metric, coach thread only. */
 export function CoachMetricDiagram({
   metricKey,
   value,

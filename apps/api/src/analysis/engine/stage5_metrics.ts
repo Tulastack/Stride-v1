@@ -1,4 +1,4 @@
-// Stage 5 — gait events + canonical joint/segment angles + metrics.
+// Stage 5, gait events + canonical joint/segment angles + metrics.
 // All angles are read in the canonical frame (Stage 4) so they are view-invariant.
 
 import { type Vec3, sub, mid, angleBetween } from './math.js';

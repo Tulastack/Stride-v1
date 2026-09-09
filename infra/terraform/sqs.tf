@@ -41,7 +41,7 @@ resource "aws_cloudwatch_metric_alarm" "dlq_depth" {
 }
 
 # ─── CloudWatch Alarm: Queue Age ──────────────────────────────────
-# Fires when the oldest queued analysis has waited >10 min — the worker is
+# Fires when the oldest queued analysis has waited >10 min, the worker is
 # down, wedged, or drowning. This is the "user staring at a spinner" alarm.
 
 resource "aws_cloudwatch_metric_alarm" "queue_age" {
@@ -53,7 +53,7 @@ resource "aws_cloudwatch_metric_alarm" "queue_age" {
   period              = 300
   statistic           = "Maximum"
   threshold           = 600
-  alarm_description   = "Analyses are queueing for >10 min — ML worker down or overloaded"
+  alarm_description   = "Analyses are queueing for >10 min, ML worker down or overloaded"
   treat_missing_data  = "notBreaching"
 
   dimensions = {

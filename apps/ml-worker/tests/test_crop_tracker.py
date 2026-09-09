@@ -39,7 +39,7 @@ def _tracked_step(tr: CropTracker, x_px: float, y_px: float, color=RED):
 
 
 def test_entering_runner_near_edge_does_not_latch_exit():
-    # First locks happen AT the edge when an athlete runs into frame — moving
+    # First locks happen AT the edge when an athlete runs into frame, moving
     # inward must never read as an exit.
     tr = CropTracker((0.0, 0.3, 0.1, 0.7), 1000, 1000)
     for x in (15, 25, 60, 110):   # near left edge, moving right (inward)
@@ -80,7 +80,7 @@ def test_position_lock_goes_global_after_reset_misses():
 
 
 def test_global_search_relocks_far_away_target_by_appearance():
-    # After a long miss the athlete may be ANYWHERE — a strong appearance match
+    # After a long miss the athlete may be ANYWHERE, a strong appearance match
     # far from the stale prediction must be accepted, a mismatch refused.
     tr = CropTracker((0.4, 0.3, 0.6, 0.7), 1000, 1000)
     _tracked_step(tr, 500, 500, RED)

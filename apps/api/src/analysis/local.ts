@@ -1,8 +1,8 @@
-// LocalAnalysisProvider — the provider used in all envs except production-aws.
+// LocalAnalysisProvider, the provider used in all envs except production-aws.
 //
 // Two modes via ANALYSIS_PROVIDER_MODE:
 //   • 'fixture' (default): deterministic AnalysisResult fixtures keyed by video URI
-//     for UI/tests — not used in the live upload pipeline.
+//     for UI/tests, not used in the live upload pipeline.
 //   • 'local': runs the real biomechanics engine against on-disk sidecars
 //     (.keypoints.json / .frames3d.json from ml-worker).
 

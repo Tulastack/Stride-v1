@@ -1,9 +1,9 @@
-// Stage 1 — detect/load 2D keypoints from real video input.
+// Stage 1, detect/load 2D keypoints from real video input.
 //
 // Priority:
 //   1. Companion `.keypoints.json` (MoveNet export from ml-worker)
 //   2. Spawn MoveNet Python export when STRIDE_MOVENET_PYTHON=1 and video exists
-// No synthetic fallback — missing keypoints is a hard error.
+// No synthetic fallback, missing keypoints is a hard error.
 
 import { existsSync, readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';

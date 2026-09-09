@@ -254,7 +254,7 @@ The calendar events returned from the API conform to the database schema:
 
 ## 6. Per-Prompt Test Requirements (v2.1 Replacements)
 
-### PROMPT 1.2 — Constrained Workflow UI
+### PROMPT 1.2, Constrained Workflow UI
 *(Replace Open-Ended Chat with Constrained Workflow)*
 
 > **Note:** Use the `design-taste-frontend` skill when designing all UI components in this prompt.
@@ -279,7 +279,7 @@ The calendar events returned from the API conform to the database schema:
 
 ---
 
-### PROMPT 1.3 — Correct Form Demonstration Layer
+### PROMPT 1.3, Correct Form Demonstration Layer
 *(Reference Drills)*
 
 > **Note:** Use the `design-taste-frontend` skill when designing the side-by-side drill demo tile layout.
@@ -303,7 +303,7 @@ The calendar events returned from the API conform to the database schema:
 
 ---
 
-### PROMPT 2.2 — SSE Worker Progress
+### PROMPT 2.2, SSE Worker Progress
 
 **Unit tests:**
 - Each progress event is correctly serialized as `event: <stage>\ndata: <json>\n\n`
@@ -321,11 +321,11 @@ The calendar events returned from the API conform to the database schema:
 - Progress bar advances visibly (assert label changes at least 3 times)
 - On `'complete'`, screen auto-navigates to results within 2 seconds
 
-**Vision retention check items affected:** #1 (fast feedback under 60s), #2 (AI detaches — connection closes).
+**Vision retention check items affected:** #1 (fast feedback under 60s), #2 (AI detaches, connection closes).
 
 ---
 
-### PROMPT 3.1 — Longitudinal Metrics
+### PROMPT 3.1, Longitudinal Metrics
 
 **Unit tests:**
 - After completed analysis, `metrics_timeline` rows are created for each tracked metric
@@ -346,7 +346,7 @@ The calendar events returned from the API conform to the database schema:
 
 ---
 
-### PROMPT 3.2 — Approval Gate for Calendar Writes
+### PROMPT 3.2, Approval Gate for Calendar Writes
 
 **Unit tests:**
 - `POST /suggestions/:id/approve` → writes to `calendar_events`, writes to `suggestion_audit` with `action='approved'`
@@ -365,13 +365,13 @@ The calendar events returned from the API conform to the database schema:
 - Tap [Add to my plan] on another → date picker appears → confirm → navigate to Calendar tab → event is there
 - Final assertion: total `calendar_events` count matches user's explicit approval taps
 
-**Vision retention check items affected:** #3 (no auto-calendar — strict).
+**Vision retention check items affected:** #3 (no auto-calendar, strict).
 
 ---
 
 ## 7. New Testing Prompts (T.1, T.2, T.3)
 
-### PROMPT T.1 — Build the End-to-End Testing Foundation
+### PROMPT T.1, Build the End-to-End Testing Foundation
 
 Before any of the feature prompts can satisfy their test rider, the testing infrastructure must exist. Build it.
 
@@ -394,7 +394,7 @@ Before any of the feature prompts can satisfy their test rider, the testing infr
    - Pytest with fixtures for LocalStack SQS/S3
    - A `conftest.py` that boots a fresh queue per test
    - Mocked Gemini client that can be programmed with canned responses per test
-   - A `fixtures/videos/` folder with at least 3 small test videos (lateral, 45°, head-on) — committed to LFS or stored in a fixtures bucket
+   - A `fixtures/videos/` folder with at least 3 small test videos (lateral, 45°, head-on), committed to LFS or stored in a fixtures bucket
 
 4. **apps/mobile test harness**:
    - Detox or Maestro configured for iOS Simulator AND Android emulator
@@ -424,7 +424,7 @@ Before any of the feature prompts can satisfy their test rider, the testing infr
 
 ---
 
-### PROMPT T.2 — Vision Retention Automated Suite
+### PROMPT T.2, Vision Retention Automated Suite
 
 The vision retention check was a manual checklist. Convert it to an automated E2E suite that runs in CI on every PR.
 
@@ -432,7 +432,7 @@ The vision retention check was a manual checklist. Convert it to an automated E2
 
 1. Create `apps/mobile/e2e/vision-retention.e2e.ts` with 7 tests, one per vision check:
 
-   **TEST V1 — Fast structured feedback under 60 seconds**
+   **TEST V1, Fast structured feedback under 60 seconds**
    - Sign in as a pre-consented test user
    - Upload a small pre-recorded test video (committed fixture)
    - Start a timer
@@ -440,7 +440,7 @@ The vision retention check was a manual checklist. Convert it to an automated E2
    - Assert elapsed time < 60,000 ms
    - Assert results contain structured fields (overall_score, primary_issues, drills)
 
-   **TEST V2 — AI detaches after analysis**
+   **TEST V2, AI detaches after analysis**
    - Complete an analysis
    - Wait 1 second after results render
    - Assert: free-text chat input is NOT present on the analysis screen
@@ -448,7 +448,7 @@ The vision retention check was a manual checklist. Convert it to an automated E2
    - Tap the "Mark as understood" chip
    - Assert: the analysis workflow session row in DB has `status='closed'`
 
-   **TEST V3 — No auto-calendar writes**
+   **TEST V3, No auto-calendar writes**
    - Snapshot `calendar_events` count for the test user
    - Complete an analysis with 3 drill suggestions
    - Do NOT tap any [Add to my plan] button
@@ -456,24 +456,24 @@ The vision retention check was a manual checklist. Convert it to an automated E2
    - Approve exactly 1 suggestion
    - Assert: `calendar_events` count increased by exactly 1
 
-   **TEST V4 — Visual demonstrations of correct form**
+   **TEST V4, Visual demonstrations of correct form**
    - Complete an analysis with at least 1 drill recommendation
    - On the result screen, for each drill, assert:
      - testID `drill-demo-video-<key>` is visible
      - testID `drill-user-video-<key>` is visible
      - They are arranged side-by-side or stacked but both present
 
-   **TEST V5 — Disclaimers and consent gates**
+   **TEST V5, Disclaimers and consent gates**
    - Fresh install + new user → cannot reach upload screen without completing consent
    - On the analysis result, assert testID `medical-disclaimer` is visible
    - "I am injured today" path → assert no sprint drill cards are visible
 
-   **TEST V6 — Coach surface is distinct**
+   **TEST V6, Coach surface is distinct**
    - From analysis result screen, assert: no path leads directly into a free-form chat
    - Navigate to Coach tab via main nav → assert: free-text input IS present
    - Assert: Coach tab is reachable only via main nav, not auto-routed from analysis
 
-   **TEST V7 — Progression visible**
+   **TEST V7, Progression visible**
    - Seed test user with 2 prior analyses (via test API)
    - Navigate to Progress screen
    - Assert: line chart renders with at least 2 data points per metric
@@ -487,7 +487,7 @@ The vision retention check was a manual checklist. Convert it to an automated E2
 
 ---
 
-### PROMPT T.3 — Continuous Verification Cron
+### PROMPT T.3, Continuous Verification Cron
 
 The vision can drift silently between PRs. Add scheduled verification that runs against staging.
 
@@ -517,7 +517,7 @@ The vision can drift silently between PRs. Add scheduled verification that runs 
 
 ---
 
-## 8. Acceptance Criteria (v2.1 — Strict)
+## 8. Acceptance Criteria (v2.1, Strict)
 
 Stride v1 is shippable when ALL of the following are true:
 
@@ -539,21 +539,21 @@ Stride v1 is shippable when ALL of the following are true:
 
 The corrected sequence for Claude Code is:
 
-1. **Prompt 0.1** — Audit (no tests; audit only)
-2. **Prompt T.1** — Build test foundation (do this BEFORE any feature work; the rider depends on it)
-3. **Prompt 0.2** — Smoke test (now uses the harness from T.1)
-4. **Prompt 0.3** — Biomechanics validity
-5. **Prompt T.2** — Vision Retention suite (write it before vision-realignment work so we have measurable regression detection)
-6. **Prompts 1.1, 1.2, 1.3** — Vision realignment (each with rider applied; use `design-taste-frontend` skill for all UI)
-7. **Prompts 2.1, 2.2** — Reliability
-8. **Prompts 3.1, 3.2, 3.3** — Long-term coach layer
-9. **Prompt T.3** — Continuous verification (turn on after main features land)
-10. **Prompt 4.1** — Original v1 backlog
-11. **Prompt 5.1** — Manual vision retention check pre-release
+1. **Prompt 0.1**, Audit (no tests; audit only)
+2. **Prompt T.1**, Build test foundation (do this BEFORE any feature work; the rider depends on it)
+3. **Prompt 0.2**, Smoke test (now uses the harness from T.1)
+4. **Prompt 0.3**, Biomechanics validity
+5. **Prompt T.2**, Vision Retention suite (write it before vision-realignment work so we have measurable regression detection)
+6. **Prompts 1.1, 1.2, 1.3**, Vision realignment (each with rider applied; use `design-taste-frontend` skill for all UI)
+7. **Prompts 2.1, 2.2**, Reliability
+8. **Prompts 3.1, 3.2, 3.3**, Long-term coach layer
+9. **Prompt T.3**, Continuous verification (turn on after main features land)
+10. **Prompt 4.1**, Original v1 backlog
+11. **Prompt 5.1**, Manual vision retention check pre-release
 
 ---
 
-## 10. PRD v2 Postmortem — What Was Wrong
+## 10. PRD v2 Postmortem, What Was Wrong
 
 Honest postmortem of PRD v2's testing gaps:
 
@@ -571,21 +571,21 @@ v2.1 fixes all five.
 
 Before marking any prompt complete, ALL of the following must be satisfied:
 
-1. **UNIT** — Add or update unit tests for any new function/class. Run the full unit suite. Zero failures.
+1. **UNIT**, Add or update unit tests for any new function/class. Run the full unit suite. Zero failures.
    - `apps/api`: Jest. Target: every new route handler, middleware, and DB query function has at least one test.
    - `apps/ml-worker`: Pytest. Target: every new module function has tests; mock external services.
    - `apps/mobile`: Jest + React Testing Library. Target: every new component renders without throwing; state-changing logic has a test.
 
-2. **INTEGRATION** — Add at least one integration test that exercises the new code through its real boundary.
+2. **INTEGRATION**, Add at least one integration test that exercises the new code through its real boundary.
    - API: spin up a real Express server against a real Postgres (use docker-compose test profile); hit the actual HTTP endpoint.
    - Worker: enqueue a real SQS message to LocalStack; verify the worker processes it correctly end-to-end.
    - Mobile: render the screen with mocked API responses via MSW (Mock Service Worker); assert the UI reflects the data.
 
-3. **E2E** — Add or update at least one Detox (or Maestro) end-to-end test that simulates a real user flow touching this feature on a device/simulator. If the feature is purely backend, add an E2E API test using a script that walks through the full upload→analysis→retrieve cycle with the new behavior exercised.
+3. **E2E**, Add or update at least one Detox (or Maestro) end-to-end test that simulates a real user flow touching this feature on a device/simulator. If the feature is purely backend, add an E2E API test using a script that walks through the full upload→analysis→retrieve cycle with the new behavior exercised.
 
-4. **VISION RETENTION** — Run the seven-point vision retention checklist (Prompt T.2) against the app after your changes. Document any regression. If any of the seven checks fail, you have introduced a regression and must fix it before completing this prompt.
+4. **VISION RETENTION**, Run the seven-point vision retention checklist (Prompt T.2) against the app after your changes. Document any regression. If any of the seven checks fail, you have introduced a regression and must fix it before completing this prompt.
 
-5. **EVIDENCE** — Produce a file `docs/test-evidence/PROMPT-<id>-EVIDENCE.md` containing:
+5. **EVIDENCE**, Produce a file `docs/test-evidence/PROMPT-<id>-EVIDENCE.md` containing:
    - Test commands run and their output (or links to CI runs)
    - Screenshots/videos of the E2E test if mobile-facing
    - The vision retention checklist results
@@ -593,4 +593,4 @@ Before marking any prompt complete, ALL of the following must be satisfied:
 
 ---
 
-*PRD v2.1 — Updated for rigorous testing foundation. Stride Athlete platform state: ACTIVE DEVELOPMENT. Last updated: 2026-05-25.*
+*PRD v2.1, Updated for rigorous testing foundation. Stride Athlete platform state: ACTIVE DEVELOPMENT. Last updated: 2026-05-25.*

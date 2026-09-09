@@ -1,4 +1,4 @@
-// Analysis seam — public surface + dependency injection.
+// Analysis seam, public surface + dependency injection.
 //
 // Features depend on getAnalysisProvider(), never on a concrete provider or on
 // AWS/S3/SQS. The app uses LocalAnalysisProvider in every env except a future

@@ -70,7 +70,7 @@ const FOCUS_LABELS: Record<EventType, string> = {
 };
 
 export interface PlanDayCard {
-  /** YYYY-MM-DD — also the card's stable React key. */
+  /** YYYY-MM-DD, also the card's stable React key. */
   date: string;
   weekday: string;
   /** Day of month, set as the card's headline numeral. */
@@ -127,7 +127,7 @@ export function groupIntoDayCards(events: CalendarEvent[]): PlanDayCard[] {
     }));
 }
 
-/** "3 sets x 10" / "20min tempo" — whichever the event actually carries. */
+/** "3 sets x 10" / "20min tempo", whichever the event actually carries. */
 export function volumeLabel(event: CalendarEvent): string | null {
   const d = event.details;
   if (!d) return null;

@@ -285,7 +285,7 @@ def _anterior_cost(z, rays, fwd) -> float:
     the same leg folded backwards: both satisfy every bone length and produce an
     identical knee angle, so closure and joint limits are blind to the
     difference. Only the direction the knee bulges relative to travel tells them
-    apart — a knee is anterior to the hip-ankle chord, never posterior.
+    apart, a knee is anterior to the hip-ankle chord, never posterior.
 
     Returned in metres so it can be summed with `_closing_cost` on the same
     scale during branch selection.
@@ -376,7 +376,7 @@ def _residuals(z, rays, bones, prev_z, valid, w_temporal, fwd=None):
         off = P[j] - 0.5 * (P[i] + P[k])
         out.append(W_ANTERIOR * max(0.0, -float(np.dot(off, fwd))))
 
-    # Mediolateral axis from the pelvis itself — the shortest, best-constrained
+    # Mediolateral axis from the pelvis itself, the shortest, best-constrained
     # bone in the system, and the only frame-local definition of "sideways" that
     # needs no external heading.
     lh, rh = _POS["left_hip"], _POS["right_hip"]
@@ -565,7 +565,7 @@ def lift_sequence(
     z_seq: list[np.ndarray] = []
     # Seeded from the 2D rays, NOT left as None. Previously this was only
     # assigned in the `p < passes - 1` tail, which never runs at the default
-    # passes=1 — so the knee-anterior prior silently contributed nothing on
+    # passes=1, so the knee-anterior prior silently contributed nothing on
     # every production clip, and the per-limb depth-sign ambiguity it exists to
     # resolve went unresolved.
     fwd = _forward_from_rays(rays_seq, valid_seq, up_hint)
@@ -665,7 +665,7 @@ def lift_sequence(
                 z_try.append(z_seq[t]); prev = None; continue
             # Warm-started from the accepted pass-0 depths, so this is a
             # refinement rather than a fresh solve and needs far fewer
-            # iterations — that is what keeps the second pass affordable.
+            # iterations, that is what keeps the second pass affordable.
             z, _ = _solve_frame(rays, new_bones, valid, z_seq[t].copy(), prev,
                                 fwd=fwd, max_nfev=REFINE_NFEV)
             z_try.append(z); prev = z
@@ -745,8 +745,8 @@ def _lift_quality(closing, anatomy, lengths) -> dict[str, float]:
     #     relTorso   0.032  0.056  0.093  0.167  0.234
     #     true MAE    1.49   1.44   2.04   2.54   5.44  deg
     #
-    # The previous exp(-rel/0.11) read 0.29 at rel=0.137 — a clip whose angles
-    # were accurate to 1.5 deg — and that single number was enough to hold every
+    # The previous exp(-rel/0.11) read 0.29 at rel=0.137, a clip whose angles
+    # were accurate to 1.5 deg, and that single number was enough to hold every
     # metric below the trust gate. A well-closed solve now keeps its confidence,
     # and only genuinely poor closure is penalised.
     #
@@ -756,11 +756,11 @@ def _lift_quality(closing, anatomy, lengths) -> dict[str, float]:
     # because both depth-sign branches satisfy every bone constraint exactly.
     # Trusting this number alone there would be actively dangerous.
     # View quality is carried separately by analyze3d's observability term, and
-    # the two are combined by taking the worse — never multiplied, which would
+    # the two are combined by taking the worse, never multiplied, which would
     # discount the same clip twice and empty the report.
     # Re-derived against PASS-BY geometry (a runner crossing a stationary
     # camera), which is what the product actually sees. Closure predicts error
-    # tightly there — error is close to 56 x closure:
+    # tightly there, error is close to 56 x closure:
     #
     #     closure   0.021  0.031  0.040  0.052  0.060  0.071  0.101  0.138
     #     true MAE   1.22   1.65   2.37   2.77   3.42   3.87   5.65   7.77  deg
@@ -768,7 +768,7 @@ def _lift_quality(closing, anatomy, lengths) -> dict[str, float]:
     # The previous exp(-max(0, rel-0.15)/0.25) returned a flat 0.92 across every
     # one of those rows, i.e. it reported identical confidence for a 1.2 deg
     # reconstruction and a 7.8 deg one. A number that constant over the whole
-    # usable range carries no information — the same defect as the reconResidual
+    # usable range carries no information, the same defect as the reconResidual
     # this function was written to replace.
     #
     # Anchors map closure onto the clinical bands the benchmark doc uses
@@ -807,7 +807,7 @@ def _forward_from_rays(rays_seq, valid_seq, up=None):
     pelvis ray swings across the clip as the athlete travels, and evaluating
     those rays at a constant nominal depth recovers the direction of travel up
     to a scale we do not need. Only the SIGN of the knee's projection onto this
-    vector is ever used, so a constant-depth approximation is sufficient — the
+    vector is ever used, so a constant-depth approximation is sufficient, the
     depth drift across a few seconds of running is far too small to flip it.
 
     Returns None when the subject barely moves; a fabricated forward would bias
@@ -822,7 +822,7 @@ def _forward_from_rays(rays_seq, valid_seq, up=None):
         hip = 0.5 * (rays[lh] + rays[rh])
         sho = 0.5 * (rays[ls] + rays[rs])
         # Every ray sits at z=1, so differencing rays alone yields a vector with
-        # NO depth component — useless for a runner coming toward the camera.
+        # NO depth component, useless for a runner coming toward the camera.
         # Apparent torso height supplies the missing axis: a rigid span of true
         # length L subtends L/Z in ray space, so Z is proportional to 1/span.
         # Torso height is used because it is roughly perpendicular to travel and
@@ -873,7 +873,7 @@ def apparent_scale(keypoints, width: int, height: int) -> float:
     barely encoded in the image at all.
 
     Measured across the clip set, this is the strongest single predictor of
-    reconstruction failure — correlation -0.73 against bone-closure residual,
+    reconstruction failure, correlation -0.73 against bone-closure residual,
     stronger than keypoint confidence or frame count:
 
         torso/frame   0.130  0.112  0.042  0.051  0.016

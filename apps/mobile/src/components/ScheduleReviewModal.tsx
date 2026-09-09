@@ -25,7 +25,7 @@ export function ScheduleReviewModal({
   const [sessions, setSessions] = useState<ProposedSession[]>([]);
   const [committing, setCommitting] = useState(false);
 
-  // (Re)build the proposal when opened. Building is pure — no write.
+  // (Re)build the proposal when opened. Building is pure, no write.
   React.useEffect(() => {
     if (visible && focus) setSessions(generateProposal(focus, startDate));
   }, [visible, focus, startDate]);
@@ -66,7 +66,7 @@ export function ScheduleReviewModal({
                 </Pressable>
               </View>
             ))}
-            {sessions.length === 0 ? <Text style={styles.empty}>No sessions — nothing will be added.</Text> : null}
+            {sessions.length === 0 ? <Text style={styles.empty}>No sessions. Nothing will be added.</Text> : null}
           </ScrollView>
 
           <View style={styles.actions}>

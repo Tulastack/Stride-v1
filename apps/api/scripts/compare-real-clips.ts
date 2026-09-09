@@ -1,6 +1,6 @@
 /**
  * Compare two REAL reconstructed clips (produced by the ml-worker pipeline on
- * actual videos) through the production engine — to pressure-test the
+ * actual videos) through the production engine, to pressure-test the
  * angle-robustness claim on real footage.
  *
  * Run:  cd apps/api && npx tsx scripts/compare-real-clips.ts <sideFrames3d.json> <headonFrames3d.json>
@@ -59,7 +59,7 @@ const h = byKey(headR);
 const keys = Array.from(new Set([...Object.keys(s), ...Object.keys(h)]));
 const pad = (x: string, n: number) => x.padEnd(n);
 const fmt = (m: any) =>
-  m ? `${m.measured.value.toFixed(1)}${m.unit}  conf=${m.measured.confidence.toFixed(2)}  ${m.trustStatus}` : '—';
+  m ? `${m.measured.value.toFixed(1)}${m.unit}  conf=${m.measured.confidence.toFixed(2)}  ${m.trustStatus}` : 'n/a';
 
 console.log('\n' + pad('metric', 18) + pad('SIDE (left_angle)', 34) + 'HEAD-ON (forward_angle)');
 console.log('-'.repeat(84));

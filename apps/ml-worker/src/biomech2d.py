@@ -11,21 +11,21 @@ Metrics computed (all from a single side-on view):
   temporal        : contact_time_ms, cadence_spm
 
 Gait events use research-validated kinematic definitions (no force plate):
-  footstrike — pelvis-relative ankle-height minimum / vertical-velocity
+  footstrike, pelvis-relative ankle-height minimum / vertical-velocity
     zero-crossing (FPOSV/FVELV; Fellin et al. 2010, abs err ~22-25 ms vs vGRF);
-  toe-off — peak knee extension after footstrike (PKEXT; Fellin et al. 2010,
+  toe-off, peak knee extension after footstrike (PKEXT; Fellin et al. 2010,
     abs err ~5 ms vs vGRF; confirmed best kinematic toe-off, Smith 2015).
 Angle peaks are EVENT-CONDITIONED: extracted per detected stride (swing window
 for knee drive / swing flexion, toe-off window for hip extension) and reported
-as the median of per-stride peaks — a whole-clip percentile is only a fallback
+as the median of per-stride peaks, a whole-clip percentile is only a fallback
 and is never certified trusted.
 
 HONEST PROXY DEFINITIONS (these are coaching proxies, not ISB joint angles):
-  hip_extension — shoulder-hip-knee interior angle (trunk-thigh), NOT femur vs
+  hip_extension, shoulder-hip-knee interior angle (trunk-thigh), NOT femur vs
     pelvis in an anatomical pelvic frame;
-  knee_drive    — thigh segment vs gravity vertical, not an anatomical hip angle;
-  arm_swing     — elbow interior angle (arm carry), not shoulder excursion;
-  overstride    — ankle-ahead-of-mid-hip at footstrike as % of instantaneous
+  knee_drive, thigh segment vs gravity vertical, not an anatomical hip angle;
+  arm_swing, elbow interior angle (arm carry), not shoulder excursion;
+  overstride, ankle-ahead-of-mid-hip at footstrike as % of instantaneous
     hip-ankle length (signed along the running direction when camera motion
     allows the direction to be resolved; magnitude-only otherwise).
 
@@ -33,7 +33,7 @@ NOT computable from one side-on view (need frontal/back view or two runs):
   knee valgus, pelvic drop, arm crossover, pronation, true left/right symmetry.
 
 Memory: `analyze_2d_sagittal_stream` consumes a frame generator and retains only
-scalar per-frame series — never the full keypoint arrays.
+scalar per-frame series, never the full keypoint arrays.
 """
 
 from __future__ import annotations
@@ -45,7 +45,7 @@ from typing import Any, Iterable
 import numpy as np
 from scipy.signal import savgol_filter
 
-# Index joints by CANONICAL name, never by a backbone's raw indices — the pose2d
+# Index joints by CANONICAL name, never by a backbone's raw indices, the pose2d
 # seam guarantees every frame is in this canonical (COCO-17) layout, so a backbone
 # swap can't silently feed the wrong joint (bug B2). CANON_KP == the old COCO-17
 # map for the current backbones, so this is behaviour-preserving.
@@ -70,10 +70,10 @@ NORMAL_RANGE: dict[str, tuple[float, float]] = {
 # Metrics that live in the FRONTAL plane: trustworthy from a front/back view and
 # degraded from the side (the inverse of the sagittal metrics). See _viewpoint_penalty.
 FRONTAL: set[str] = {"knee_valgus", "pelvic_drop"}
-# Hard PHYSICAL envelope — wider than the "healthy" band. A value outside this is
+# Hard PHYSICAL envelope, wider than the "healthy" band. A value outside this is
 # a measurement failure (off-axis perspective, bad crop, a static-bystander lock,
 # or sub-Nyquist temporal sampling), not a real fault. Such a value is never shown
-# as "trusted" and never raises a flaw — it is honest to say "couldn't measure"
+# as "trusted" and never raises a flaw, it is honest to say "couldn't measure"
 # rather than to flag a garbage number. See _assemble's plausibility gate.
 PLAUSIBLE: dict[str, tuple[float, float]] = {
     "trunk_lean": (0.0, 40.0),
@@ -129,11 +129,11 @@ DRILLS: dict[str, dict[str, Any]] = {
     "knee_flexion": {"drillId": "drill-heel-recovery", "drillName": "Heel-to-butt A-skips", "cue": "Snap the heel up under your glute as the knee drives.", "demoAssetId": "demo-heel-recovery", "sets": 3, "reps": 8, "rationale": "Improves swing-leg knee flexion and recovery speed."},
     "arm_swing": {"drillId": "drill-arm-iso", "drillName": "Seated arm-drive isolation", "cue": "Drive elbows straight back, hands cheek-to-hip; don't cross the midline.", "demoAssetId": "demo-arm-iso", "sets": 3, "reps": 20, "rationale": "Keeps arm drive front-to-back for less rotational braking."},
     "overstride": {"drillId": "drill-quick-feet", "drillName": "Quick-feet + cadence intervals", "cue": "Land the foot UNDER your hip, not out in front. Quicker, lighter steps.", "demoAssetId": "demo-quick-feet", "sets": 4, "reps": 30, "rationale": "Reduces overstride and braking impulse."},
-    "vertical_oscillation": {"drillId": "drill-wickets", "drillName": "Wicket runs", "cue": "Run TALL and flat — push horizontally, minimise bounce.", "demoAssetId": "demo-wickets", "sets": 3, "reps": 6, "rationale": "Lowers wasteful vertical oscillation."},
+    "vertical_oscillation": {"drillId": "drill-wickets", "drillName": "Wicket runs", "cue": "Run TALL and flat, push horizontally, minimise bounce.", "demoAssetId": "demo-wickets", "sets": 3, "reps": 6, "rationale": "Lowers wasteful vertical oscillation."},
     "contact_time_ms": {"drillId": "drill-banded-starts", "drillName": "Resisted banded starts", "cue": "Punch the ground and get off it fast.", "demoAssetId": "demo-banded-starts", "sets": 4, "reps": 5, "rationale": "Shortens ground-contact time."},
     "cadence_spm": {"drillId": "drill-metronome", "drillName": "Metronome cadence intervals", "cue": "Match your footfalls to the beat; quick, light steps.", "demoAssetId": "demo-metronome", "sets": 4, "reps": 30, "rationale": "Raises step frequency toward the efficient range."},
     "knee_valgus": {"drillId": "drill-lateral-band", "drillName": "Lateral band walks + single-leg balance", "cue": "Drive the knee OVER the middle toe; don't let it cave inward.", "demoAssetId": "demo-lateral-band", "sets": 3, "reps": 12, "rationale": "Strengthens glute-med to stop the knee collapsing inward."},
-    "pelvic_drop": {"drillId": "drill-hip-hitch", "drillName": "Single-leg hip hitches", "cue": "Keep your hips level — don't let the free side drop.", "demoAssetId": "demo-hip-hitch", "sets": 3, "reps": 10, "rationale": "Builds hip-abductor control to keep the pelvis level in stance."},
+    "pelvic_drop": {"drillId": "drill-hip-hitch", "drillName": "Single-leg hip hitches", "cue": "Keep your hips level, don't let the free side drop.", "demoAssetId": "demo-hip-hitch", "sets": 3, "reps": 10, "rationale": "Builds hip-abductor control to keep the pelvis level in stance."},
 }
 NAMES = {"trunk_lean": "Trunk angle off-target", "knee_drive": "Low knee drive",
          "hip_extension": "Limited hip extension", "knee_flexion": "Limited knee flexion",
@@ -159,7 +159,7 @@ WHY = {
 # ── Trust tiers (docs/research/angle-agnostic-kinematics.md) ──────────────────
 # Trust by variable TYPE, not by azimuth. Tier 1 = angle-robust but frame-rate-
 # gated; Tier 2 = sagittal (best side-on, degraded off-axis); Tier 3 = rebinned /
-# translation-dependent — narrower trust window than tier 2 (see OVERSTRIDE_VP_MAX).
+# translation-dependent, narrower trust window than tier 2 (see OVERSTRIDE_VP_MAX).
 TIER = {
     "cadence_spm": 1, "contact_time_ms": 1, "vertical_oscillation": 1,
     "trunk_lean": 2, "knee_drive": 2, "hip_extension": 2, "knee_flexion": 2, "arm_swing": 2,
@@ -167,7 +167,7 @@ TIER = {
     "overstride": 3,
 }
 # Sprint ground contact is ~90 ms; below ~120 fps the timing error swamps the signal
-# (30 fps → ±33 ms). Gate on the KEYPOINT sample rate (pose fps), not capture fps —
+# (30 fps → ±33 ms). Gate on the KEYPOINT sample rate (pose fps), not capture fps,
 # pose subsampling also limits temporal resolution. Report capture fps separately.
 FPS_TRUST_GATE = 120.0
 # ...but that reasoning is about CONTACT TIME, and it was being applied to every
@@ -175,13 +175,13 @@ FPS_TRUST_GATE = 120.0
 # short duration: at 3 steps/s it sits far below Nyquist even at 30 fps, and
 # per-event timing jitter averages out across a clip rather than accumulating.
 # Holding it to the contact-time bar meant a perfectly sound cadence reading was
-# permanently badged experimental on every phone that does not shoot 120 fps —
+# permanently badged experimental on every phone that does not shoot 120 fps,
 # strictness that costs the athlete information without buying any honesty.
 FPS_TRUST_GATE_BY_KEY = {"cadence_spm": 30.0}
 # Confidence/viewpoint tolerance for a metric to be certified "trusted" rather
 # than "experimental". These stay STRICT on purpose: experimental metrics now
 # participate in the score (EXPERIMENTAL_FORM_WEIGHT) and surface as focus
-# areas (FOCUS_TARGET), so a borderline measurement is never silently dropped —
+# areas (FOCUS_TARGET), so a borderline measurement is never silently dropped,
 # which removes the only argument for loosening the badge itself. "Trusted" is
 # the app's word to the athlete that we'd stand behind the number; a penalty
 # above 0.5 means more than half the plane's signal is corrupted.
@@ -190,14 +190,14 @@ TRUST_VP_MAX = 0.5
 # Overstride (tier 3) is translation-dependent, so it gets a tighter viewpoint
 # cap than tier-2's TRUST_VP_MAX rather than being permanently barred from
 # trust: vp = sin(azimuth)² for sagittal metrics, so vp<=0.3 means the camera
-# is within ~33° of pure side-on — the actual geometric condition under which
+# is within ~33° of pure side-on, the actual geometric condition under which
 # this measurement is sound. Gated on the RAW keypoint confidence (mean_conf):
 # the displayed tier-3 confidence carries a fixed 0.6 translation discount that
 # would make TRUST_CONF_MIN unreachable by construction, which is a statement
 # about the formula, not the clip. Outside that window it stays "experimental".
 OVERSTRIDE_VP_MAX = 0.3
 # Perspective/scale corrupt vertical CoM off-axis and it is unmeasured on runners
-# (honesty ledger #9) — keep it a candidate, never headline-trusted yet.
+# (honesty ledger #9), keep it a candidate, never headline-trusted yet.
 CANDIDATE = {"vertical_oscillation"}
 
 # Metrics whose IDEAL reading is zero. For these, 0.0 is the best possible
@@ -213,7 +213,7 @@ CANDIDATE = {"vertical_oscillation"}
 ZERO_IS_VALID = {"knee_valgus", "pelvic_drop", "overstride"}
 # Peak angle metrics that are only meaningful AT a gait event (peak knee drive
 # in swing, peak swing flexion, hip extension at toe-off). When stride events
-# can't be detected, these fall back to whole-clip percentiles — a legitimate
+# can't be detected, these fall back to whole-clip percentiles, a legitimate
 # descriptive read, but never certified "trusted": a blind percentile can pick
 # its peak from a non-running frame (stumble, walk-off, occlusion artifact).
 EVENT_ANGLES = {"knee_drive", "knee_flexion", "hip_extension"}
@@ -240,7 +240,7 @@ FORM_WEIGHT: dict[str, float] = {
 # dev=0.5 → ~28% of the weight, dev=1.5 → ~63%, dev=3+ → ~86-100% (saturates).
 FORM_SCORE_DECAY = 1.5
 # Experimental (usable but not confident-enough-to-certify) metrics still
-# deduct — at half a trusted metric's weight, the same uncertainty discount
+# deduct, at half a trusted metric's weight, the same uncertainty discount
 # used everywhere else in this module. Excluding them entirely let a single
 # clean trusted metric mask a pile of bad experimental ones (e.g. one fine
 # cadence reading + a genuinely bad-form clip → ~82). The discount does NOT
@@ -258,20 +258,20 @@ def _form_score(scorable: list[tuple[str, float, bool]], phase: str) -> int:
 
     `scorable` is (metric_key, value, trusted) for USABLE metrics (plausible +
     confident enough to report at all). Scoring rules:
-      * Anywhere INSIDE the healthy band deducts nothing — the band is a
+      * Anywhere INSIDE the healthy band deducts nothing, the band is a
         plateau. (The old midpoint-averaging formula rewarded only the band
         MIDPOINT, so an elite ~0% overstride against the 0-12% band scored
-        50% — perfect form was mathematically punished on every "lower is
+        50%, perfect form was mathematically punished on every "lower is
         better" metric.)
       * Outside the band the deduction rises smoothly and saturates at the
         metric's FORM_WEIGHT: weight * (1 - exp(-dev/FORM_SCORE_DECAY)), where
         dev = distance outside the band in band-half-widths.
-      * EVERY usable metric scores — trusted at full weight, experimental at
+      * EVERY usable metric scores, trusted at full weight, experimental at
         EXPERIMENTAL_FORM_WEIGHT (uncertainty discount). Excluding
         experimental metrics whenever anything trusted survived let one clean
         trusted reading mask a pile of genuinely bad experimental ones; only
         the CONFIDENCE in a deduction changes, never whether it counts.
-      * Sparse-coverage cap: 1 scored metric caps at 80, 2 cap at 90 — a clip
+      * Sparse-coverage cap: 1 scored metric caps at 80, 2 cap at 90, a clip
         where almost nothing was measurable can't claim a perfect 100.
     """
     if not scorable:
@@ -296,10 +296,10 @@ def _focus_candidates(values: dict[str, tuple[float, int]], per_usable: dict[str
     """Pick up to `need` focus-area targets from the usable, un-flagged metrics.
 
     Two honest kinds, in priority order (see the focus-area block in _assemble):
-      * "unconfirmed" — outside the healthy band but not certified trusted
+      * "unconfirmed", outside the healthy band but not certified trusted
         (trusted deviations already raised flaws): a real measured deviation
         we won't state as fact, largest deviation first;
-      * "refinement" — inside the band but closest to its edge: not a fault,
+      * "refinement", inside the band but closest to its edge: not a fault,
         a sharpening candidate, smallest margin first.
     Pure and deterministic; returns [(metric_key, kind)].
     """
@@ -327,7 +327,7 @@ _UNIT_SUFFIXES = ("_ms", "_spm")
 
 
 def _metric_label(key: str) -> str:
-    """Human label for a metric key — strips a trailing unit suffix so e.g.
+    """Human label for a metric key, strips a trailing unit suffix so e.g.
     'contact_time_ms' reads as 'contact time', not 'contact time ms'."""
     base = key
     for suffix in _UNIT_SUFFIXES:
@@ -338,7 +338,7 @@ def _metric_label(key: str) -> str:
 
 
 def _fmt_value(val: float, unit: str) -> str:
-    """Thousands-separated number with unit — no space before deg/percent
+    """Thousands-separated number with unit, no space before deg/percent
     (e.g. '18°', '40%'), a space before abbreviations (e.g. '167 ms')."""
     num = f"{val:,.0f}"
     return f"{num}{unit}" if unit in ("°", "%") else f"{num} {unit}"
@@ -362,7 +362,7 @@ def _savgol(x: np.ndarray, fps: float = 15.0, p: int = 2) -> np.ndarray:
     """Savitzky-Golay smoothing for per-frame angle series, TIME-based window.
 
     The window is ~150 ms of signal regardless of sample rate (capped at 9
-    taps): a fixed 5-tap window was ~330 ms at pose_fps=15 — a large fraction
+    taps): a fixed 5-tap window was ~330 ms at pose_fps=15, a large fraction
     of a sprint swing phase (~250-350 ms), attenuating the very peaks (max
     knee drive, peak swing flexion) the metrics report. ~150 ms kills
     per-frame keypoint jitter while preserving stride peaks at every fps.
@@ -406,7 +406,7 @@ def resolve_image_axes(image_down: tuple[float, float] | None) -> tuple[np.ndarr
 #
 # Population midpoints (biacromial ≈ 0.23·stature, bi-iliac ≈ 0.17·stature,
 # torso ≈ 0.29·stature). These set the SCALE of the estimate, not whether it
-# responds to the camera — so an imperfect constant biases the angle, it does not
+# responds to the camera, so an imperfect constant biases the angle, it does not
 # flatten it. Calibrate against filmed ground truth at known angles.
 SHOULDER_TORSO_RATIO = 0.78
 HIP_TORSO_RATIO = 0.60
@@ -425,8 +425,8 @@ def estimate_azimuth_from_keypoints(k: np.ndarray) -> float | None:
 
         hw_proj / sw_proj = (HW·sin a) / (SW·sin a) = HW / SW
 
-    i.e. the old estimator returned the athlete's bi-iliac / biacromial ratio — an
-    anthropometric constant — for every camera position. It pinned azimuth near
+    i.e. the old estimator returned the athlete's bi-iliac / biacromial ratio, an
+    anthropometric constant, for every camera position. It pinned azimuth near
     41° on every clip, which made the tier-2 trust gate unreachable by
     construction (`conf = mean_conf · (1 − sin²41°) ≥ 0.6` needs mean_conf ≥ 1.07)
     and therefore prevented ANY joint angle from ever raising a flaw.
@@ -478,7 +478,7 @@ def _frame_scalars(k: np.ndarray, vert_down: np.ndarray, up: np.ndarray) -> dict
 
     def _valgus(hp, kn, an) -> float:
         # horizontal (x) deviation of the knee from the straight hip→ankle line,
-        # as % of leg length — a knee caving toward the midline in a front view.
+        # as % of leg length, a knee caving toward the midline in a front view.
         dy = float(an[0] - hp[0])
         if abs(dy) < 1e-4:
             return 0.0
@@ -493,10 +493,10 @@ def _frame_scalars(k: np.ndarray, vert_down: np.ndarray, up: np.ndarray) -> dict
     pelvic_drop = math.degrees(math.atan2(abs(float(_hv[0])), abs(float(_hv[1])) + 1e-6))
 
     return {
-        # per-side knee interior angle — feeds PKEXT toe-off event detection
+        # per-side knee interior angle, feeds PKEXT toe-off event detection
         "l_knee": _angle_at_joint(lh, lk, la),
         "r_knee": _angle_at_joint(rh, rk, ra),
-        # mid-hip horizontal position — resolves running direction (overstride sign)
+        # mid-hip horizontal position, resolves running direction (overstride sign)
         "hip_x": float(mid_hp[1]),
         "knee_valgus": knee_valgus,
         "pelvic_drop": pelvic_drop,
@@ -516,7 +516,7 @@ def _frame_scalars(k: np.ndarray, vert_down: np.ndarray, up: np.ndarray) -> dict
 
 
 def _contact_positions(ank_y_rel: np.ndarray, fps: float = 15.0) -> list[int]:
-    """Footstrike frame indices — local maxima of the pelvis-relative ankle
+    """Footstrike frame indices, local maxima of the pelvis-relative ankle
     height (foot lowest in image). This is the kinematic FPOSV/FVELV event
     (ankle vertical-position minimum == vertical-velocity zero-crossing), one
     of the two footstrike definitions validated against force plates for
@@ -538,7 +538,7 @@ def _contact_positions(ank_y_rel: np.ndarray, fps: float = 15.0) -> list[int]:
 
 def _toe_off_after(knee: np.ndarray, strike: int, fps: float) -> int | None:
     """Toe-off = first PEAK KNEE EXTENSION (local max of the interior knee
-    angle) after a footstrike — the PKEXT method, the most accurate kinematic
+    angle) after a footstrike, the PKEXT method, the most accurate kinematic
     toe-off event vs force plates (abs err ~5 ms; Fellin et al. 2010).
     Search window is 400 ms, the plausibility ceiling for running contact."""
     end = min(len(knee) - 1, strike + max(2, int(round(fps * 0.40))))
@@ -553,7 +553,7 @@ def _gait(lank: np.ndarray, rank: np.ndarray, fps: float,
     """Contact time + cadence from pose-rate ankle-height signals.
 
     Contact = footstrike (ankle-height local max) → toe-off (peak knee
-    extension), both research-validated kinematic events — replacing the old
+    extension), both research-validated kinematic events, replacing the old
     arbitrary "% of signal range" run-length threshold. Falls back to the
     threshold method when a per-side knee-angle series isn't available."""
     strikes: list[int] = []
@@ -592,7 +592,7 @@ def _gait(lank: np.ndarray, rank: np.ndarray, fps: float,
     # median, not mean: one missed toe-off (occlusion) must not drag the value.
     # Same sanity bound as _gait_signal: a broken/flat signal (or a spurious
     # late toe-off match) can produce a run far outside human stance-phase
-    # timing — discard rather than report it as a real contact time.
+    # timing, discard rather than report it as a real contact time.
     plo_ms, phi_ms = PLAUSIBLE["contact_time_ms"]
     sane_contacts = [c for c in contacts_ms if plo_ms <= c <= phi_ms]
     contact_ms = float(np.median(sane_contacts)) if sane_contacts else 0.0
@@ -642,7 +642,7 @@ def _gait_signal(lank_y: np.ndarray, rank_y: np.ndarray, fps: float) -> tuple[fl
     intervals = [d for d in intervals if d > 0.5 / fps]
     cadence = 60.0 / float(np.mean(intervals)) if intervals else 0.0
     # median, not mean: partial runs at the clip edges must not skew the value.
-    # A heavily motion-blurred clip can break optical-flow tracking outright —
+    # A heavily motion-blurred clip can break optical-flow tracking outright,
     # the ankle-y signal gets stuck above contact_thr instead of oscillating,
     # producing one run spanning most of the clip (thousands of ms). That is a
     # broken signal, not a slow stance phase: no human stance phase is anywhere
@@ -685,7 +685,7 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
 
     `vp_override` / `recon_conf` serve the virtual-camera path (see
     src/virtual_camera.py). When metrics are read from a synthetic on-axis
-    camera the viewpoint penalty is genuinely zero — we chose the camera — so
+    camera the viewpoint penalty is genuinely zero, we chose the camera, so
     `vp_override=0.0` states that honestly. But a monocular 3D reconstruction
     has its OWN uncertainty, which the azimuth term never modelled, so it rides
     separately in `recon_conf`. Keeping them as two terms is deliberate:
@@ -693,7 +693,7 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
     reconstruction into a `trusted` badge."""
     a = {k: np.array(v) for k, v in S.items()}
     # Kill per-frame keypoint jitter on the angle series BEFORE peak extraction
-    # — raw jitter inflates the per-stride peaks the metrics report. Window is
+    # - raw jitter inflates the per-stride peaks the metrics report. Window is
     # time-based (~150 ms at any pose fps), see _savgol.
     for _ak in ("knee_drive", "hip_ext", "knee_flex", "elbow", "trunk"):
         a[_ak] = _savgol(a[_ak], pose_fps)
@@ -742,7 +742,7 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
             os_vals = [abs(a["ank_x_rel"][i]) / max(a["leg_len"][i], 1e-6) for i in contacts]
         overstride_pct = float(np.median(os_vals)) * 100.0
     # NO ceiling clamp (same reasoning as overstride: the baseline found 25%
-    # saturation on every clip) — the plausibility gate owns implausible values.
+    # saturation on every clip), the plausibility gate owns implausible values.
     # Vertical oscillation is the athlete's BOUNCE, which is a per-stride
     # wobble, not the total travel of the hip across the frame. Measuring the
     # raw range conflates three things: real bounce, the operator panning, and
@@ -772,7 +772,7 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
     # A running subject's near ankle swings strongly in image-y each stride; a
     # tracker that latched onto a standing bystander barely moves. If vertical
     # ankle travel (as a fraction of leg length) is below a floor, the locked
-    # target is almost certainly not the runner — so we refuse to raise any
+    # target is almost certainly not the runner, so we refuse to raise any
     # authoritative flaw from it and say so, rather than emitting a low-economy
     # result full of "experimental" numbers that looks like a real (bad) run.
     subject_motion = round(max(float(a["l_rel"].max() - a["l_rel"].min()),
@@ -781,7 +781,7 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
 
     # trunk_lean / arm_swing use a robust MEDIAN, not mean: a clip can mix phases
     # (e.g. a sprint block-start holds a bent "set" pose + straight bracing arms
-    # for many frames, then drives out) and occlusion outliers — mean is corrupted
+    # for many frames, then drives out) and occlusion outliers, mean is corrupted
     # by those, median tracks the representative posture. The peak metrics below
     # keep percentiles because the PEAK is the point of interest.
     _trunk_med = float(np.median(a["trunk"]))
@@ -802,8 +802,8 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
     # ── Event-conditioned angle peaks (the science fix for blind percentiles) ──
     # A whole-clip p95 can pick its "peak" from a stumble, a walk-off segment,
     # or an occlusion artifact. When stride events are detected, each peak is
-    # instead extracted WHERE it is biomechanically defined — knee drive and
-    # swing flexion inside a swing window, hip extension at toe-off — and the
+    # instead extracted WHERE it is biomechanically defined, knee drive and
+    # swing flexion inside a swing window, hip extension at toe-off, and the
     # reported value is the MEDIAN of per-stride peaks (robust across strides).
     # A stride whose peak violates the physical envelope marks the metric
     # suspect: the value stays robust but is never certified trusted.
@@ -832,7 +832,7 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
             _plo, _phi = PLAUSIBLE[_key]
             # Suspect if any stride-window peak violates the physical envelope,
             # OR if a non-trivial fraction of the whole series does (keypoint
-            # corruption near the windows is still corruption — the median stays
+            # corruption near the windows is still corruption, the median stays
             # robust, the trusted badge does not survive the evidence).
             _frac_bad = float(np.mean((_series < _plo) | (_series > _phi)))
             if _frac_bad > 0.02 or any(not (_plo <= p <= _phi) for p in _all):
@@ -842,7 +842,7 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
     # it and let the temporal trust gate see the REAL foot-sample rate. Otherwise
     # timing rides the 15fps pose rate and can never clear FPS_TRUST_GATE (=120).
     #
-    # Graceful degradation: a flat or broken flow signal yields 0s — that must
+    # Graceful degradation: a flat or broken flow signal yields 0s, that must
     # DOWNGRADE to the pose-rate estimate (with the trust gate seeing the honest,
     # lower sample rate for that quantity), never report "no cadence" for a clip
     # whose pose series shows clear strides. Per-key fps so a mixed outcome
@@ -870,7 +870,7 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
     # Robust fallback statistics: a primary peak percentile can be shot outside
     # the physical envelope by a handful of corrupted frames (occlusion, a
     # momentary keypoint swap). Before declaring such a metric unmeasurable,
-    # retry with a more outlier-resistant statistic — a salvaged read is always
+    # retry with a more outlier-resistant statistic, a salvaged read is always
     # demoted to experimental (the primary read DID fail), but it participates
     # in the score and focus areas instead of silently vanishing.
     alt_values: dict[str, float] = {
@@ -930,7 +930,7 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
         else:
             # Tier 2 → best in its own plane, degraded (not zeroed) off-axis. Sagittal
             # metrics trust a SIDE view; frontal metrics (valgus, hip drop) trust a
-            # FRONT/BACK view — the inverse penalty, so every angle yields some trusted
+            # FRONT/BACK view, the inverse penalty, so every angle yields some trusted
             # feedback.
             plane = "frontal" if key in FRONTAL else "sagittal"
             vp = _viewpoint_penalty(azimuth_deg, plane) if vp_override is None else vp_override
@@ -938,17 +938,17 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
             trust = "trusted" if (conf >= TRUST_CONF_MIN and vp <= TRUST_VP_MAX) else "experimental"
         # Event-anchoring gate for peak angles: a peak not tied to a detected
         # stride event (no events found), or drawn from strides with envelope
-        # violations, is a descriptive read — reported, scored (discounted),
+        # violations, is a descriptive read, reported, scored (discounted),
         # but never certified trusted.
         if key in EVENT_ANGLES and (not event_conditioned or key in event_suspect):
             trust = "experimental"
         conf = max(0.0, min(1.0, conf))
         # Plausibility backstop: a value outside the physical envelope is a failed
         # measurement (off-axis perspective, static-bystander lock, sub-Nyquist
-        # timing) — demote it to experimental so it is never shown as trusted.
+        # timing), demote it to experimental so it is never shown as trusted.
         # Before dropping the metric entirely, try the robust fallback statistic
         # (alt_values): if the outlier-resistant read IS physically sane, the
-        # primary was corrupted by a few bad frames, not unmeasurable — report
+        # primary was corrupted by a few bad frames, not unmeasurable, report
         # the salvaged value as experimental rather than losing the metric.
         plo, phi = _plausible_range(key, phase)
         plausible = (plo <= val <= phi) and (val > 0 or key in ZERO_IS_VALID)
@@ -969,8 +969,8 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
         lo, hi = _norm_range(key, phase)
         # Only a TRUSTED, plausible metric may raise an authoritative flaw +
         # drill. Experimental/descriptive readings are never flagged as faults
-        # — that is the honesty fix for the "garbage wearing a trusted badge /
-        # false-flaw every clip" failures found in the baseline — but they are
+        # - that is the honesty fix for the "garbage wearing a trusted badge /
+        # false-flaw every clip" failures found in the baseline, but they are
         # no longer silently dropped either: usable experimental deviations
         # surface as hedged FOCUS AREAS below, and deduct (discounted) from
         # the form score. A non-moving (static-lock) subject never raises a
@@ -985,7 +985,7 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
             ts = int(frame_i / max(src_fps, 1e-6) * 1000)
             flaws.append({
                 "id": fid, "name": NAMES[key], "phase": phase, "severity": sev,
-                "plainExplanation": f"{WHY[key]} Your {_metric_label(key)} is {direction} typical — {_fmt_value(val, UNIT[key])} vs. {_fmt_value(lo, UNIT[key])}–{_fmt_value(hi, UNIT[key])}.",
+                "plainExplanation": f"{WHY[key]} Yours is {_fmt_value(val, UNIT[key])}, {direction} the typical {_fmt_value(lo, UNIT[key])} to {_fmt_value(hi, UNIT[key])}.",
                 "evidence": {"frameTimestampMs": ts,
                              "jointAngles3D": {"knee_drive": round(values['knee_drive'][0], 1), "hip_extension": round(values['hip_extension'][0], 1), "trunk_lean": round(values['trunk_lean'][0], 1)},
                              "measured": band, "normalRange": list(_norm_range(key, phase)), "viewpointPenalty": round(vp, 2)},
@@ -996,7 +996,7 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
     # A plan needs targets even when few authoritative faults survive the trust
     # gate, but inventing flaws (or loosening the gate) would spend the app's
     # honesty to get them. Instead, a separate channel with hedged copy:
-    # experimental out-of-band deviations first ("unconfirmed" — real readings
+    # experimental out-of-band deviations first ("unconfirmed", real readings
     # we won't state as fact), then in-band values nearest their band edge
     # ("refinement"). Flaw + focus-area count is capped at FOCUS_TARGET; each
     # carries its drill inline so the coach/plan surfaces can use it WITHOUT
@@ -1014,15 +1014,15 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
             if kind == "unconfirmed":
                 direction = "below" if val < lo else "above"
                 explanation = (
-                    f"{WHY[key]} This clip reads your {_metric_label(key)} {direction} typical — "
-                    f"{_fmt_value(val, UNIT[key])} vs. {_fmt_value(lo, UNIT[key])}–{_fmt_value(hi, UNIT[key])} — "
+                    f"{WHY[key]} This clip reads yours at {_fmt_value(val, UNIT[key])}, {direction} "
+                    f"the typical {_fmt_value(lo, UNIT[key])} to {_fmt_value(hi, UNIT[key])}. "
                     "but the capture wasn't clean enough to call it a fault. Worth confirming on a re-film."
                 )
             else:
                 explanation = (
-                    f"{WHY[key]} Your {_metric_label(key)} is inside the healthy range but close to the edge — "
-                    f"{_fmt_value(val, UNIT[key])} vs. {_fmt_value(lo, UNIT[key])}–{_fmt_value(hi, UNIT[key])}. "
-                    "Not a fault — a sharpening candidate."
+                    f"{WHY[key]} Your {_metric_label(key)} is inside the healthy range but close to the edge, "
+                    f"Yours is {_fmt_value(val, UNIT[key])}, against a typical {_fmt_value(lo, UNIT[key])} to {_fmt_value(hi, UNIT[key])}. "
+                    "Not a fault, a sharpening candidate."
                 )
             focus_areas.append({
                 "id": f"focus-{key.replace('_', '-')}", "key": key, "name": NAMES[key],
@@ -1034,8 +1034,8 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
             })
 
     # Running form score: deduction-based composite (see _form_score). Usable =
-    # plausible + confident. Every usable metric scores — trusted at full
-    # weight, experimental at EXPERIMENTAL_FORM_WEIGHT — so thin trust
+    # plausible + confident. Every usable metric scores, trusted at full
+    # weight, experimental at EXPERIMENTAL_FORM_WEIGHT, so thin trust
     # coverage can no longer hide real faults behind a clean trusted metric.
     scorable = [
         (m["key"], m["measured"]["value"], m["trustStatus"] == "trusted")
@@ -1047,9 +1047,9 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
     overall = float(np.mean([m["measured"]["confidence"] for m in metrics]))
     nudge = None
     if not moving_subject:
-        nudge = "Couldn't lock onto a clearly running subject — make sure the runner is centered (or brush to select them) and moving across the frame."
+        nudge = "Couldn't lock onto a clearly running subject, make sure the runner is centered (or brush to select them) and moving across the frame."
     elif dropped_pct > 0.5:
-        nudge = "The runner was hard to track for much of this clip — keep them in frame, and brush-select them to lock on."
+        nudge = "The runner was hard to track for much of this clip, keep them in frame, and brush-select them to lock on."
     elif azimuth_deg > 45:
         nudge = "Film from the side (perpendicular to running direction) for trustworthy joint angles."
     elif cap_fps < 60:
@@ -1058,7 +1058,7 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
     if not moving_subject:
         summary = f"Couldn't get a clear read on a running subject in this clip. Form score {economy}/100."
     elif not flaws:
-        summary = f"Clean mechanics — nothing flagged. Form score {economy}/100."
+        summary = f"Clean mechanics, nothing flagged. Form score {economy}/100."
     else:
         summary = f"{len(flaws)} thing{'s' if len(flaws) > 1 else ''} to work on. Form score {economy}/100."
 
@@ -1096,7 +1096,7 @@ def _collect_scalars(frame_iter: Iterable[dict], azimuth_deg: float,
     virtual-camera path (src/virtual_camera.py) needs exactly that: sagittal
     scalars from a synthetic side camera and frontal scalars from a synthetic
     front camera, scored together as one athlete rather than merged after the
-    fact — flaws, focus areas and the form score are all derived from the whole
+    fact, flaws, focus areas and the form score are all derived from the whole
     metric set inside `_assemble`, so splitting that would mean duplicating it.
 
     Returns (S, idxs, mean_conf, use_az, excluded_pct). Behaviour is unchanged
@@ -1146,7 +1146,7 @@ def _collect_scalars(frame_iter: Iterable[dict], azimuth_deg: float,
     excluded_pct = (total - included) / total if total else 1.0
     # Fail ONLY when there is genuinely nothing to analyze. A high excluded
     # fraction used to hard-fail the whole clip even with plenty of good frames
-    # left (e.g. the tracker losing then re-finding the athlete) — now the
+    # left (e.g. the tracker losing then re-finding the athlete), now the
     # usable frames are analyzed, the dropped fraction is reported in
     # captureQuality, and per-metric trust gating handles the uncertainty.
     if included < min_frames:
@@ -1156,7 +1156,7 @@ def _collect_scalars(frame_iter: Iterable[dict], azimuth_deg: float,
     # The hip/shoulder-width heuristic is UNSTABLE frame-to-frame (the baseline
     # measured 33° vs 0° on the same clip depending on the tracked person), so:
     # median for the estimate, and when the spread is wide (IQR > 25°) take the
-    # 75th percentile instead — a conservatively HIGHER azimuth that demotes
+    # 75th percentile instead, a conservatively HIGHER azimuth that demotes
     # sagittal trust rather than certifying angles off a shaky view estimate.
     use_az = float(azimuth_deg)
     if estimate_azimuth and az_samples:
@@ -1182,10 +1182,10 @@ def analyze_2d_sagittal_stream(frame_iter: Iterable[dict], fps: float,
     series. Raises low_confidence_video if too few usable frames survive. Stops
     after max_frames to bound worst-case latency.
 
-    fps          — pose sample rate (gait timing between retained frames)
-    source_fps   — video container fps (overlay / evidence wall-clock timestamps)
-    capture_fps  — phone capture rate (quality reporting + temporal trust gate)
-    image_down   — optional gravity projection in image [y, x] coords
+    fps, pose sample rate (gait timing between retained frames)
+    source_fps, video container fps (overlay / evidence wall-clock timestamps)
+    capture_fps, phone capture rate (quality reporting + temporal trust gate)
+    image_down, optional gravity projection in image [y, x] coords
 
     If `overlay_out` is provided, it is filled with one record per included frame
     {tMs, frameIndex, kp:[[y,x,conf]x17]} for the mobile skeleton overlay."""

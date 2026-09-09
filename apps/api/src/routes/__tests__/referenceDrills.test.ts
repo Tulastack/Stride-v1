@@ -33,7 +33,7 @@ import express from 'express';
 import type { Response, NextFunction } from 'express';
 import request from 'supertest';
 
-// ─── Test app — built using mock functions directly ────────────────
+// ─── Test app, built using mock functions directly ────────────────
 // We don't import from db/queries.js or middleware/auth.js here
 // to avoid ESM static-import mock issues. The functions used inside
 // handlers close over the jest.fn() instances.
@@ -48,7 +48,7 @@ function buildApp() {
     next();
   });
 
-  // GET /reference-drills — all drills
+  // GET /reference-drills, all drills
   app.get('/reference-drills', async (_req: any, res: Response, next: NextFunction) => {
     try {
       const drills = await mockGetAllReferencedrills();
@@ -58,7 +58,7 @@ function buildApp() {
     }
   });
 
-  // GET /reference-drills/:key — single drill
+  // GET /reference-drills/:key, single drill
   app.get('/reference-drills/:key', async (req: any, res: Response, next: NextFunction) => {
     try {
       const drill = await mockGetReferenceDrill();

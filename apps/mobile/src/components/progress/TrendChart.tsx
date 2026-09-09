@@ -17,7 +17,7 @@ interface TrendChartProps {
 const CHART_HEIGHT = 96;
 const PAD = 12;
 
-/** A small hand-rolled SVG line chart — the app has no charting library, so
+/** A small hand-rolled SVG line chart, the app has no charting library, so
  * this follows the same pattern as the hand-rolled skeleton overlays in
  * PoseSnapshot/PoseVideoPlayer rather than adding a new dependency. */
 export function TrendChart({ title, unit, points, color, mutedColor, cardColor, borderColor, textColor }: TrendChartProps) {

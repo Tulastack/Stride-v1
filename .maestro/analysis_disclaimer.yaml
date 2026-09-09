@@ -1,5 +1,5 @@
 appId: com.stride.mobile
-name: "Analysis result screen — disclaimer text is visible"
+name: "Analysis result screen, disclaimer text is visible"
 ---
 - launchApp
 

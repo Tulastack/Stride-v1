@@ -39,7 +39,7 @@ export const reconstructionMethodSchema = z.enum(['2d', '3d-mono', '3d-multi']);
 export const evidenceSchema = z
   .object({
     frameTimestampMs: z.number().nonnegative(),
-    // Canonical-frame angles are mandatory — at least one joint must be present.
+    // Canonical-frame angles are mandatory, at least one joint must be present.
     jointAngles3D: z
       .record(z.string(), z.number())
       .refine((a) => Object.keys(a).length > 0, {

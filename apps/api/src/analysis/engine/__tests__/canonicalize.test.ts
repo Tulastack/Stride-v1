@@ -1,5 +1,5 @@
 /**
- * PROMPT B.1 keystone — the view-invariance proof.
+ * PROMPT B.1 keystone, the view-invariance proof.
  *
  * Canonicalization must make the SAME motion filmed from two camera angles
  * produce the same canonical-frame angle curves (within tolerance). This is the

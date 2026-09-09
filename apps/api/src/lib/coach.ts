@@ -1,4 +1,4 @@
-// Stride Coach — an LLM coach that is GROUNDED in the athlete's own
+// Stride Coach, an LLM coach that is GROUNDED in the athlete's own
 // biomechanic analysis and scoped to running form, track training, nutrition,
 // and recovery. It receives the ML analyzer's structured output as context so
 // every reply references the athlete's real measured numbers.
@@ -96,7 +96,7 @@ export function buildAnalysisContext(
 
   return [
     who,
-    `LATEST RUN ANALYSIS — running economy ${result.economyScore ?? '—'}/100:`,
+    `LATEST RUN ANALYSIS, running economy ${result.economyScore ?? 'n/a'}/100:`,
     'Metrics:',
     ...lines,
     flaws.length ? `Top flagged issues (worst first):\n${flaws.join('\n')}` : 'No issues flagged.',
@@ -116,14 +116,14 @@ export async function generateCoachReply(params: {
    * 70-130 words) PLUS headroom for a reasoning model's hidden thinking tokens,
    * which consume this budget without appearing in completion_tokens. The
    * add-to-calendar path passes a far larger one, because it emits a two-week
-   * JSON array in one shot and a truncated array is unparseable — silently
+   * JSON array in one shot and a truncated array is unparseable, silently
    * turning into a 422 rather than a short answer.
    */
   maxTokens?: number;
 }): Promise<string> {
   const provider = resolveCoachProvider();
 
-  // Single system turn — see the note in coach/agent.ts.
+  // Single system turn, see the note in coach/agent.ts.
   const messages = [
     { role: 'system' as const, content: `${SYSTEM_PROMPT}\n\n${params.analysisContext}` },
     ...(params.history ?? []).slice(-4),

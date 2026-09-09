@@ -30,14 +30,14 @@ describe('calculateAge', () => {
     expect(calculateAge(dob, ref)).toBe(17);
   });
 
-  it('handles leap year birthday (Feb 29) — non-leap reference year', () => {
+  it('handles leap year birthday (Feb 29), non-leap reference year', () => {
     // Born Feb 29 2000. On Feb 28 2023 they are still 22 (haven't had birthday yet).
     const dob = new Date('2000-02-29');
     const ref = new Date('2023-02-28');
     expect(calculateAge(dob, ref)).toBe(22);
   });
 
-  it('handles leap year birthday (Feb 29) — on Mar 1 of non-leap year', () => {
+  it('handles leap year birthday (Feb 29), on Mar 1 of non-leap year', () => {
     // Born Feb 29 2000. On Mar 1 2023 they are 23.
     const dob = new Date('2000-02-29');
     const ref = new Date('2023-03-01');

@@ -1,4 +1,4 @@
-// Coach Briefing computation (PROMPT F.5) — pure, data-driven, no LLM free-text.
+// Coach Briefing computation (PROMPT F.5), pure, data-driven, no LLM free-text.
 // Also backs the Progress timeline math (PROMPT F.6): deltas, PB detection, and
 // confidence-gated comparisons. All copy is templated from structured fields.
 
@@ -59,7 +59,7 @@ export function computeDelta(previous: Metric, current: Metric): MetricDelta {
     comparable,
     reason: comparable
       ? undefined
-      : 'Not enough confidence to compare yet — re-film at 120fps with more light; a slight oblique angle helps confirm.',
+      : 'Not enough confidence to compare yet. Re-film at 120fps with more light; a slight oblique angle helps.',
   };
 }
 
@@ -133,7 +133,7 @@ export function flawIdToMetric(flawId?: string): string | undefined {
 }
 
 /**
- * F.5/F.6 task 3 — suggest the best capture angle for the flaw being tracked.
+ * F.5/F.6 task 3, suggest the best capture angle for the flaw being tracked.
  * Capture-agnostic: handheld while moving is always fine; this nudges oblique
  * only when a sagittal metric needs more in-plane signal.
  */
@@ -141,19 +141,19 @@ export function recommendedRetestCapture(flawId?: string, metricKey?: string): s
   const key = metricKey ?? flawIdToMetric(flawId);
   const tips: Record<string, string> = {
     trunk_lean:
-      'Film from roughly 30–45° off your running line so trunk lean is in-plane — handheld while you move is fine.',
+      'Film from roughly 30 to 45° off your running line so trunk lean is in plane. Handheld while you move is fine.',
     knee_drive:
       'A slight oblique angle (~30°) keeps both knees visible while you hold the phone.',
     hip_extension:
-      'Turn about 30° toward side-on so hip extension is visible — handheld while you move is fine.',
+      'Turn about 30° toward side-on so hip extension is visible. Handheld while you move is fine.',
     contact_time_ms:
       'Keep full body in frame at 120fps; a side-ish angle helps foot contacts stay visible.',
     cadence_spm:
-      'Handheld is fine — keep hips and feet in frame at 120fps for cadence.',
+      'Handheld is fine. Keep hips and feet in frame at 120fps for cadence.',
   };
   return (
     tips[key ?? ''] ??
-    'Re-film at 120fps with your full stride in frame — any angle works; a slight oblique helps if confidence was low.'
+    'Re-film at 120fps with your full stride in frame. Any angle works, and a slight oblique helps if confidence was low.'
   );
 }
 

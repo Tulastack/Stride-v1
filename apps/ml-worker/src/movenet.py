@@ -12,8 +12,8 @@ from typing import Any
 import cv2
 import numpy as np
 # TensorFlow is imported lazily inside the functions that need it, so modules
-# that only use MoveNet's constants (e.g. the RTMPose backend) — or RTMPose-only
-# deploys — don't pay the heavy TF import.
+# that only use MoveNet's constants (e.g. the RTMPose backend), or RTMPose-only
+# deploys, don't pay the heavy TF import.
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +46,7 @@ KEYPOINT_INDEX: dict[str, int] = {name: idx for idx, name in enumerate(KEYPOINT_
 CONFIDENCE_THRESHOLD: float = 0.3
 
 # Core sprint-relevant joints (shoulders, hips, knees, ankles). We gate frames
-# on the mean confidence of THESE joints, not all 17 — face/ear keypoints are
+# on the mean confidence of THESE joints, not all 17, face/ear keypoints are
 # irrelevant to biomechanics and, on side/running views, drag the 17-kp mean
 # below threshold even when the body is tracked well.
 CORE_JOINTS: list[str] = [
@@ -174,7 +174,7 @@ def process_video(
     Returns:
         A list of dicts, one per analysed frame:
             - frame_index (int): 0-based index in the *source* video
-            - keypoints (np.ndarray): shape (17, 3) — [y, x, confidence]
+            - keypoints (np.ndarray): shape (17, 3), [y, x, confidence]
             - keypoint_dict (dict): maps keypoint name → [y, x, confidence]
             - avg_confidence (float): mean confidence across 17 keypoints
             - excluded (bool): True if avg_confidence < CONFIDENCE_THRESHOLD

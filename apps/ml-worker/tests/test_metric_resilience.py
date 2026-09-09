@@ -1,5 +1,5 @@
 """Graceful degradation contract: a failed precondition downgrades a metric,
-it never silently erases it — and it never kills the whole analysis.
+it never silently erases it, and it never kills the whole analysis.
 
 Locks the three fatal paths reported from real use: (1) a flat/broken optical-
 flow timing signal zeroed cadence/contact instead of falling back to the pose
@@ -47,7 +47,7 @@ def _metric(res, key):
 
 
 def test_flat_timing_signal_falls_back_to_pose_gait():
-    # A broken/flat optical-flow signal yields no strikes — cadence and contact
+    # A broken/flat optical-flow signal yields no strikes, cadence and contact
     # must downgrade to the pose-rate estimate, not report 0 and vanish.
     flat = [(i, 0.5, 0.5) for i in range(300)]
     res = _run(_series(), timing_signal=flat, timing_fps=240.0, capture_fps=240.0)
@@ -61,7 +61,7 @@ def test_flat_timing_signal_falls_back_to_pose_gait():
 def test_outlier_spikes_salvage_the_metric_instead_of_dropping_it():
     # A 4-frame keypoint corruption shoots the p95 knee-drive peak past the
     # physical envelope (135°). The robust fallback statistic recovers a sane
-    # reading: reported, usable, demoted to experimental — not erased.
+    # reading: reported, usable, demoted to experimental, not erased.
     S = _series()
     kd = np.asarray(S["knee_drive"], dtype=float)
     kd[40:46] = 300.0

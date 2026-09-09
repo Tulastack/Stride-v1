@@ -1,5 +1,5 @@
 #!/bin/bash
-# Redeploy script — scales ECS services back to their normal desired counts.
+# Redeploy script, scales ECS services back to their normal desired counts.
 # Use after undeploy.sh to bring services back online.
 # Usage: ./scripts/redeploy.sh
 

@@ -33,7 +33,7 @@ describe('DrillSuggestionCard', () => {
     const { getByTestId } = render(
       <DrillSuggestionCard suggestion={mockSuggestion} onApprove={onApprove} onSkip={jest.fn()} />
     );
-    // First tap opens the scheduler — nothing is committed yet.
+    // First tap opens the scheduler, nothing is committed yet.
     fireEvent.press(getByTestId('approve-suggestion-sug-1'));
     expect(onApprove).not.toHaveBeenCalled();
     // Only the explicit confirm writes.

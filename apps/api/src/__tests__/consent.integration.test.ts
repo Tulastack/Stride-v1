@@ -2,7 +2,7 @@
  * Integration tests for Consent & Liability (Prompt 2).
  *
  * Strategy: mount requireConsent middleware and route handlers directly in a
- * test express app (no JWT — user is injected via a simple middleware). This
+ * test express app (no JWT, user is injected via a simple middleware). This
  * avoids ESM jest.mock hoisting issues with the baked-in `authenticate` calls
  * inside the existing routers, while still testing against a real Postgres DB.
  */
@@ -113,7 +113,7 @@ async function cleanupUser(userId: string) {
 }
 
 // ─── Inline test app builder ──────────────────────────────────────────────────
-// Mounts requireConsent directly — no JWT/authenticate in the chain.
+// Mounts requireConsent directly, no JWT/authenticate in the chain.
 
 async function buildConsentGatedApp(testUser: Record<string, any>) {
   const { requireConsent } = await import('../middleware/consent.js');
@@ -122,7 +122,7 @@ async function buildConsentGatedApp(testUser: Record<string, any>) {
   const app = express();
   app.use(express.json());
 
-  // Inject the test user — simulates what authenticate does in production
+  // Inject the test user, simulates what authenticate does in production
   app.use((req: any, _res: Response, next: NextFunction) => {
     req.userId = testUser.id;
     req.supabaseUid = testUser.supabase_uid;
@@ -130,7 +130,7 @@ async function buildConsentGatedApp(testUser: Record<string, any>) {
     next();
   });
 
-  // POST /analyses — create analysis row + enqueue (mirrors /videos/upload-url + /finalize)
+  // POST /analyses, create analysis row + enqueue (mirrors /videos/upload-url + /finalize)
   app.post(
     '/analyses',
     requireConsent,
@@ -146,7 +146,7 @@ async function buildConsentGatedApp(testUser: Record<string, any>) {
     },
   );
 
-  // POST /consent — records consent directly using the consent logic
+  // POST /consent, records consent directly using the consent logic
   app.post('/consent', async (req: any, res: Response, next: NextFunction) => {
     try {
       const { recordConsent } = await import('../db/queries.js');
@@ -196,7 +196,7 @@ async function buildConsentGatedApp(testUser: Record<string, any>) {
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
-  describe('POST /analyses — consent gating', () => {
+  describe('POST /analyses, consent gating', () => {
   it('returns 403 CONSENT_REQUIRED when consent_given_at IS NULL, no row created, no SQS', async () => {
     const user = await createTestUser({ consent_version: 0 }); // no consent_given_at
     const app = await buildConsentGatedApp(user);
@@ -238,7 +238,7 @@ async function buildConsentGatedApp(testUser: Record<string, any>) {
   });
   });
 
-  describe('POST /consent — minor user gating', () => {
+  describe('POST /consent, minor user gating', () => {
   it('blocks minor (age 17) without parental_consent', async () => {
     const user = await createTestUser({ consent_version: 0 });
     const app = await buildConsentGatedApp(user);

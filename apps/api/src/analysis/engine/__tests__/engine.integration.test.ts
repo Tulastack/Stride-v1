@@ -1,5 +1,5 @@
 /**
- * PROMPT B.1 — full pipeline integration through the reduced engine.
+ * PROMPT B.1, full pipeline integration through the reduced engine.
  */
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -15,7 +15,7 @@ const FIXTURE_VIDEO = join(
   'fixtures/stride-side.mp4'
 );
 
-describe('ReducedBiomechanicsEngine.run (precomputed clips — unit tests only)', () => {
+describe('ReducedBiomechanicsEngine.run (precomputed clips, unit tests only)', () => {
   it('side-on clip yields a schema-valid, trusted result', () => {
     const result = engine.run(sideAccelClip);
     expect(() => validateAnalysisResult(result)).not.toThrow();

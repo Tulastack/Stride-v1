@@ -72,7 +72,7 @@ describe('broadcastProgress SSE serialization', () => {
     // broadcastProgress only emits 'event: progress' lines, never ':keepalive' or ':heartbeat'
     expect(frame).not.toContain('keepalive');
     expect(frame).not.toContain('heartbeat');
-    // Should contain exactly 'event: progress' — no SSE comment lines (which start with ':')
+    // Should contain exactly 'event: progress', no SSE comment lines (which start with ':')
     const lines = frame.split('\n').filter(l => l.trim().length > 0);
     for (const line of lines) {
       expect(line.startsWith(':')).toBe(false);

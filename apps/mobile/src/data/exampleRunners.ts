@@ -1,7 +1,7 @@
 // Curated reference runners for the Progress tab's Insights "Runner to Watch"
-// box — real, diverse elite track & field athletes (sprints, hurdles, middle
+// box, real, diverse elite track & field athletes (sprints, hurdles, middle
 // and long distance, relays; mixed era/gender/nationality), referenced purely
-// as public technique examples. No video assets yet (`videoUrl` left unset) —
+// as public technique examples. No video assets yet (`videoUrl` left unset),
 // swap in real clips/links when available.
 
 export interface ExampleRunner {
@@ -111,11 +111,11 @@ export const EXAMPLE_RUNNERS: ExampleRunner[] = [
   { id: 'r096', name: 'Beatrice Chepkoech', specialty: 'Steeplechase', formNote: 'Watch the strong, efficient barrier clearance at a fast pace.' },
   { id: 'r097', name: 'Elijah Manangoi', specialty: '1500m', formNote: 'Watch the relaxed cruising stride before a powerful finishing kick.' },
   { id: 'r098', name: 'Laura Muir', specialty: '1500m', formNote: 'Watch the relaxed cruising stride before a strong closing kick.' },
-  { id: 'r099', name: 'Christian Taylor', specialty: 'Sprint approach (triple jump)', formNote: 'Watch the accelerating sprint approach before takeoff — pure speed mechanics.' },
+  { id: 'r099', name: 'Christian Taylor', specialty: 'Sprint approach (triple jump)', formNote: 'Watch the accelerating sprint approach before takeoff, pure speed mechanics.' },
   { id: 'r100', name: 'Marie-Josée Ta Lou', specialty: '100m / 200m', formNote: 'Watch the quick start and relaxed top-end speed through the finish.' },
 ];
 
-/** Deterministic daily pick — stable within a day, rotates the next day. No
+/** Deterministic daily pick, stable within a day, rotates the next day. No
  * backend needed; just a rotating index off the current date. */
 export function pickRunnerOfTheDay(runners: ExampleRunner[] = EXAMPLE_RUNNERS): ExampleRunner {
   const dayIndex = Math.floor(Date.now() / 86_400_000);

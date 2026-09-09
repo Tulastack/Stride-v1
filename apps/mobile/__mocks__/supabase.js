@@ -1,4 +1,4 @@
-// Test mock for src/lib/supabase — avoids loading the native Supabase SDK /
+// Test mock for src/lib/supabase, avoids loading the native Supabase SDK /
 // AsyncStorage in jest. Demo-mode semantics: not configured, no token.
 module.exports = {
   supabase: null,

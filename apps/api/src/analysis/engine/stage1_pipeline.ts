@@ -1,4 +1,4 @@
-// Stage 1 orchestration — run hygiene end-to-end on per-joint time series.
+// Stage 1 orchestration, run hygiene end-to-end on per-joint time series.
 import type { JointName, Keypoint2D, Keypoints2DFrame } from './types.js';
 import { dropLowConfidence, gapFill, lowPass, meanConfidence } from './stage1_keypoints.js';
 

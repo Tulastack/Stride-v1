@@ -4,7 +4,7 @@
 #   ./scripts/dev-up.sh
 #
 # No Docker. The API runs with STORAGE_DRIVER=local, so uploads go to a shared
-# directory on disk and the ML worker polls Postgres directly — the only
+# directory on disk and the ML worker polls Postgres directly, the only
 # external service needed is Postgres itself.
 #
 # The one thing that reliably breaks phone testing is the Mac's LAN IP changing
@@ -37,7 +37,7 @@ fi
 # A 192.0.0.x address is iPhone USB/hotspot tethering, not a shared LAN. The
 # stack will run, but a second device generally cannot route to the Mac there.
 case "$LAN_IP" in
-  192.0.0.*) say "network" "$IFACE @ $LAN_IP  (tethered — phone may not reach this)" ;;
+  192.0.0.*) say "network" "$IFACE @ $LAN_IP  (tethered, phone may not reach this)" ;;
   *)         say "network" "$IFACE @ $LAN_IP" ;;
 esac
 
@@ -56,7 +56,7 @@ if grep -qE '^GOOGLE_API_KEY=.+' "$ROOT/apps/api/.env"; then
 elif grep -qE '^GROQ_API_KEY=.+' "$ROOT/apps/api/.env"; then
   say "coach" "Groq (no Google key set)"
 else
-  say "coach" "NOT CONFIGURED — analysis works, coach will not"
+  say "coach" "NOT CONFIGURED, analysis works, coach will not"
 fi
 
 # ── 4. Point the app at this Mac ─────────────────────────────────────────────
@@ -89,7 +89,7 @@ curl -sf --max-time 3 "http://127.0.0.1:$API_PORT/health" >/dev/null \
 say "api" "http://$LAN_IP:$API_PORT  (log: $LOG_DIR/api.log)"
 
 # The worker needs the API's own env (DB, storage dir) PLUS the pipeline choice
-# and a callback URL. API_SERVER_URL defaulting to :3000 has bitten before —
+# and a callback URL. API_SERVER_URL defaulting to :3000 has bitten before,
 # another service answered there and a finished analysis was silently dropped.
 ( cd "$ROOT/apps/ml-worker" \
   && set -a && . "$ROOT/apps/api/.env" && set +a \

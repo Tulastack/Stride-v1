@@ -88,7 +88,7 @@ export default function ConsentScreen() {
 
       router.replace('/(onboarding)/welcome');
     } catch (err: any) {
-      // Consent MUST be recorded server-side — never proceed silently.
+      // Consent MUST be recorded server-side, never proceed silently.
       Alert.alert('Could not save consent', err?.message || 'Please check your connection and try again.');
     } finally {
       setLoading(false);

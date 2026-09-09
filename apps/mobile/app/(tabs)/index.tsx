@@ -42,7 +42,7 @@ export default function UploadScreen() {
         accelerometer: accelSamples,
         durationMs,
         // TODO: high-fps capture needs react-native-vision-camera or native
-        // camera config — CameraView records at the platform default (~30fps).
+        // camera config, CameraView records at the platform default (~30fps).
         fps: 30,
         preferredFps: CAPTURE_PREFS.preferredFps,
         sloMoRequested: slowMo,
@@ -81,7 +81,7 @@ export default function UploadScreen() {
     setRecording(true);
     await Promise.all([gyroRef.current.start(), accelRef.current.start()]);
     try {
-      // Real duration from wall-clock timestamps — recordAsync resolves on stop.
+      // Real duration from wall-clock timestamps, recordAsync resolves on stop.
       const startedAt = Date.now();
       const video = await cameraRef.current.recordAsync({ maxDuration: 12 });
       const durationMs = Date.now() - startedAt;

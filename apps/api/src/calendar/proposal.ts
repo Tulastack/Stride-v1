@@ -1,4 +1,4 @@
-// Calendar proposal generation (PROMPT F.7) — PURE, no side effects.
+// Calendar proposal generation (PROMPT F.7), PURE, no side effects.
 //
 // From the week's focus drill we generate a PROPOSED schedule (draft only).
 // Nothing here writes anything: the only write path is an explicit user

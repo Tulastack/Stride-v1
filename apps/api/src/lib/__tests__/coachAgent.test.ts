@@ -70,7 +70,7 @@ describe('coach tool executors', () => {
     expect(deps.getAnalysesByUser).toHaveBeenCalledWith('u1');
   });
 
-  it('never throws — a failing dep is reported as text', async () => {
+  it('never throws, a failing dep is reported as text', async () => {
     const deps = makeDeps({
       getReferenceDrill: jest.fn<CoachDeps['getReferenceDrill']>(async () => {
         throw new Error('db down');

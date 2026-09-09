@@ -118,7 +118,7 @@ describe('createMetricsFromAnalysis', () => {
   });
 });
 
-describe('getMetricsTrend — weekly averages', () => {
+describe('getMetricsTrend, weekly averages', () => {
   it('returns weekly averages in correct format', async () => {
     const trendData = [
       { week: '2024-01-01', avg_value: 80.25 },

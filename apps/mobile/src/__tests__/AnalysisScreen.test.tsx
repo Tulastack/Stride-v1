@@ -1,5 +1,5 @@
 /**
- * Analysis Screen tests — simplified to match the overhauled UI.
+ * Analysis Screen tests, simplified to match the overhauled UI.
  */
 import React from 'react';
 import { render, waitFor } from '@testing-library/react-native';
@@ -115,7 +115,7 @@ describe('AnalysisScreen', () => {
 
     const { getByText, getByLabelText } = render(<AnalysisScreen />);
     await waitFor(() => expect(getByText('ADD TO YOUR PLAN')).toBeTruthy());
-    // The approval gate is explicit — nothing is auto-scheduled.
+    // The approval gate is explicit, nothing is auto-scheduled.
     expect(getByText('Wicket runs')).toBeTruthy();
     const addBtn = getByLabelText('add-to-plan-drill-wickets');
     fireEvent.press(addBtn);

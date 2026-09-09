@@ -1,4 +1,4 @@
-// Stage 1 — 2D keypoints + Van Hooren-style hygiene.
+// Stage 1, 2D keypoints + Van Hooren-style hygiene.
 // (Real ViTPose/RTMPose/MoveNet detection is the GPU/ML path; these are the
 // post-processing primitives that run anywhere and are unit-tested.)
 
@@ -37,7 +37,7 @@ export function gapFill(series: (number | null)[]): number[] {
   return out as number[];
 }
 
-/** Low-pass (centered moving average) — stand-in for a ~15 Hz Butterworth. */
+/** Low-pass (centered moving average), stand-in for a ~15 Hz Butterworth. */
 export function lowPass(series: number[], window = 3): number[] {
   const half = Math.floor(window / 2);
   return series.map((_, i) => {
@@ -53,7 +53,7 @@ export function lowPass(series: number[], window = 3): number[] {
   });
 }
 
-/** Mean detector confidence across present keypoints — feeds Stage 6. */
+/** Mean detector confidence across present keypoints, feeds Stage 6. */
 export function meanConfidence(frame: Record<string, Keypoint2D | null | undefined>): number {
   const vals = Object.values(frame).filter((k): k is Keypoint2D => !!k).map((k) => k.confidence);
   return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;

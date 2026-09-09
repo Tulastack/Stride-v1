@@ -4,9 +4,9 @@ These items MUST be completed before any real users access the app (TestFlight, 
 
 ## Required Before Launch
 
-- [ ] **HTTPS** — Add ACM certificate + HTTPS listener on the ALB. Credentials are sent in plaintext over HTTP. App stores will reject without TLS.
-- [ ] **Rate limiting** — Add AWS WAF on the ALB and/or express-rate-limit middleware. Without this, a single script can rack up costs or crash the service.
-- [ ] **Input sanitization** — Already done for `/api/users`, but every new endpoint must use express-validator before any DB operation.
+- [ ] **HTTPS**, Add ACM certificate + HTTPS listener on the ALB. Credentials are sent in plaintext over HTTP. App stores will reject without TLS.
+- [ ] **Rate limiting**, Add AWS WAF on the ALB and/or express-rate-limit middleware. Without this, a single script can rack up costs or crash the service.
+- [ ] **Input sanitization**, Already done for `/api/users`, but every new endpoint must use express-validator before any DB operation.
 
 ## Nice to Have Before Launch
 

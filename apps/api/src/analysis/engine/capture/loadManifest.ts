@@ -62,7 +62,7 @@ export function loadCaptureManifest(videoPath: string, gyroPath?: string): Captu
     }
   }
 
-  // Minimal manifest when no sidecar — pipeline still requires keypoints/frames3d sidecars.
+  // Minimal manifest when no sidecar, pipeline still requires keypoints/frames3d sidecars.
   return {
     videoPath,
     fps: 60,

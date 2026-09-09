@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fine-tune RTMW3D on Stride's own footage — WRITTEN, NOT RUN.
+"""Fine-tune RTMW3D on Stride's own footage, WRITTEN, NOT RUN.
 
 This script is a design draft, not a tested tool. It has not been executed in
 this environment and should not be, without first resolving the licensing
@@ -11,7 +11,7 @@ pretrained checkpoint, its matching MMPose config, and a labeled 3D dataset)
 READ THIS BEFORE RUNNING ANYTHING
 =====================================================================
 
-1. LICENSING — the real blocker, not a formality.
+1. LICENSING, the real blocker, not a formality.
    src/pose3d_rtmw.py's own docstring flags that RTMW3D's published weights
    carry unresolved training-data provenance: the model card says Apache-2.0,
    but the 3D training mix is believed to include H3WB, derived from
@@ -44,12 +44,12 @@ READ THIS BEFORE RUNNING ANYTHING
       this script trains against. This is the actual project-sized piece of
       work, not the training loop itself.
 
-3. TOOLCHAIN — this is a different stack from the app's runtime.
+3. TOOLCHAIN, this is a different stack from the app's runtime.
    The ml-worker runs inference via `rtmlib` + `onnxruntime` (see
    requirements.txt) precisely so it never needs PyTorch or a GPU in
    production. Fine-tuning needs the OpenMMLab training stack instead:
    torch, mmengine, mmcv, mmdet, mmpose. That's a training-time-only
-   dependency set — do not add it to requirements.txt; keep it in a separate
+   dependency set, do not add it to requirements.txt; keep it in a separate
    venv/requirements-train.txt if this is ever actually run.
 
 =====================================================================
@@ -85,7 +85,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--checkpoint", required=True,
                    help="Pretrained RTMW3D .pth checkpoint (NOT the .onnx export used at inference time).")
     p.add_argument("--base-config", default="rtmw3d-x_8xb64-270e_cocktail14-256x192.py",
-                   help="MMPose config the checkpoint was trained with. PLACEHOLDER NAME — "
+                   help="MMPose config the checkpoint was trained with. PLACEHOLDER NAME, "
                         "replace with the config that actually ships next to your checkpoint.")
     p.add_argument("--train-ann", required=True,
                    help="COCO-WholeBody-3D-style annotation JSON for Stride's labeled training clips.")
@@ -97,12 +97,12 @@ def parse_args() -> argparse.Namespace:
                    help="Fine-tuning runs, so this should be a small fraction of the ~270 epochs "
                         "the base model trained for.")
     p.add_argument("--lr", type=float, default=5e-5,
-                   help="An order of magnitude (or more) below the base model's training LR — "
+                   help="An order of magnitude (or more) below the base model's training LR, "
                         "fine-tuning adapts, it doesn't retrain from scratch.")
     p.add_argument("--batch-size", type=int, default=16)
     p.add_argument("--freeze-backbone", action="store_true",
                    help="Freeze the image backbone and only train the pose head/neck. Recommended "
-                        "starting point given a small dataset — full unfreezing risks catastrophic "
+                        "starting point given a small dataset, full unfreezing risks catastrophic "
                         "forgetting of the base model's general pose prior on a few hundred clips.")
     p.add_argument("--val-interval", type=int, default=1)
     p.add_argument("--dry-run", action="store_true",
@@ -124,7 +124,7 @@ def build_config(args: argparse.Namespace) -> dict:
     cfg = Config.fromfile(args.base_config)
 
     # Load the pretrained weights, but do NOT resume its optimizer/scheduler
-    # state — this is a fresh fine-tune run, not a continuation of the
+    # state, this is a fresh fine-tune run, not a continuation of the
     # original training run.
     cfg.load_from = args.checkpoint
     cfg.resume = False
@@ -133,7 +133,7 @@ def build_config(args: argparse.Namespace) -> dict:
     cfg.train_dataloader.batch_size = args.batch_size
     cfg.train_dataloader.dataset.ann_file = args.train_ann
     cfg.train_dataloader.dataset.data_prefix = dict(img=args.train_img_root)
-    # Drop any dataset-specific subsampling/repeat the base config applied —
+    # Drop any dataset-specific subsampling/repeat the base config applied,
     # a small fine-tuning set shouldn't be further thinned.
     if "indices" in cfg.train_dataloader.dataset:
         cfg.train_dataloader.dataset.pop("indices")
@@ -146,7 +146,7 @@ def build_config(args: argparse.Namespace) -> dict:
     cfg.train_cfg.max_epochs = args.epochs
     cfg.train_cfg.val_interval = args.val_interval
     cfg.optim_wrapper.optimizer.lr = args.lr
-    # A short linear warmup then cosine decay to ~0 — avoids the large-LR
+    # A short linear warmup then cosine decay to ~0, avoids the large-LR
     # early-training instability that's fine for training from scratch but can
     # wreck already-good pretrained features.
     cfg.param_scheduler = [
@@ -161,7 +161,7 @@ def build_config(args: argparse.Namespace) -> dict:
         # -1 means "none frozen" in most MMPose backbones; a positive value
         # freezes that many stages from the input side. The right number
         # depends on the specific backbone in your base config (check its
-        # `num_stages`) — start with all-but-the-last-stage frozen and loosen
+        # `num_stages`), start with all-but-the-last-stage frozen and loosen
         # if validation loss plateaus too early.
         cfg.model.backbone.frozen_stages = max(
             0, getattr(cfg.model.backbone, "num_stages", 4) - 1)
@@ -182,7 +182,7 @@ def main() -> None:
         from mmengine.runner import Runner
     except ImportError:
         print(
-            "mmengine/mmpose are not installed in this environment (by design — "
+            "mmengine/mmpose are not installed in this environment (by design, "
             "the ml-worker runtime only needs onnxruntime/rtmlib for inference). "
             "Fine-tuning needs its own venv: torch, mmengine, mmcv, mmdet, mmpose.",
             file=sys.stderr,

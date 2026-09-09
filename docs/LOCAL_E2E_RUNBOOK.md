@@ -1,4 +1,4 @@
-# Stride — Local End-to-End Runbook
+# Stride, Local End-to-End Runbook
 
 How to bring up the **full working pipeline** locally and run a real
 upload → analysis → result cycle, plus the on-phone test.
@@ -20,7 +20,7 @@ This is the exact setup that was validated end-to-end:
 | Postgres | host instance (db `stride_test`) | 5432 |
 | LocalStack (S3 + SQS) | Docker | 4566 |
 | API (Express) | native `tsx` | 3000 |
-| ML worker | native Python venv (`.venv312`) | — (polls SQS) |
+| ML worker | native Python venv (`.venv312`) |, (polls SQS) |
 | Mobile (Expo) | `expo start` → Expo Go on phone | 8081 |
 
 > The production ML Docker image is `tensorflow:2.19.0-gpu` (amd64/CUDA). On
@@ -34,7 +34,7 @@ This is the exact setup that was validated end-to-end:
 
 - Docker Desktop (running)
 - Node 22, npm 10
-- Python 3.12 (`python3.12`) — TensorFlow has no 3.13/3.14 wheels
+- Python 3.12 (`python3.12`), TensorFlow has no 3.13/3.14 wheels
 - A Supabase project with **email auth** and **one confirmed test user**
   (create via Dashboard → Authentication → Users → *Add user* → check
   **Auto Confirm User**, so no inbox link is needed).
@@ -59,7 +59,7 @@ pip install tensorflow tensorflow_hub rtmlib onnxruntime opencv-python-headless 
             google-genai groq
 ```
 
-### 2c. Environment files (gitignored — fill in your own values)
+### 2c. Environment files (gitignored, fill in your own values)
 
 `apps/api/.env`
 ```env
@@ -79,18 +79,18 @@ INTERNAL_API_SECRET=dev-internal-secret-change-in-prod
 `apps/mobile/.env`  (the anon key is a *public* client key by design)
 ```env
 EXPO_PUBLIC_SUPABASE_URL=https://<your-project>.supabase.co
-EXPO_PUBLIC_SUPABASE_ANON_KEY=<public anon/publishable key — NOT the JWT secret>
+EXPO_PUBLIC_SUPABASE_ANON_KEY=<public anon/publishable key, NOT the JWT secret>
 EXPO_PUBLIC_API_BASE_URL=http://<YOUR_MAC_LAN_IP>:3000   # e.g. http://192.168.1.150:3000
 ```
 Find your LAN IP: `ipconfig getifaddr en0`.
 
 ---
 
-## 2d. Docker-free mode (recommended — no LocalStack)
+## 2d. Docker-free mode (recommended, no LocalStack)
 
 Set `STORAGE_DRIVER=local` and uploads bypass S3/SQS entirely: the phone PUTs
 video bytes straight to the API (LAN-reachable), which writes them to a shared
-dir; the worker **polls the DB** for pending jobs. No Docker, no LocalStack —
+dir; the worker **polls the DB** for pending jobs. No Docker, no LocalStack,
 so uploads can't fail on a flaky container.
 
 `apps/api/.env` additions:
@@ -127,7 +127,7 @@ python -u src/worker.py
 # expect: "Starting Stride ML Worker (WHAM+OpenCap=False) ..."
 ```
 
-`STRIDE_PIPELINE` selects the pipeline: `2d` (default, RTMPose + 2D sagittal —
+`STRIDE_PIPELINE` selects the pipeline: `2d` (default, RTMPose + 2D sagittal,
 the working path), `wham` (needs GPU + `STRIDE_WHAM_REPO`), `legacy` (2D + LLM).
 
 ---

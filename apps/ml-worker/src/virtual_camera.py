@@ -1,4 +1,4 @@
-"""Virtual-camera re-projection — the angle-agnostic seam.
+"""Virtual-camera re-projection, the angle-agnostic seam.
 
 The problem this solves
 -----------------------
@@ -6,7 +6,7 @@ The problem this solves
 produces is only as good as the camera's alignment with the plane that metric
 lives in. The existing response is a confidence discount (`_viewpoint_penalty`,
 `sin²`/`cos²` of the estimated azimuth): a metric measured off-axis is reported
-less confidently. That is honest, but it is a label on a biased number — a
+less confidently. That is honest, but it is a label on a biased number, a
 scalar discount cannot recover an angle that perspective has compressed, and the
 bias does not average out across frames.
 
@@ -20,14 +20,14 @@ a gravity-aligned world frame we can:
      we want to measure.
 
 Every metric is then read from its own ideal viewpoint. Sagittal metrics come
-from a virtual side view (azimuth exactly 0°), frontal metrics — knee valgus,
-pelvic drop — from a virtual front view (azimuth exactly 90°). The viewpoint
+from a virtual side view (azimuth exactly 0°), frontal metrics, knee valgus,
+pelvic drop, from a virtual front view (azimuth exactly 90°). The viewpoint
 penalty is not merely small, it is zero BY CONSTRUCTION, because we chose the
 camera. `estimate_azimuth_from_keypoints` becomes unnecessary on this path.
 
 Why re-project into 2D instead of computing angles in 3D
 --------------------------------------------------------
-Because `biomech2d`'s metric layer is the best-tested code in the repo — 11
+Because `biomech2d`'s metric layer is the best-tested code in the repo, 11
 metrics with plausibility envelopes, robust-fallback statistics, phase-specific
 norms, a weighted form score, and the flaw/focus-area split. The dormant
 TypeScript 3D metric layer computes 5 metrics, a strict subset, with no
@@ -47,12 +47,12 @@ different questions.
 Coordinate conventions (easy to get wrong, so stated explicitly)
 ---------------------------------------------------------------
 * World input: right-handed, metric or scale-normalized, `up_world` is the
-  measured gravity direction. Absolute yaw is arbitrary — a monocular lift has
-  no way to know true north — which is precisely why heading is re-derived from
+  measured gravity direction. Absolute yaw is arbitrary, a monocular lift has
+  no way to know true north, which is precisely why heading is re-derived from
   the body below.
 * Canonical: `e_x` = running direction (horizontal), `e_y` = gravity up,
   `e_z` = cross(e_x, e_y) = lateral. Right-handed.
-* Output: the `pose_backend` frame contract — keypoints `(17, 3)` as
+* Output: the `pose_backend` frame contract, keypoints `(17, 3)` as
   `[y, x, confidence]`, normalized, y increasing DOWNWARD (image convention).
   Because gravity is mapped onto the image vertical by construction, the
   caller should pass `image_down=(1.0, 0.0)` to `analyze_2d_sagittal_stream`.
@@ -117,7 +117,7 @@ def heading_from_poses(poses: np.ndarray, up: np.ndarray) -> np.ndarray:
        athlete's actual motion and is immune to how they happen to be oriented.
     2. **Hip-line normal.** A runner faces perpendicular to their hip line, so
        `cross(up, hip_line)` gives facing. Used when travel is too small to
-       trust — a treadmill clip, a drill in place, or a very short capture.
+       trust, a treadmill clip, a drill in place, or a very short capture.
 
     Both are flattened against gravity so a leaning athlete does not tilt the
     heading. Returns a zero vector only if the pose data is degenerate."""
@@ -171,7 +171,7 @@ def canonical_rotation(poses: np.ndarray, up_world: Iterable[float] | None = Non
     """3x3 rotation mapping world coordinates into the canonical frame.
 
     Rows are the canonical basis vectors, so `canonical = R @ world_vector`.
-    Raises ValueError when heading cannot be determined — better to fail loudly
+    Raises ValueError when heading cannot be determined, better to fail loudly
     than to silently re-project through an arbitrary frame, which would produce
     plausible-looking angles measured in no particular plane."""
     up = gravity_up(up_world)
@@ -190,10 +190,10 @@ def canonical_rotation(poses: np.ndarray, up_world: Iterable[float] | None = Non
 def _plane_axes(view: View) -> tuple[int, int]:
     """(horizontal_axis, vertical_axis) indices into canonical coordinates.
 
-    side  — sagittal plane: running direction (X) across, gravity (Y) up.
+    side, sagittal plane: running direction (X) across, gravity (Y) up.
             The lateral axis Z becomes the view axis, so mediolateral spans
             collapse to zero, which is exactly what azimuth 0° means.
-    front — frontal plane: lateral (Z) across, gravity (Y) up. The running
+    front, frontal plane: lateral (Z) across, gravity (Y) up. The running
             axis X becomes the view axis: azimuth 90°.
     """
     if view == "side":
@@ -257,7 +257,7 @@ def reproject(
     # ── Clip-stable scale and offset ──────────────────────────────────────────
     # Both are computed ONCE over the clip, never per frame. A per-frame
     # normalization would rescale the athlete every frame and destroy exactly
-    # the signals that depend on absolute vertical travel — vertical_oscillation
+    # the signals that depend on absolute vertical travel, vertical_oscillation
     # is hip height range, and it would collapse to zero.
     pelvis = np.full((len(canon), 3), np.nan)
     for i in range(len(canon)):
@@ -285,7 +285,7 @@ def reproject(
 
         # Horizontal: track the pelvis, so the athlete stays framed the way a
         # panning operator would keep them. Every horizontal metric downstream
-        # (overstride) is hip-relative anyway, so this changes no measurement —
+        # (overstride) is hip-relative anyway, so this changes no measurement,
         # it only keeps the projection in a sane numeric range.
         h = (canon[i][:, h_ax] - pelvis[i][h_ax]) * scale + 0.5
         # Vertical: image y grows DOWNWARD, so gravity-up must be negated.

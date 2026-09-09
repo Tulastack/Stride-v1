@@ -88,7 +88,7 @@ def test_head_on_capture_is_told_to_refilm():
 def test_frontal_metrics_come_from_the_front_camera():
     """`_valgus` measures horizontal knee deviation. In a SAGITTAL image the
     horizontal axis is anteroposterior, so a side view returns anterior knee
-    displacement — a function of knee flexion, not medial collapse. The two-pass
+    displacement, a function of knee flexion, not medial collapse. The two-pass
     result must therefore differ from a side-only read of the same skeleton."""
     from src.biomech2d import _assemble, _collect_scalars
     from src.virtual_camera import canonical_rotation, reproject
@@ -105,7 +105,7 @@ def test_frontal_metrics_come_from_the_front_camera():
     both_v = {m["key"]: m["measured"]["value"] for m in _run(poses, conf)["metrics"]}
 
     assert side_v["knee_valgus"] != both_v["knee_valgus"], \
-        "frontal metric identical from both views — the front pass did nothing"
+        "frontal metric identical from both views, the front pass did nothing"
     # Sagittal metrics must be untouched by the merge.
     for key in ("trunk_lean", "knee_drive", "hip_extension", "overstride"):
         assert side_v[key] == both_v[key], f"{key} changed when merging frontal scalars"
@@ -126,7 +126,7 @@ def test_geometry_alone_never_grants_trust():
     recon_conf below TRUST_CONF_MIN. That was right while the lift had no ground
     truth, but it made trust arithmetically unreachable rather than earned.
     scripts/bench_lift3d.py now measures the lift against analytic ground truth,
-    so trust is reachable — but only when the view AND the detector are both
+    so trust is reachable, but only when the view AND the detector are both
     good, which is what these assertions pin down."""
     from src.analyze3d import recon_conf_for
     # Perfect observability still costs something: the lift is never free.
@@ -167,7 +167,7 @@ def test_a_well_seen_clip_can_earn_trust():
 
 def test_no_flaws_are_raised_while_unvalidated():
     """Flaws require a trusted metric, so an unvalidated reconstruction must
-    produce none — the honest output is hedged focus areas."""
+    produce none, the honest output is hedged focus areas."""
     poses, conf = _clip()
     conf[:] = 1.0
     assert _run(poses, conf)["flaws"] == []
@@ -266,13 +266,13 @@ def test_routing_beats_collapsing_the_lap_to_one_azimuth():
     routed = analyze_3d_multisegment(poses, conf, clip_id="m", **kw)
     # Frontal metrics survive a head-on collapse by design (they are measured
     # from exactly that view), so the whole-clip path is not expected to reach
-    # zero — what matters is that routing recovers the sagittal ones it threw
+    # zero, what matters is that routing recovers the sagittal ones it threw
     # away by averaging.
     assert n(whole) <= 2, f"fixture no longer collapses to an uninformative view ({n(whole)})"
     assert n(routed) > n(whole), (n(routed), n(whole))
 
     # And on a clip a fixed camera already sees well, routing must never be
-    # worse — it may simply have nothing left to add.
+    # worse, it may simply have nothing left to add.
     poses, conf = _lap(range(0, 360, 30))
     whole = analyze_3d_angle_agnostic(poses, conf, clip_id="w2", **kw)
     routed = analyze_3d_multisegment(poses, conf, clip_id="m2", **kw)
@@ -361,6 +361,6 @@ def test_reprojection_is_exact_and_angle_invariant():
         assert abs(got["knee_drive"] - max(b for _, b in truths)) < 1.0
         seen.append((got["trunk_lean"], got["knee_drive"]))
 
-    # And identical from every angle — that is what angle-agnostic means here.
+    # And identical from every angle, that is what angle-agnostic means here.
     for a, b in seen[1:]:
         assert abs(a - seen[0][0]) < 0.5 and abs(b - seen[0][1]) < 0.5, seen

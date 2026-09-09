@@ -1,11 +1,11 @@
 /**
  * Unit tests for the cosine-similarity/threshold decision logic in
  * calendarRelevance.ts. The embedding model itself (@xenova/transformers /
- * onnxruntime-node) is mocked here — under this repo's Jest ESM VM-modules
+ * onnxruntime-node) is mocked here, under this repo's Jest ESM VM-modules
  * config, the real ONNX runtime throws a cross-realm "Float32Array" identity
  * error, so it can't run inside Jest. The real model's behavior (the actual
  * 0.55 threshold, calibrated against Xenova/all-MiniLM-L6-v2) was verified
- * manually with `tsx` outside Jest — see the threshold comment in
+ * manually with `tsx` outside Jest, see the threshold comment in
  * calendarRelevance.ts for the measured scores.
  *
  * No network: the transformers pipeline is mocked, never actually loaded.

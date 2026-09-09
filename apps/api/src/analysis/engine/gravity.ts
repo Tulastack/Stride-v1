@@ -1,4 +1,4 @@
-// Gyro+accelerometer gravity fusion (research Phase 1 — "anchor to gravity,
+// Gyro+accelerometer gravity fusion (research Phase 1, "anchor to gravity,
 // don't infer up").
 //
 // A phone accelerometer measures gravity PLUS the filmer's own linear
@@ -12,7 +12,7 @@
 // the pose frame (applying platform sign + device extrinsics) to get world-up.
 //
 // NOTE ON FRAMES: samples are in the DEVICE frame. Mapping device gravity into
-// the reconstruction's world frame is a calibrated step (research Phase 0) — the
+// the reconstruction's world frame is a calibrated step (research Phase 0), the
 // engine consumes an already-in-world-frame `gravityWorld` on the capture
 // manifest; this module is the tool a capture layer uses to produce it.
 
@@ -87,7 +87,7 @@ export function fuseGravity(
       g = norm(add(g, scale(cross(w, g), -dt)));
     }
 
-    // Accelerometer correction — only when it looks like mostly gravity.
+    // Accelerometer correction, only when it looks like mostly gravity.
     const aMag = Math.hypot(a.ax, a.ay, a.az);
     if (aMag > 1e-6) {
       const off = Math.abs(aMag - G) / G;

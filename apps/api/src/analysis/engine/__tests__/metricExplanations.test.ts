@@ -6,7 +6,8 @@ describe('explainMetric', () => {
     expect(text).toBeTruthy();
     expect(text).not.toMatch(/^Your knee drive \(/); // not the old raw-stat template
     expect(text).toMatch(/59°/);
-    expect(text).toMatch(/80–110°/);
+    // Spelled out, not hyphenated or dashed: this sentence is read, not scanned.
+    expect(text).toMatch(/80 to 110°/);
   });
 
   it('explains a high-side deviation with the high-direction template', () => {

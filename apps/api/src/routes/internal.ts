@@ -28,7 +28,7 @@ function verifyInternalSecret(req: any, res: Response, next: NextFunction): void
   // FAIL CLOSED: /internal/* can forge analysis results for any user. A
   // missing secret must lock these routes, never open them.
   if (!internalSecret) {
-    console.error('INTERNAL_API_SECRET is not set — rejecting internal callback. Configure it on both the API and the ML worker.');
+    console.error('INTERNAL_API_SECRET is not set, rejecting internal callback. Configure it on both the API and the ML worker.');
     res.status(503).json({ error: 'Internal callbacks are not configured' });
     return;
   }
@@ -97,7 +97,7 @@ router.post('/analysis-completed', verifyInternalSecret, async (req: any, res: R
     }
 
     // Auto-create drill suggestions from result_json (no calendar_events).
-    // Capped to the worst couple of issues — a plan targeting everything at
+    // Capped to the worst couple of issues, a plan targeting everything at
     // once targets nothing; this mirrors the coach's own "top 1-2, worst
     // first" prioritization (see lib/coach/agent.ts). Each approved suggestion
     // becomes a full multi-week program (see calendar/trainingPlan.ts), so
@@ -148,7 +148,7 @@ router.post('/analysis-completed', verifyInternalSecret, async (req: any, res: R
           );
         }
         // Legacy 3D shape: result.primary_issues[].drills, already ranked
-        // worst-first and capped to 2 by the LLM prompt — take the top drill
+        // worst-first and capped to 2 by the LLM prompt, take the top drill
         // per issue so it stays targeted rather than exhaustive.
         for (const issue of ((result.primary_issues ?? []) as any[]).slice(0, MAX_TARGETED_ISSUES)) {
           const drill = ((issue.drills ?? []) as any[])[0];
@@ -195,7 +195,7 @@ const progressSchema = z.object({
 
 /**
  * 2. Stage progress events from the ML worker
- * POST /internal/analysis-progress — body: { analysisId, stage, pct, message? }
+ * POST /internal/analysis-progress, body: { analysisId, stage, pct, message? }
  */
 router.post('/analysis-progress', verifyInternalSecret, async (req: any, res: Response, next: NextFunction) => {
   try {
@@ -248,7 +248,7 @@ const biomechSchema = z.object({
  * DORMANT IN PRODUCTION, NOT DELETED: only ever called by ml-worker's WHAM
  * branch (apps/ml-worker/src/worker.py, _process_wham_opencap), which only
  * runs when that worker is started with STRIDE_PIPELINE=wham. No deployment
- * config in this repo sets that — every real environment defaults to the 2D
+ * config in this repo sets that, every real environment defaults to the 2D
  * path (biomech2d.py), which never calls this route. Kept live and working
  * intentionally so the 3D pipeline stays exercisable without deleting code;
  * flip STRIDE_PIPELINE=wham on the worker to actually activate it.
@@ -311,7 +311,7 @@ router.post('/analysis-biomech', verifyInternalSecret, async (req: any, res: Res
     }
 
     try {
-      // Capped to the top targeted issues (worst first) — see the matching
+      // Capped to the top targeted issues (worst first), see the matching
       // comment on /analysis-completed above for why.
       const flawSeverity = new Map(result.flaws.map((f) => [f.id, f.severity ?? 0]));
       const rankedRecs = [...result.recommendations].sort(

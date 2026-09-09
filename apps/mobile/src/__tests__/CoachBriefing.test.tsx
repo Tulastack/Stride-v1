@@ -1,5 +1,5 @@
 /**
- * Coach screen — AI chat coach (reconciled with current UI).
+ * Coach screen, AI chat coach (reconciled with current UI).
  * Product moved from structured briefing to grounded chat; assert chat affordances.
  */
 import React from 'react';

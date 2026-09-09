@@ -1,6 +1,6 @@
 // Flaw card with an opt-in "Show the numbers" drawer (PROMPT F.3 + F.3-UI revised).
 // Leads with plain language; the numbers (measured band overlapping the normal
-// range) are opt-in, and confidence is shown — never a fake single number.
+// range) are opt-in, and confidence is shown, never a fake single number.
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { ChevronDown, ChevronRight } from 'lucide-react-native';

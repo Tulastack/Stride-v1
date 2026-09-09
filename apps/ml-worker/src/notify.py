@@ -11,7 +11,7 @@ import requests
 logger = logging.getLogger(__name__)
 
 # NOTE: these callbacks deliberately do NOT follow redirects. A 3xx from this
-# endpoint means something other than the Stride API is listening on the port —
+# endpoint means something other than the Stride API is listening on the port,
 # and requests' default redirect-following turned that into a 200, so the worker
 # logged "Successfully reported", skipped its own DB-write fallback, and the
 # finished analysis was silently lost. Observed for real when another project
@@ -20,7 +20,7 @@ API_SERVER_URL = os.environ.get("API_SERVER_URL", "http://localhost:3000")
 INTERNAL_API_SECRET = os.environ.get("INTERNAL_API_SECRET", "")
 if not INTERNAL_API_SECRET:
     logger.warning(
-        "INTERNAL_API_SECRET is not set — completion/progress callbacks will be "
+        "INTERNAL_API_SECRET is not set, completion/progress callbacks will be "
         "rejected by any API running with internal auth enforced."
     )
 
@@ -40,7 +40,7 @@ def notify_progress(analysis_id: str, stage: str, pct: int, message: str = "") -
 
 
 def notify_biomech_completed(analysis_id: str, pipeline3d: dict[str, Any]) -> bool:
-    """POST /internal/analysis-biomech — WHAM+OpenCap frames → PRD v2.2 result."""
+    """POST /internal/analysis-biomech, WHAM+OpenCap frames → PRD v2.2 result."""
     endpoint = f"{API_SERVER_URL}/internal/analysis-biomech"
     payload = {"analysisId": analysis_id, "pipeline3d": pipeline3d}
     headers = {"Content-Type": "application/json", "X-Internal-Token": INTERNAL_API_SECRET}

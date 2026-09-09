@@ -35,7 +35,7 @@ const messageSchema = z.object({
 });
 
 /**
- * GET /coach-sessions — get all sessions for user
+ * GET /coach-sessions, get all sessions for user
  */
 router.get('/', authenticate, async (req: any, res: Response, next: NextFunction) => {
   try {
@@ -48,7 +48,7 @@ router.get('/', authenticate, async (req: any, res: Response, next: NextFunction
 });
 
 /**
- * POST /coach-sessions — create a new coach session
+ * POST /coach-sessions, create a new coach session
  */
 router.post('/', authenticate, async (req: any, res: Response, next: NextFunction) => {
   try {
@@ -71,7 +71,7 @@ router.post('/', authenticate, async (req: any, res: Response, next: NextFunctio
 });
 
 /**
- * GET /coach-sessions/:id — get a session
+ * GET /coach-sessions/:id, get a session
  */
 router.get('/:id', authenticate, async (req: any, res: Response, next: NextFunction) => {
   try {
@@ -91,7 +91,7 @@ router.get('/:id', authenticate, async (req: any, res: Response, next: NextFunct
 });
 
 /**
- * POST /coach-sessions/:id/message — send a message to the session
+ * POST /coach-sessions/:id/message, send a message to the session
  */
 router.post('/:id/message', authenticate, async (req: any, res: Response, next: NextFunction) => {
   try {
@@ -160,7 +160,7 @@ router.post('/:id/message', authenticate, async (req: any, res: Response, next: 
                 }
                 if (drills.length > 0) {
                   responseText = drills
-                    .map((d: any) => `• ${d.name} (${d.volume ?? 'N/A'}) — Cue: "${d.cue ?? ''}"`)
+                    .map((d: any) => `• ${d.name} (${d.volume ?? 'N/A'}), Cue: "${d.cue ?? ''}"`)
                     .join('\n');
                 } else {
                   responseText = 'No drills found in the analysis.';
@@ -176,7 +176,7 @@ router.post('/:id/message', authenticate, async (req: any, res: Response, next: 
         }
 
         case 'view_timeline': {
-          // Frontend handles navigation — return nothing meaningful
+          // Frontend handles navigation, return nothing meaningful
           await touchCoachSession(id);
           res.json({ action_chip: 'view_timeline' });
           return;
@@ -229,7 +229,7 @@ router.post('/:id/message', authenticate, async (req: any, res: Response, next: 
       if (rateLimited) {
         // The fallback is worth ONE attempt even here. This used to rethrow on
         // the assumption that a rate limit is a quota the fallback would hit
-        // too — true of a daily cap, but the limit that actually bites is
+        // too, true of a daily cap, but the limit that actually bites is
         // tokens-per-minute, and the agent is far the more expensive request:
         // it sends the tool schemas and a growing transcript across several
         // rounds, where the fallback is one call with neither. Observed on a
@@ -249,7 +249,7 @@ router.post('/:id/message', authenticate, async (req: any, res: Response, next: 
           history: history ?? [],
         });
       } catch (fallbackErr) {
-        // Out of room on both paths — now the friendly message is the honest
+        // Out of room on both paths, now the friendly message is the honest
         // answer. Rethrow the ORIGINAL rate-limit error so the caller still
         // sees a 429 rather than a generic 500.
         throw rateLimited ? agentErr : fallbackErr;
@@ -265,7 +265,7 @@ router.post('/:id/message', authenticate, async (req: any, res: Response, next: 
 });
 
 /**
- * POST /coach-sessions/:id/add-to-calendar — ask LLM to generate structured
+ * POST /coach-sessions/:id/add-to-calendar, ask LLM to generate structured
  * calendar events from the conversation, then create them.
  */
 router.post('/:id/add-to-calendar', authenticate, async (req: any, res: Response, next: NextFunction) => {
@@ -294,9 +294,9 @@ router.post('/:id/add-to-calendar', authenticate, async (req: any, res: Response
     const planPrompt = `Based on this conversation:\n${conversationSummary}\n\nGenerate a JSON array of events for the next 2 weeks.
 Each event: {"title": "string", "eventType": "drill" or "workout" or "rest" or "hydration" or "recovery" or "cross_training", "scheduledDate": "YYYY-MM-DD", "details": {"sets": number (optional), "reps": number (optional), "volume": "string", "cue": "string"}}
 Include numeric "sets" and "reps" whenever the event is a countable drill/exercise (e.g. high knee switches). Use "volume" for anything better described as a duration/distance (e.g. "20min tempo run", "400m x 4") instead of sets/reps.
-"drill" and "workout" are the primary event types — this plan should be built around those by default. Only include "hydration", "recovery" (e.g. foam rolling, ice bath, mobility work), or "cross_training" (e.g. swimming, cycling, yoga) events if the athlete specifically brought that up in the conversation — don't invent them for a conversation that was only about drills or workouts.
+"drill" and "workout" are the primary event types, this plan should be built around those by default. Only include "hydration", "recovery" (e.g. foam rolling, ice bath, mobility work), or "cross_training" (e.g. swimming, cycling, yoga) events if the athlete specifically brought that up in the conversation, don't invent them for a conversation that was only about drills or workouts.
 Rules:
-- Keep each day manageable — typically 1 main workout and a couple of form drills.
+- Keep each day manageable, typically 1 main workout and a couple of form drills.
 - Include rest days. Athletes need recovery.
 - No more than 2 hard days in a row.
 - Start from tomorrow (${tomorrowStr}).
@@ -311,7 +311,7 @@ Output ONLY the raw JSON array. No markdown. No explanation. Just [ ... ]`;
       analysisContext,
       userMessage: planPrompt,
       history: history ?? [],
-      // Two weeks of events as raw JSON — needs room the chat default doesn't give.
+      // Two weeks of events as raw JSON, needs room the chat default doesn't give.
       maxTokens: 2500,
     });
 
@@ -342,7 +342,7 @@ Output ONLY the raw JSON array. No markdown. No explanation. Just [ ... ]`;
       return;
     }
 
-    // 'coach' — the athlete did not pick these dates by hand, so the plan is
+    // 'coach', the athlete did not pick these dates by hand, so the plan is
     // handed to the Plan tab's card reveal rather than appearing silently.
     const created = await createCalendarEvents(userId, dbEvents, 'coach');
     res.json({ created: created.length, events: created });

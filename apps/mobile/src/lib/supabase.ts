@@ -5,7 +5,7 @@
 //   EXPO_PUBLIC_SUPABASE_ANON_KEY  = <public anon/publishable key>  (NOT the JWT secret)
 //
 // If either is absent, `supabase` is null and the auth screens surface a
-// configuration error — there is no demo/mock fallback in the app.
+// configuration error, there is no demo/mock fallback in the app.
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';

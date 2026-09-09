@@ -170,7 +170,7 @@ describe('POST /suggestions/:id/approve', () => {
   });
 
   // ─── Test: approve twice is idempotent ────────────────────────────
-  it('approve twice is idempotent — same calendarEvent returned both times', async () => {
+  it('approve twice is idempotent, same calendarEvent returned both times', async () => {
     const approvedSuggestion: DrillSuggestion = { ...SUGGESTION_PENDING, status: 'approved' };
     const app = buildApp();
 
@@ -193,7 +193,7 @@ describe('POST /suggestions/:id/approve', () => {
 
 // ─── Test: skip writes no calendar_events ─────────────────────────
 describe('POST /suggestions/:id/skip', () => {
-  it('skip returns skipped suggestion — no calendarEvent field', async () => {
+  it('skip returns skipped suggestion, no calendarEvent field', async () => {
     mockGetDrillSuggestion.mockResolvedValueOnce(SUGGESTION_PENDING);
     mockSkipSuggestion.mockResolvedValueOnce({ ...SUGGESTION_PENDING, status: 'skipped' });
 

@@ -1,9 +1,9 @@
-// Stage 6 — per-metric confidence + band.
+// Stage 6, per-metric confidence + band.
 //
 // Type-weighted trust (docs/research/angle-agnostic-kinematics.md):
-//   Tier 1 temporal — angle-robust, gated on frame rate (no sin² azimuth)
-//   Tier 2 sagittal — best side-on, degraded off-axis via sin²(azimuth)
-//   Tier 3 / experimental — descriptive (translation-dependent / candidates)
+//   Tier 1 temporal, angle-robust, gated on frame rate (no sin² azimuth)
+//   Tier 2 sagittal, best side-on, degraded off-axis via sin²(azimuth)
+//   Tier 3 / experimental, descriptive (translation-dependent / candidates)
 // Combine with mean 2D keypoint confidence and 3D reconstruction residual.
 // Never silently emit a low-confidence number.
 
@@ -25,7 +25,7 @@ export const METRIC_TIER: Record<string, 1 | 2 | 3> = {
   overstride: 3,
 };
 
-/** Sprint contact ~90 ms — below ~120 fps timing error swamps the signal. */
+/** Sprint contact ~90 ms, below ~120 fps timing error swamps the signal. */
 export const FPS_TRUST_GATE = 120;
 /** Vertical CoM off-axis error unmeasured on runners (honesty ledger #9). */
 export const CANDIDATE_METRICS = new Set(['vertical_oscillation']);
@@ -71,7 +71,7 @@ export function metricConfidence(metric: ComputedMetric, inputs: ConfidenceInput
   const tier = METRIC_TIER[metric.key] ?? (metric.plane === 'temporal' ? 1 : 2);
   const vp = viewpointPenalty(metric.plane, inputs.cameraAzimuthDeg, metric.key);
   const residualScore = clamp01(1 - inputs.reconResidual);
-  // Tier 3 stays descriptive — down-weight confidence even when view is clean.
+  // Tier 3 stays descriptive, down-weight confidence even when view is clean.
   const tierScale = tier === 3 ? 0.6 : 1;
   const confidence = clamp01(inputs.meanKeypointConfidence * residualScore * (1 - vp) * tierScale);
 

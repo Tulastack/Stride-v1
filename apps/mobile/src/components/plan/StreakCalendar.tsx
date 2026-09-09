@@ -192,7 +192,7 @@ export function StreakCalendar({
                       style={[
                         styles.dayInner,
                         // A completed day outside the live run still earns a
-                        // dim marker — past streaks stay visible. Days inside
+                        // dim marker, past streaks stay visible. Days inside
                         // the run get nothing of their own: the glass is the
                         // marker, and a circle under it is the "bunch of
                         // separate dots" look the run exists to replace.
@@ -343,7 +343,7 @@ export function streakRuns(
 /** Colour for a day's dot, or null when nothing is outstanding on it. */
 export function dotColorFor(events: CalendarEvent[] | undefined): string | null {
   if (!events?.length) return null;
-  // Completed and declined days have nothing left to do, so they get no dot —
+  // Completed and declined days have nothing left to do, so they get no dot,
   // the dot means "something is still waiting for you".
   const outstanding = events.filter((e) => e.status !== 'completed' && e.status !== 'skipped');
   if (!outstanding.length) return null;

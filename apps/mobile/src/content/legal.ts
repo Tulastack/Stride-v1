@@ -1,5 +1,5 @@
 // Placeholder legal copy for the consent screen's Terms & Privacy modals.
-// PLACEHOLDER — replace each section body with counsel-approved text before
+// PLACEHOLDER, replace each section body with counsel-approved text before
 // public release. Keep the structure (title + sections) so the UI needs no changes.
 
 export const LEGAL_CONTACT_EMAIL = 'adhibanarul@gmail.com';

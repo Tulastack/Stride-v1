@@ -1,4 +1,4 @@
-// TEST-ONLY deterministic AnalysisResult fixtures (imported by src/__tests__ only —
+// TEST-ONLY deterministic AnalysisResult fixtures (imported by src/__tests__ only,
 // never rendered to users). Mirrors apps/api/src/analysis/fixtures.ts: one
 // LOW-quality head-on capture (hip low-confidence + a single nudge).
 import type { AnalysisResult } from '../types/analysis';
@@ -7,7 +7,7 @@ export const highQualitySideResult: AnalysisResult = {
   id: 'fixture-accel-side-hq',
   phase: 'acceleration',
   summary:
-    'Strong drive phase. You stand up a touch early and your knee drive is slightly low — both are quick fixes.',
+    'Strong drive phase. You stand up a touch early and your knee drive is slightly low, both are quick fixes.',
   flaws: [
     {
       id: 'flaw-pop-up',
@@ -55,7 +55,7 @@ export const highQualitySideResult: AnalysisResult = {
       flawId: 'flaw-low-knee',
       drillId: 'high-knee-switch',
       drillName: 'High-knee wall switches',
-      cue: 'Punch the knee up to hip height — higher than feels normal.',
+      cue: 'Punch the knee up to hip height, higher than feels normal.',
       demoAssetId: 'demo-high-knee-switch',
       sets: 3,
       reps: 10,
@@ -83,7 +83,7 @@ export const lowQualityHeadOnResult: AnalysisResult = {
   id: 'fixture-maxv-headon-lq',
   phase: 'max_velocity',
   summary:
-    'We could read your trunk position at top speed, but this head-on angle hides your hip extension — turn ~30° next time to confirm it.',
+    'We could read your trunk position at top speed, but this head-on angle hides your hip extension, turn ~30° next time to confirm it.',
   flaws: [
     {
       id: 'flaw-hip-ext',
@@ -125,7 +125,7 @@ export const lowQualityHeadOnResult: AnalysisResult = {
     framing: 'partial',
     perMetricUsable: { trunk_lean: true, hip_extension: false, cadence_spm: true },
     primaryNudge:
-      'Hip data is low-confidence from this head-on angle — turn ~30° next time for trustworthy hip extension.',
+      'Hip data is low-confidence from this head-on angle, turn ~30° next time for trustworthy hip extension.',
   },
   reconstructionMethod: '3d-mono',
   createdAt: '2026-01-15T11:05:00.000Z',

@@ -52,7 +52,7 @@ describe('PlanCardStack', () => {
     const { queryByText, getAllByText } = setup();
     // Day one is on top; day two's sessions are only on the card behind it.
     expect(getAllByText('Wall drive').length).toBeGreaterThan(0);
-    // No progress counter or gesture legend — the deck speaks for itself.
+    // No progress counter or gesture legend, the deck speaks for itself.
     expect(queryByText(/of 2/)).toBeNull();
     expect(queryByText(/Swipe/i)).toBeNull();
     expect(queryByText(/days scheduled/)).toBeNull();

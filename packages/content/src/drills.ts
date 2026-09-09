@@ -1,4 +1,4 @@
-// Drill library (PROMPT F.4) — covers the core sprint flaw taxonomy. Every drill
+// Drill library (PROMPT F.4), covers the core sprint flaw taxonomy. Every drill
 // has a real demoAssetId (the visual demonstration of correct form). The
 // recommendation engine maps a detected flaw -> one of these drills.
 
@@ -82,7 +82,7 @@ export const DRILLS: Record<string, Drill> = {
   'high-knee-switch': {
     id: 'high-knee-switch',
     name: 'High-knee wall switches',
-    cue: 'Punch the knee up to hip height — higher than feels normal.',
+    cue: 'Punch the knee up to hip height, higher than feels normal.',
     demoAssetId: 'demo-high-knee-switch',
     sets: 3,
     reps: 10,
@@ -135,7 +135,7 @@ export function drillForFlaw(flawId: string): Drill | undefined {
   return id ? DRILLS[id] : undefined;
 }
 
-/** Demo assets registry — placeholder refs now, but the wiring is real. */
+/** Demo assets registry, placeholder refs now, but the wiring is real. */
 export const DEMO_ASSETS: Record<string, { kind: 'lottie' | 'video'; ref: string }> = Object.fromEntries(
   Object.values(DRILLS).map((d) => [d.demoAssetId, { kind: 'lottie' as const, ref: `assets/demos/${d.demoAssetId}.json` }])
 );

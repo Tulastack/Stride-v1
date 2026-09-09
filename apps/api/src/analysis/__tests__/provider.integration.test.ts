@@ -31,7 +31,7 @@ async function run(uri: string): Promise<AnalysisResult> {
   return res.result;
 }
 
-describe('LocalAnalysisProvider — submit/getResult end to end', () => {
+describe('LocalAnalysisProvider, submit/getResult end to end', () => {
   it('returns a schema-valid result for a side capture', async () => {
     const result = await run('/clips/side-acceleration.mov');
     expect(() => validateAnalysisResult(result)).not.toThrow();
@@ -61,7 +61,7 @@ describe('LocalAnalysisProvider — submit/getResult end to end', () => {
   });
 });
 
-describe('Vision retention — every recommendation is evidence-bound', () => {
+describe('Vision retention, every recommendation is evidence-bound', () => {
   it.each([
     ['/clips/side-acceleration.mov'],
     ['/clips/headon-maxvelocity.mov'],
@@ -85,7 +85,7 @@ describe('Vision retention — every recommendation is evidence-bound', () => {
   });
 });
 
-describe('LocalAnalysisProvider — failure & mode handling', () => {
+describe('LocalAnalysisProvider, failure & mode handling', () => {
   it('returns failed for an unknown jobId', async () => {
     const provider = new LocalAnalysisProvider('fixture');
     const res = await provider.getResult('no-such-job');
@@ -111,7 +111,7 @@ describe('LocalAnalysisProvider — failure & mode handling', () => {
   });
 });
 
-describe('AwsAnalysisProvider — deferred stub', () => {
+describe('AwsAnalysisProvider, deferred stub', () => {
   it('throws on submit', async () => {
     const aws = new AwsAnalysisProvider();
     await expect(aws.submit({ localVideoUri: 'x', athlete })).rejects.toThrow(/deferred to AWS/i);
@@ -123,7 +123,7 @@ describe('AwsAnalysisProvider — deferred stub', () => {
   });
 });
 
-describe('getAnalysisProvider — dependency injection', () => {
+describe('getAnalysisProvider, dependency injection', () => {
   afterEach(() => {
     delete process.env.ANALYSIS_PROVIDER;
     resetAnalysisProvider();

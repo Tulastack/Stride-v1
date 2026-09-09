@@ -161,7 +161,7 @@ def _compute_frame_metrics(
     hip = _get_point(kps, hip_idx)
     knee = _get_point(kps, knee_idx)
 
-    # Thigh vector (hip → knee) — in (y, x) space
+    # Thigh vector (hip → knee), in (y, x) space
     thigh_vec = knee - hip  # (dy, dx)
     # Vertical vector (pointing downward in image = positive y)
     vertical = np.array([1.0, 0.0])

@@ -1,4 +1,4 @@
-// Streak derivation. Pure functions over per-day training activity — no DB, no
+// Streak derivation. Pure functions over per-day training activity, no DB, no
 // clock of its own (the caller passes "today" so the athlete's local date wins
 // over the server's UTC date; see the local-date discipline in queries.ts).
 //
@@ -14,7 +14,7 @@
 // "Banked" is the load-bearing word. A completion counts toward the streak only
 // when it was recorded on the day it was scheduled for. Going back a week later
 // and ticking off Tuesday still marks Tuesday done on the calendar, but it does
-// not rebuild the run that Tuesday broke — a streak you can repair by tapping
+// not rebuild the run that Tuesday broke, a streak you can repair by tapping
 // backwards is not a streak. Rows recorded before completions were dated are
 // treated as banked, so this never retroactively deletes an existing run.
 //
@@ -45,7 +45,7 @@ export interface StreakSummary {
   longest: number;
   /** Most recent day with a completion, or null if there has never been one. */
   lastActiveDate: string | null;
-  /** Every day that counted, ascending — drives the calendar's run highlights. */
+  /** Every day that counted, ascending, drives the calendar's run highlights. */
   activeDates: string[];
   /**
    * First and last day of the run that is live right now, inclusive. The
@@ -67,7 +67,7 @@ export interface StreakSummary {
 function addDays(date: string, delta: number): string {
   const [y, m, d] = date.split('-').map(Number) as [number, number, number];
   // Constructed in UTC and read back in UTC, so this is pure string arithmetic
-  // on a calendar date — no timezone can shift it across midnight.
+  // on a calendar date, no timezone can shift it across midnight.
   const dt = new Date(Date.UTC(y, m - 1, d));
   dt.setUTCDate(dt.getUTCDate() + delta);
   return dt.toISOString().slice(0, 10);
@@ -94,7 +94,7 @@ export function computeStreak(days: TrainingDay[], today: string): StreakSummary
   let current = 0;
   let cursor = today;
   // A neutral day only bridges when it sits *between* two active days. Walking
-  // backwards, neutral days seen before the first active one are trailing — an
+  // backwards, neutral days seen before the first active one are trailing, an
   // athlete opening the app before today's session has not earned today yet, so
   // those are discarded rather than banked.
   let pendingNeutral = 0;
@@ -103,7 +103,7 @@ export function computeStreak(days: TrainingDay[], today: string): StreakSummary
   // not necessarily today (an athlete mid-rest-day still has a streak).
   let streakStart: string | null = null;
   let streakEnd: string | null = null;
-  // Stop at the first recorded day — walking back through empty prehistory
+  // Stop at the first recorded day, walking back through empty prehistory
   // would loop forever on an athlete with no events at all.
   const earliest = days.length ? days[0]!.date : today;
 

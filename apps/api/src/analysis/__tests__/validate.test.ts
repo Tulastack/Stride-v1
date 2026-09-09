@@ -16,7 +16,7 @@ import {
 
 const clone = <T>(x: T): any => structuredClone(x);
 
-describe('validateAnalysisResult — fixtures pass', () => {
+describe('validateAnalysisResult, fixtures pass', () => {
   it('accepts the high-quality side fixture', () => {
     expect(() => validateAnalysisResult(highQualitySideFixture)).not.toThrow();
   });
@@ -26,7 +26,7 @@ describe('validateAnalysisResult — fixtures pass', () => {
   });
 });
 
-describe('validateAnalysisResult — confidence-band rules', () => {
+describe('validateAnalysisResult, confidence-band rules', () => {
   it('rejects a metric with no confidence band', () => {
     const bad = clone(highQualitySideFixture);
     delete bad.metrics[0].measured;
@@ -47,7 +47,7 @@ describe('validateAnalysisResult — confidence-band rules', () => {
   });
 });
 
-describe('validateAnalysisResult — canonical-frame rule', () => {
+describe('validateAnalysisResult, canonical-frame rule', () => {
   it('rejects a metric missing comparableAcrossViews', () => {
     const bad = clone(highQualitySideFixture);
     delete bad.metrics[0].comparableAcrossViews;
@@ -61,7 +61,7 @@ describe('validateAnalysisResult — canonical-frame rule', () => {
   });
 });
 
-describe('validateAnalysisResult — evidence rules', () => {
+describe('validateAnalysisResult, evidence rules', () => {
   it('rejects a flaw whose evidence has no 3D joint angles', () => {
     const bad = clone(highQualitySideFixture);
     bad.flaws[0].evidence.jointAngles3D = {};
@@ -75,7 +75,7 @@ describe('validateAnalysisResult — evidence rules', () => {
   });
 });
 
-describe('validateAnalysisResult — recommendation rules', () => {
+describe('validateAnalysisResult, recommendation rules', () => {
   it('rejects a recommendation whose flawId references no flaw', () => {
     const bad = clone(highQualitySideFixture);
     bad.recommendations[0].flawId = 'flaw-does-not-exist';
@@ -89,7 +89,7 @@ describe('validateAnalysisResult — recommendation rules', () => {
   });
 });
 
-describe('validateAnalysisResult — no free-text coaching slot', () => {
+describe('validateAnalysisResult, no free-text coaching slot', () => {
   it('rejects an unknown free-text field on the result (strict object)', () => {
     const bad = clone(highQualitySideFixture);
     bad.coachingMessage = 'Hey, let me tell you about your run...';

@@ -41,10 +41,10 @@ export class LocalCalendarProvider implements CalendarProvider {
   }
 }
 
-/** Google Calendar via MCP — DO NOT IMPLEMENT NOW (integrations phase). */
+/** Google Calendar via MCP, DO NOT IMPLEMENT NOW (integrations phase). */
 export class GoogleCalendarProvider implements CalendarProvider {
   // TODO(integrations): wire Google Calendar via MCP. Do NOT auto-sync.
   async commit(): Promise<CommittedEvent[]> {
-    throw new Error('Google Calendar not wired — deferred to the integrations phase');
+    throw new Error('Google Calendar not wired, deferred to the integrations phase');
   }
 }

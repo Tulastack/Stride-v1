@@ -96,7 +96,7 @@ export interface CaptureQuality {
  * a FocusArea is the honest channel for everything else worth acting on:
  * 'unconfirmed' = a usable but experimental reading outside its healthy band
  * (real deviation we won't state as fact); 'refinement' = an in-band value
- * sitting close to its band edge (not a fault — a sharpening candidate).
+ * sitting close to its band edge (not a fault, a sharpening candidate).
  * Carries its drill inline; focus areas never enter the drill-suggestion
  * approval pipeline.
  */

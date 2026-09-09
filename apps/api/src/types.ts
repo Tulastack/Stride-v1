@@ -33,7 +33,7 @@ export interface Analysis {
   completed_at: Date | null;
 }
 
-/** Who put an event on the calendar — see calendar_events.source. */
+/** Who put an event on the calendar, see calendar_events.source. */
 export type CalendarEventSource = 'manual' | 'coach' | 'analysis';
 
 export interface CalendarEvent {
@@ -140,7 +140,7 @@ export interface ReferenceDrill {
   contraindications: string[];
   target_metrics: string[];
   // '[]' until this drill's metric has been through the offline biomechanics
-  // research pipeline AND human-reviewed — see calendar/trainingPlan.ts.
+  // research pipeline AND human-reviewed, see calendar/trainingPlan.ts.
   recovery_phases: RecoveryPhase[];
   created_at: Date;
 }

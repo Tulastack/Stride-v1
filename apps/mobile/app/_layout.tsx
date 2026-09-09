@@ -25,7 +25,7 @@ function InnerLayout() {
 
   useEffect(() => {
     if (!supabase) {
-      // No Supabase configured — nothing to restore, unblock the index gate.
+      // No Supabase configured, nothing to restore, unblock the index gate.
       setAuthHydrated(true);
       return;
     }
@@ -81,7 +81,7 @@ function InnerLayout() {
 
 export default function RootLayout() {
   // GestureHandlerRootView must wrap the whole tree (and sit above the
-  // navigator) or pan gestures — the card stack's swipes — silently never fire.
+  // navigator) or pan gestures, the card stack's swipes, silently never fire.
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ThemeProvider>

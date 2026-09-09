@@ -1,5 +1,5 @@
 #!/bin/bash
-# Undeploy script — scales ECS services to 0 (stops all running tasks).
+# Undeploy script, scales ECS services to 0 (stops all running tasks).
 # Infrastructure stays intact. Use redeploy.sh to bring services back up.
 # Usage: ./scripts/undeploy.sh
 

@@ -1,5 +1,5 @@
 /**
- * PROMPT F.5 / F.6 — briefing + progress math (pure).
+ * PROMPT F.5 / F.6, briefing + progress math (pure).
  * Deltas compute correctly; deltas are confidence-gated; PB + baseline math.
  */
 import {

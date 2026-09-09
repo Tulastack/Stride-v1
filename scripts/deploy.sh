@@ -1,9 +1,9 @@
 #!/bin/bash
-# Deploy script — builds images, pushes to ECR, and updates ECS services.
+# Deploy script, builds images, pushes to ECR, and updates ECS services.
 # Usage: ./scripts/deploy.sh [api|ml-worker|all]
-#   api        — deploy only the API service
-#   ml-worker  — deploy only the ML worker service
-#   all        — deploy both (default)
+#   api, deploy only the API service
+#   ml-worker, deploy only the ML worker service
+#   all, deploy both (default)
 #
 # Cluster/service names match infra/terraform (stride-cluster-<env> etc.).
 # Override via env vars for a non-terraform environment:
@@ -20,7 +20,7 @@ API_SERVICE="${STRIDE_API_SERVICE:-stride-api-${ENVIRONMENT}}"
 ML_WORKER_SERVICE="${STRIDE_ML_WORKER_SERVICE:-stride-ml-worker-${ENVIRONMENT}}"
 TARGET="${1:-all}"
 
-# Repo root — Docker build contexts MUST be the repo root: the API image copies
+# Repo root, Docker build contexts MUST be the repo root: the API image copies
 # turbo.json + packages/* (monorepo workspaces), which don't exist under apps/.
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 

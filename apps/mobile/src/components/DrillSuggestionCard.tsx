@@ -50,7 +50,7 @@ export function DrillSuggestionCard({ suggestion, onApprove, onSkip }: Props) {
     return (
       <View style={[styles.card, styles.approvedCard]} testID={`suggestion-card-${suggestion.id}`}>
         <CheckCircle color={semantic.status.improve} size={18} />
-        <Text style={styles.approvedText}>{suggestion.drill_name} — added to calendar</Text>
+        <Text style={styles.approvedText}>{suggestion.drill_name} added to calendar</Text>
       </View>
     );
 

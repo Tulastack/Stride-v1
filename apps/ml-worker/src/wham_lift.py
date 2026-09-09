@@ -1,8 +1,8 @@
-"""Stage 2 — WHAM-class monocular 3D lift (SMPL in gravity-aligned world frame).
+"""Stage 2, WHAM-class monocular 3D lift (SMPL in gravity-aligned world frame).
 
 Attempts to run the real WHAM codebase when STRIDE_WHAM_REPO is configured.
 Falls back to a SMPL-parameterized gravity lift from 2D keypoints + gyro when
-WHAM weights are unavailable — same output contract, lower fidelity.
+WHAM weights are unavailable, same output contract, lower fidelity.
 """
 
 from __future__ import annotations

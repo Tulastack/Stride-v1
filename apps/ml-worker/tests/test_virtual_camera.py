@@ -2,7 +2,7 @@
 
 `biomech2d` measures in the image plane, so its numbers depend on where the
 phone was. The existing response is a confidence discount (`_viewpoint_penalty`)
-— honest, but a label on a biased number. `virtual_camera` removes the bias
+- honest, but a label on a biased number. `virtual_camera` removes the bias
 instead: it rotates a 3D skeleton into a canonical frame derived from the
 athlete's own body plus gravity, then re-projects through a virtual camera
 placed exactly on-axis.
@@ -38,7 +38,7 @@ def _sprint_pose(t: float) -> np.ndarray:
 
     World axes: +X running direction, +Y gravity up, +Z lateral. The athlete
     travels along +X, the pelvis oscillates vertically at twice stride rate, and
-    the legs counter-phase. Exact realism is not the point — the point is a
+    the legs counter-phase. Exact realism is not the point, the point is a
     signal with real structure in all three axes, so that a projection which
     loses a plane cannot accidentally agree with one that keeps it."""
     k = np.full((17, 3), np.nan)
@@ -80,7 +80,7 @@ def _rot_yaw(deg: float) -> np.ndarray:
 
 
 def _rot_pitch(deg: float) -> np.ndarray:
-    """Rotation about the lateral axis — a phone tilted up or down."""
+    """Rotation about the lateral axis, a phone tilted up or down."""
     a = math.radians(deg)
     c, s = math.cos(a), math.sin(a)
     return np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]])
@@ -101,7 +101,7 @@ def _metrics(frames: list[dict]) -> dict[str, float]:
 
 
 def _naive_projection(poses: np.ndarray, conf: np.ndarray) -> list[dict]:
-    """NEGATIVE CONTROL: what today's pipeline effectively does — project onto
+    """NEGATIVE CONTROL: what today's pipeline effectively does, project onto
     the camera's own image plane (drop the depth axis) with no canonical
     rotation. Produces the viewpoint dependence this module exists to remove."""
     frames = []
@@ -177,7 +177,7 @@ def test_metrics_are_invariant_to_camera_position():
 
 def test_naive_projection_is_NOT_invariant():
     """Negative control. Without the canonical rotation the same metrics swing
-    wildly with camera position — which is what makes the test above meaningful
+    wildly with camera position, which is what makes the test above meaningful
     rather than tautological."""
     poses, conf = _clip()
     base = _metrics(_naive_projection(poses, conf))

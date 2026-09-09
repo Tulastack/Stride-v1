@@ -1,4 +1,4 @@
-// Stride v2 theme — light-first with gold accent, full dark mode support.
+// Stride v2 theme, light-first with gold accent, full dark mode support.
 // Every screen reads colors via useTheme(), nothing hardcoded.
 
 export const palettes = {
@@ -6,7 +6,7 @@ export const palettes = {
     bg: '#F7F5EF',
     card: '#FFFFFF',
     cardAlt: '#F1EEE3',
-    border: '#D9D3C0',   // stronger rules — surfaces read as drawn, not floating
+    border: '#D9D3C0',   // stronger rules, surfaces read as drawn, not floating
     text: '#191813',
     muted: '#6B6859',    // darker muted: secondary text stays legible outdoors
     accent: '#C8A140',

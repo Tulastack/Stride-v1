@@ -1,4 +1,4 @@
-"""Stage 3 — OpenCap-Monocular style biomechanical skeleton refinement.
+"""Stage 3, OpenCap-Monocular style biomechanical skeleton refinement.
 
 Refines WHAM/SMPL world poses against:
   • fixed anthropometric bone lengths (OpenSim-style scaling prior)
@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 Vec3 = tuple[float, float, float]
 
-# OpenSim-style joint limits (degrees) — sagittal plane
+# OpenSim-style joint limits (degrees), sagittal plane
 JOINT_LIMITS_DEG: dict[str, tuple[float, float]] = {
     "l_hip": (-20, 130),
     "r_hip": (-20, 130),

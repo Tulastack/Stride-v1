@@ -1,5 +1,5 @@
 /**
- * PROMPT B.2 — validation harness tests.
+ * PROMPT B.2, validation harness tests.
  *
  * Unit: error-metric math (RMSE/MAE/ICC) on synthetic known-offset data.
  * Integration: a deliberately-degraded engine output trips the 'experimental' gate.
@@ -38,7 +38,7 @@ describe('B.2 error-metric math (known offsets)', () => {
 
   it('ICC drops toward 0 when predictions are uncorrelated/biased', () => {
     const truth = [1, 2, 3, 4, 5, 6];
-    const pred = [6, 1, 5, 2, 4, 3]; // shuffled — no agreement
+    const pred = [6, 1, 5, 2, 4, 3]; // shuffled, no agreement
     expect(icc(pred, truth)).toBeLessThan(0.5);
   });
 

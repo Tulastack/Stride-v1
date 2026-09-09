@@ -1,5 +1,5 @@
 // Decides whether the coach's reply is worth surfacing an "Add to My Calendar"
-// button for — via local sentence embeddings (no external API key, no server
+// button for, via local sentence embeddings (no external API key, no server
 // round-trip), not keyword matching. The model never auto-schedules anything;
 // this only controls whether the CTA appears. Tapping it is still the only way
 // anything gets written to the calendar (see routes/coachSessions.ts).
@@ -9,7 +9,7 @@
 // use, mirroring the dependency-free spirit of ./knowledge.ts's lexical
 // retriever, just with real semantic similarity instead of token overlap.
 
-// Replies that read like a concrete, schedulable plan — NOT questions asking
+// Replies that read like a concrete, schedulable plan, NOT questions asking
 // whether to schedule one (the model shouldn't need to ask; relevance alone
 // decides whether the button shows).
 const PLAN_EXEMPLARS = [
@@ -30,7 +30,7 @@ const PLAN_EXEMPLARS = [
 // exemplars above; a passing mention of "workouts" with no actual plan scores
 // ~0.53, praise/form-only replies score ~0.17-0.42. 0.55 cleanly separates those.
 // Known soft edge case: a vague "make sure you hydrate"/"recovery matters"
-// comment with no real plan can score ~0.58-0.61 (slight over-trigger) —
+// comment with no real plan can score ~0.58-0.61 (slight over-trigger),
 // acceptable since the CTA only ever offers to generate a plan; nothing is
 // added without explicit approval.
 const SIMILARITY_THRESHOLD = 0.55;
@@ -69,7 +69,7 @@ function cosineSimilarity(a: number[], b: number[]): number {
 }
 
 /**
- * True if the reply reads like a concrete, schedulable workout/drill plan —
+ * True if the reply reads like a concrete, schedulable workout/drill plan,
  * i.e. showing an "Add to My Calendar" CTA would make sense. Never throws:
  * if the local embedding model can't load (e.g. no network on first run),
  * fails closed (no CTA) rather than breaking the coach reply.

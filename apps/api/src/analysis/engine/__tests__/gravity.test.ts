@@ -1,11 +1,11 @@
 /**
- * Research Phase 1 — gravity anchoring.
+ * Research Phase 1, gravity anchoring.
  *
  * Two things are proven here:
  *  1. The gyro+accel complementary filter recovers a stable gravity direction
  *     and REJECTS transient linear-acceleration spikes (the panning-filmer case).
  *  2. Feeding a measured world-up into Stage 4 canonicalization extends its
- *     view-invariance from yaw-only to full pitch/roll/elevation — while leaving
+ *     view-invariance from yaw-only to full pitch/roll/elevation, while leaving
  *     the default (no gravity) behavior byte-identical.
  */
 import { fuseGravity, worldUpFromGravity, tiltFromVerticalDeg } from '../gravity.js';
@@ -65,7 +65,7 @@ describe('gyro+accel gravity fusion', () => {
   });
 });
 
-// Rotate a pose about the X axis (camera pitch / elevation) — the NON-yaw
+// Rotate a pose about the X axis (camera pitch / elevation), the NON-yaw
 // tilt that the old hardcoded [0,1,0] up cannot handle.
 function rotX(p: Vec3, t: number): Vec3 {
   const c = Math.cos(t), s = Math.sin(t);

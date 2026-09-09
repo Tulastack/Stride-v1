@@ -1,4 +1,4 @@
-// Parse live analysis rows from the API — no fixture fallbacks in production code.
+// Parse live analysis rows from the API, no fixture fallbacks in production code.
 
 import type { AnalysisResult } from '../types/analysis';
 import { strideApi } from '../services/api';

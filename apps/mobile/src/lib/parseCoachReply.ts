@@ -16,7 +16,7 @@ export interface CoachSection {
   title: string;
   body: string;
   bullets: string[];
-  /** Present when type is metric — e.g. knee_drive */
+  /** Present when type is metric, e.g. knee_drive */
   metricKey?: string;
 }
 

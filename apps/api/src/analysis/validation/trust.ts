@@ -1,5 +1,5 @@
 // Validation trust status for in-app experimental gate (B.2 task 3).
-// Grounded in docs/validation/REPORT.md — do not invent confidence.
+// Grounded in docs/validation/REPORT.md, do not invent confidence.
 
 import {
   runValidation,

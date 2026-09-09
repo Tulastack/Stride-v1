@@ -4,26 +4,26 @@
  *
  * Offline, one-off research pipeline: for each Stride biomechanics metric,
  * maps the measurement to the body part/mechanism it implicates and the
- * injury/inefficiency risk it's associated with, backed by real literature —
+ * injury/inefficiency risk it's associated with, backed by real literature,
  * then builds a tiered (beginner/intermediate/advanced) corrective exercise
  * program from that mapping. See docs/research/metric-biomechanics.md for
  * the full design and docs/research/angle-agnostic-kinematics.md for the
  * house fan-out/checker/synthesis convention this follows.
  *
  * Seven roles, run per metric:
- *   1. Biometrics agent   — researches body region/mechanism/injury risk
- *   2. Checker A          — independently re-derives + verifies (1)
- *   3. Checker B          — independently re-derives + verifies (1), no
+ *   1. Biometrics agent, researches body region/mechanism/injury risk
+ *   2. Checker A, independently re-derives + verifies (1)
+ *   3. Checker B, independently re-derives + verifies (1), no
  *                           visibility into Checker A
- *   4. Orchestrator audit — programmatic accountability pass over (1)-(3):
+ *   4. Orchestrator audit, programmatic accountability pass over (1)-(3):
  *                           citation presence, coverage, checker convergence
- *   5. Plan agent 1       — high-level corrective movement categories
- *   6. Plan agent 2       — PT-literature deep dive, cited sets/reps/protocol
- *   7. Packaging agent    — merges (5)+(6) into 3 tiers matching Stride's
+ *   5. Plan agent 1, high-level corrective movement categories
+ *   6. Plan agent 2, PT-literature deep dive, cited sets/reps/protocol
+ *   7. Packaging agent, merges (5)+(6) into 3 tiers matching Stride's
  *                           existing experienceLevel/isInjured/flawSeverity
  *                           axes (apps/api/src/calendar/trainingPlan.ts)
  *
- * This is a RESEARCH step, not a runtime dependency — output lands in
+ * This is a RESEARCH step, not a runtime dependency, output lands in
  * output/<metric>.json and output/<metric>.sql for HUMAN REVIEW before
  * anything is synced into biomech2d.py, knowledge.ts, or
  * reference_drills.tiers. Nothing here is called from the analysis pipeline
@@ -33,10 +33,10 @@
  *   npx tsx apps/api/scripts/research/generate-metric-biomechanics.ts pelvic_drop
  *   npx tsx apps/api/scripts/research/generate-metric-biomechanics.ts --all
  *
- * Requires ANTHROPIC_API_KEY (or an `ant auth login` profile) — this makes
+ * Requires ANTHROPIC_API_KEY (or an `ant auth login` profile), this makes
  * real, billed Claude Opus 5 + web-search calls. A single metric run is
  * roughly 6 model calls; running --all against a real API key has a real
- * dollar cost. Nothing here runs automatically — it's a script a human
+ * dollar cost. Nothing here runs automatically, it's a script a human
  * invokes deliberately.
  */
 import 'dotenv/config';
@@ -53,7 +53,7 @@ const MODEL = 'claude-opus-5';
 const client = new Anthropic();
 
 // ─── Metric keys, pulled live from the source of truth ─────────────────────
-// Never hand-typed here — a metric silently missing from this list is
+// Never hand-typed here, a metric silently missing from this list is
 // exactly the "only the easy ones get done" failure mode the orchestrator
 // audit exists to catch, so the list itself must not be able to drift.
 function loadMetricKeys(): string[] {
@@ -61,13 +61,13 @@ function loadMetricKeys(): string[] {
   const block = src.match(/NORMAL_RANGE:[^{]*\{([\s\S]*?)\n\}/);
   if (!block) {
     throw new Error(
-      `Could not locate NORMAL_RANGE dict in ${BIOMECH_PY_PATH} — has the source format changed? ` +
+      `Could not locate NORMAL_RANGE dict in ${BIOMECH_PY_PATH}, has the source format changed? ` +
         'Update the regex in loadMetricKeys() rather than hand-typing the metric list.',
     );
   }
   const keys = [...block[1]!.matchAll(/"([a-z_]+)":/g)].map((m) => m[1]!);
   if (keys.length === 0) {
-    throw new Error('Parsed zero metric keys from biomech2d.py — regex is likely stale.');
+    throw new Error('Parsed zero metric keys from biomech2d.py, regex is likely stale.');
   }
   return keys;
 }
@@ -153,7 +153,7 @@ async function runBiometricsAgent(metricKey: string, unit: string, plane: string
   const user = `Metric: \`${metricKey}\` (unit: ${unit}, plane: ${plane}).
 Current app explanation (extend/validate/deepen, don't just restate): "${currentWhy}"
 
-Use real web search (multiple queries) to find sports-medicine / biomechanics / gait-analysis literature on this metric during running — what causes deviations, what body structures are implicated, what injuries or performance issues it's associated with, ideally in runners specifically. Only cite sources you can name with something a human could verify (author/year/journal, or a stable URL). Note whether evidence is well-replicated, single-study, or plausible-reasoning-only, and whether relationships are causal or correlational.
+Use real web search (multiple queries) to find sports-medicine / biomechanics / gait-analysis literature on this metric during running, what causes deviations, what body structures are implicated, what injuries or performance issues it's associated with, ideally in runners specifically. Only cite sources you can name with something a human could verify (author/year/journal, or a stable URL). Note whether evidence is well-replicated, single-study, or plausible-reasoning-only, and whether relationships are causal or correlational.
 
 Respond with ONLY a JSON object (in a \`\`\`json fence), matching this shape exactly:
 {
@@ -168,7 +168,7 @@ Respond with ONLY a JSON object (in a \`\`\`json fence), matching this shape exa
   "citations": [{"citation": "...", "url_or_doi": "...", "what_it_shows": "..."}],
   "search_log": ["query 1", "query 2", ...]
 }
-search_log must list the actual queries you ran — the orchestrator audit checks this is non-empty as a real-research signal.`;
+search_log must list the actual queries you ran, the orchestrator audit checks this is non-empty as a real-research signal.`;
 
   const text = await runTurn(system, user, { search: true });
   return extractJson<BiomechanicsFinding>(text, `biometrics:${metricKey}`);
@@ -187,7 +187,7 @@ async function runChecker(label: 'A' | 'B', finding: BiomechanicsFinding): Promi
   const system =
     `You are Checker ${label} in a research-verification pipeline for Stride, a sprint-biomechanics coaching app. ` +
     'Another agent researched a running metric and produced claims about body structures and injury associations. ' +
-    'Verify INDEPENDENTLY — run your own web searches, do not just skim the given citation list and agree. ' +
+    'Verify INDEPENDENTLY, run your own web searches, do not just skim the given citation list and agree. ' +
     'You have not seen a second checker\'s work; do not try to produce a "balanced" answer, just report what you find.';
 
   const user = `Metric: \`${finding.metric_key}\`
@@ -196,7 +196,7 @@ Claimed injury risks: ${JSON.stringify(finding.injury_risks)}
 Claimed confidence: ${finding.confidence} / ${finding.correlation_or_causal}
 Claimed citations: ${JSON.stringify(finding.citations)}
 
-Run your own independent searches. Try to verify the specific citations (do they say what's claimed?). Form your own view of what the literature says, independent of the claims above — note anything missed or overstated.
+Run your own independent searches. Try to verify the specific citations (do they say what's claimed?). Form your own view of what the literature says, independent of the claims above, note anything missed or overstated.
 
 Respond with ONLY a JSON object (in a \`\`\`json fence):
 {
@@ -222,7 +222,7 @@ function auditFinding(finding: BiomechanicsFinding, checkerA: CheckerVerdict, ch
   const issues: string[] = [];
 
   if (!finding.search_log || finding.search_log.length === 0) {
-    issues.push('search_log is empty — no evidence the biometrics agent actually searched.');
+    issues.push('search_log is empty, no evidence the biometrics agent actually searched.');
   }
   if (!finding.citations || finding.citations.length === 0) {
     issues.push('No citations provided.');
@@ -231,17 +231,17 @@ function auditFinding(finding: BiomechanicsFinding, checkerA: CheckerVerdict, ch
     issues.push('One or more required fields empty (body_region/primary_structure/mechanism/injury_risks).');
   }
   if (!finding.hedge_note) {
-    issues.push('No hedge_note — confidence claim is unqualified.');
+    issues.push('No hedge_note, confidence claim is unqualified.');
   }
   if (checkerA.verdict === 'contradicted' || checkerB.verdict === 'contradicted') {
-    issues.push('At least one checker contradicted the finding — requires human review before shipping.');
+    issues.push('At least one checker contradicted the finding, requires human review before shipping.');
   }
   if (checkerA.verdict === 'no_lit_found' && checkerB.verdict === 'no_lit_found') {
     issues.push('Neither checker found supporting literature independently.');
   }
   if (checkerA.verdict !== checkerB.verdict) {
     issues.push(
-      `Checkers diverged (A=${checkerA.verdict}, B=${checkerB.verdict}) — flagged for manual review, not auto-resolved.`,
+      `Checkers diverged (A=${checkerA.verdict}, B=${checkerB.verdict}), flagged for manual review, not auto-resolved.`,
     );
   }
 
@@ -265,13 +265,13 @@ interface PlanAgent1Output {
 async function runPlanAgent1(finding: BiomechanicsFinding): Promise<PlanAgent1Output> {
   const system =
     'You are the high-level planning agent in a training-plan pipeline for Stride. Given a checker-verified ' +
-    'metric-to-injury mapping, propose 2-4 basic corrective MOVEMENT CATEGORIES (not named exercises with dosage — ' +
+    'metric-to-injury mapping, propose 2-4 basic corrective MOVEMENT CATEGORIES (not named exercises with dosage, ' +
     'that is a separate agent\'s job). Reason from the actual mechanism, not generic advice.';
 
   const user = `Metric: \`${finding.metric_key}\`
 Mechanism: ${finding.mechanism}
 Injury risks: ${JSON.stringify(finding.injury_risks)}
-Confidence: ${finding.confidence} (${finding.correlation_or_causal}) — ${finding.hedge_note}
+Confidence: ${finding.confidence} (${finding.correlation_or_causal}), ${finding.hedge_note}
 
 You may do light web searching to inform category selection, but this is primarily a reasoning task.
 
@@ -303,10 +303,10 @@ interface PlanAgent2Output {
 async function runPlanAgent2(finding: BiomechanicsFinding): Promise<PlanAgent2Output> {
   const system =
     'You are the PT/medical-literature deep-dive agent in a training-plan pipeline for Stride. Find REAL, cited ' +
-    'exercises with REAL sets/reps/frequency/progression protocols from sports-PT/rehab literature — not ' +
+    'exercises with REAL sets/reps/frequency/progression protocols from sports-PT/rehab literature, not ' +
     'plausible-sounding numbers. Prioritize pulling an actual intervention-study protocol if one exists for this ' +
     'mechanism; otherwise cite general rehab-literature dosing for the same target structure. You run in ' +
-    'PARALLEL with a separate high-level movement-category agent working from the same mapping below — you do ' +
+    'PARALLEL with a separate high-level movement-category agent working from the same mapping below, you do ' +
     'not see its output, so focus on specific, dosed, cited exercises rather than category-level reasoning.';
 
   const user = `Metric: \`${finding.metric_key}\`
@@ -328,7 +328,7 @@ Respond with ONLY a JSON object (in a \`\`\`json fence):
 }
 
 // ─── Role 7: Packaging agent ─────────────────────────────────────────────────
-// Output is an ORDERED 4-phase recovery arc — every athlete who gets this
+// Output is an ORDERED 4-phase recovery arc, every athlete who gets this
 // metric's flaw progresses phase 1 -> 2 -> 3 -> 4 in sequence, each phase's
 // exercise group entirely replacing the last. This is NOT a difficulty tier
 // an athlete is assigned once; it's a recovery timeline. See
@@ -366,9 +366,9 @@ async function runPackagingAgent(
     'You are the packaging agent, the final stage in a training-plan pipeline for Stride. Merge two upstream ' +
     'agents\' output into exactly 4 ORDERED recovery phases: 1 Stability (motor control / lowest load), ' +
     '2 Strength (the real evidence-based loading backbone), 3 "Plyometrics & Movement" (bridges strength to ' +
-    'running-relevant speed/impact — hold back anything with a contraindication flag from the earlier phases), ' +
+    'running-relevant speed/impact, hold back anything with a contraindication flag from the earlier phases), ' +
     '4 "Back to Sport" (gradual running reintegration + maintenance strength work). This is a TIME-BASED ' +
-    'PROGRESSION every athlete goes through in order, not a difficulty tier picked once by athlete level — do ' +
+    'PROGRESSION every athlete goes through in order, not a difficulty tier picked once by athlete level, do ' +
     'not invent a tier concept. Use contraindication notes from the input to decide which phase an exercise ' +
     'first appears in. This is a synthesis/logic task, no new research.';
 
@@ -380,7 +380,7 @@ Sequencing note: ${categories.sequencing_note}
 Exercises (input B): ${JSON.stringify(exercises.exercises)}
 Protocol source confidence: ${exercises.protocol_source_confidence}
 
-Respond with ONLY a JSON object (in a \`\`\`json fence) — this must be directly usable as
+Respond with ONLY a JSON object (in a \`\`\`json fence), this must be directly usable as
 reference_drills.recovery_phases rows:
 {
   "metric_key": "${metricKey}",
@@ -437,7 +437,7 @@ async function runMetricPipeline(metricKey: string): Promise<MetricRunResult> {
   const audit = auditFinding(finding, checkerA, checkerB);
   if (audit.status === 'blocked') {
     // eslint-disable-next-line no-console
-    console.warn(`[${metricKey}] BLOCKED — not proceeding to plan agents:\n  - ${audit.issues.join('\n  - ')}`);
+    console.warn(`[${metricKey}] BLOCKED, not proceeding to plan agents:\n  - ${audit.issues.join('\n  - ')}`);
     throw new Error(`Pipeline blocked for ${metricKey}: ${audit.issues.join('; ')}`);
   }
   if (audit.status === 'needs_rework') {
@@ -468,7 +468,7 @@ function writeOutputs(result: MetricRunResult, runId: string): void {
   writeFileSync(jsonPath, JSON.stringify(result, null, 2), 'utf-8');
 
   const sqlPath = resolve(OUTPUT_DIR, `${finding.metric_key}.sql`);
-  const sql = `-- Pipeline output for ${finding.metric_key} — run_id ${runId}.
+  const sql = `-- Pipeline output for ${finding.metric_key}, run_id ${runId}.
 -- reviewed_by/reviewed_at are NULL on purpose. A HUMAN must review this
 -- content (see audit issues below) and set reviewed_by before appending to
 -- apps/api/src/db/seeds/metric_biomechanics.sql or syncing anywhere
@@ -478,8 +478,8 @@ function writeOutputs(result: MetricRunResult, runId: string): void {
 -- Orchestrator audit status: ${result.audit.status}
 ${result.audit.issues.map((i) => `-- ISSUE: ${i}`).join('\n')}
 --
--- Checker A: ${result.checkerA.verdict} — ${result.checkerA.reasoning.slice(0, 200)}
--- Checker B: ${result.checkerB.verdict} — ${result.checkerB.reasoning.slice(0, 200)}
+-- Checker A: ${result.checkerA.verdict}, ${result.checkerA.reasoning.slice(0, 200)}
+-- Checker B: ${result.checkerB.verdict}, ${result.checkerB.reasoning.slice(0, 200)}
 
 INSERT INTO metric_biomechanics (
     metric_key, body_region, primary_structure, mechanism,
@@ -510,7 +510,7 @@ NULL,
   // eslint-disable-next-line no-console
   console.log(`[${finding.metric_key}] wrote ${jsonPath}`);
   // eslint-disable-next-line no-console
-  console.log(`[${finding.metric_key}] wrote ${sqlPath} (NOT applied — human review required)`);
+  console.log(`[${finding.metric_key}] wrote ${sqlPath} (NOT applied, human review required)`);
 }
 
 // ─── CLI entry ────────────────────────────────────────────────────────────
@@ -550,7 +550,7 @@ async function main(): Promise<void> {
   }
   const missing = allKeys.filter((k) => !results.some((r) => r.metricKey === k));
   if (arg === '--all' && missing.length > 0) {
-    console.error(`Coverage assertion FAILED — missing: ${missing.join(', ')}`);
+    console.error(`Coverage assertion FAILED, missing: ${missing.join(', ')}`);
     process.exit(1);
   }
 }

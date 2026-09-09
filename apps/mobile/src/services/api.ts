@@ -6,7 +6,7 @@ interface FetchOptions extends RequestInit {
   token?: string | null;
 }
 
-// Structured coach action chips — must match the server enum (no free-text chat, F.5).
+// Structured coach action chips, must match the server enum (no free-text chat, F.5).
 export type CoachActionChip =
   | 'why_is_this_an_issue'
   | 'mark_understood'
@@ -25,7 +25,7 @@ const CHIP_LABELS: Record<CoachActionChip, string> = {
 async function request<T>(path: string, options: FetchOptions = {}): Promise<T> {
   const state = useStrideStore.getState();
   const baseUrl = state.apiBaseUrl;
-  if (!baseUrl) throw new Error('API URL not configured — set EXPO_PUBLIC_API_BASE_URL');
+  if (!baseUrl) throw new Error('API URL not configured. Set EXPO_PUBLIC_API_BASE_URL.');
 
   const doFetch = async (token?: string | null) => {
     const headers = new Headers(options.headers);
@@ -49,7 +49,7 @@ async function request<T>(path: string, options: FetchOptions = {}): Promise<T> 
     );
   }
 
-  // If it 401s, the token may be stale — force a fresh session token and retry once.
+  // If it 401s, the token may be stale, force a fresh session token and retry once.
   if (response.status === 401 && !options.token) {
     const fresh = await getAccessToken();
     if (fresh && fresh !== token) {
@@ -206,7 +206,7 @@ export const strideApi = {
   },
 
   /**
-   * Streak summary. `today` is the caller's LOCAL date — the server must not
+   * Streak summary. `today` is the caller's LOCAL date, the server must not
    * decide when the athlete's day ends (same reason the grid builds its date
    * strings from local calendar fields rather than toISOString()).
    */
@@ -216,7 +216,7 @@ export const strideApi = {
       longest: number;
       lastActiveDate: string | null;
       activeDates: string[];
-      /** Inclusive ends of the live run — the calendar draws it as one bar. */
+      /** Inclusive ends of the live run, the calendar draws it as one bar. */
       streakStart: string | null;
       streakEnd: string | null;
       atRiskToday: boolean;
@@ -244,7 +244,7 @@ export const strideApi = {
 
   // --- Coach Sessions ---
   // Server contract: mounted at /coach-sessions; bodies are snake_case; structured
-  // action chips flow through POST /:id/message (no free-text chat — F.5).
+  // action chips flow through POST /:id/message (no free-text chat, F.5).
   createCoachSession: async (sessionType: 'analysis_workflow' | 'free_coach', analysisId?: string) => {
     return request<any>('/coach-sessions', {
       method: 'POST',

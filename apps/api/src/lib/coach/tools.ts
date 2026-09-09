@@ -1,8 +1,8 @@
-// Stride Coach — agent tools.
+// Stride Coach, agent tools.
 //
 // The coach is an AGENT, not a single completion: it can call these tools to
 // pull the athlete's real measured data, the vetted knowledge base, and the
-// canonical drill library before answering. Every tool is READ-ONLY — writes to
+// canonical drill library before answering. Every tool is READ-ONLY, writes to
 // the calendar go exclusively through the explicit approval gate elsewhere, so
 // the agent can never silently schedule anything.
 //
@@ -18,7 +18,7 @@ export interface CoachProfile {
   display_name?: string | null;
 }
 
-/** DB access the tools need — injected so tests can stub them. */
+/** DB access the tools need, injected so tests can stub them. */
 export interface CoachDeps {
   getAnalysesByUser(userId: string): Promise<any[]>;
   getMetricsTrend(userId: string, metricKey: string, weeks: number): Promise<{ week: string; avg_value: number }[]>;
@@ -142,7 +142,7 @@ function normalizeTrendKey(raw: string): string {
 
 /**
  * Build the tool executor bound to a specific athlete. `execute` returns a
- * plain string (the tool result the model reads) and never throws — failures
+ * plain string (the tool result the model reads) and never throws, failures
  * come back as a readable message so the agent can recover.
  */
 export function buildCoachTools(ctx: CoachToolContext) {
@@ -176,21 +176,21 @@ export function buildCoachTools(ctx: CoachToolContext) {
                 .map((m) => {
                   const key = String(m.key ?? '');
                   const label = key.replace(/_(ms|spm)$/, '').replace(/_/g, ' ');
-                  const val = typeof m.measured?.value === 'number' ? m.measured.value : (m.measured ?? '—');
+                  const val = typeof m.measured?.value === 'number' ? m.measured.value : (m.measured ?? 'n/a');
                   const conf = typeof m.measured?.confidence === 'number' ? m.measured.confidence : null;
                   const [lo, hi] = m.normalRange ?? [];
                   const fmt = (n: unknown) => (typeof n === 'number' ? n.toLocaleString('en-US') : n);
                   const range = lo != null && hi != null ? ` (normal ${fmt(lo)}-${fmt(hi)}${m.unit ?? ''})` : '';
                   const trust =
                     m.trustStatus === 'experimental'
-                      ? ' [experimental — hedge; do not treat as definitive]'
+                      ? ' [experimental, hedge; do not treat as definitive]'
                       : m.trustStatus === 'trusted'
                         ? ' [trusted]'
                         : '';
                   const confStr = conf != null ? ` conf=${conf.toFixed(2)}` : '';
                   const gated =
                     usable[key] === false || (conf != null && conf < 0.35)
-                      ? ' [NOT USABLE — do not cite as fact; ask them to re-film]'
+                      ? ' [NOT USABLE, do not cite as fact; ask them to re-film]'
                       : '';
                   return `- ${label}: ${fmt(val)}${m.unit ?? ''}${range}${confStr}${trust}${gated}`;
                 })
@@ -236,7 +236,7 @@ export function buildCoachTools(ctx: CoachToolContext) {
           const contra = drill.contraindications
             ? `Contraindications/warnings: ${Array.isArray(drill.contraindications) ? drill.contraindications.join('; ') : drill.contraindications}`
             : 'Contraindications: none listed.';
-          // Column is `cues` (JSONB array) — there is no `cue`/`default_cue`.
+          // Column is `cues` (JSONB array), there is no `cue`/`default_cue`.
           const cues = Array.isArray((drill as { cues?: unknown }).cues) && (drill as { cues: unknown[] }).cues.length > 0
             ? (drill as { cues: unknown[] }).cues.join('; ')
             : 'n/a';

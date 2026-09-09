@@ -13,7 +13,7 @@ const EDGES: [number, number][] = [
 const ACCENT = '#FF453A';
 const CONF = 0.3;
 
-/** A static skeleton snapshot of the athlete's own pose at a given timestamp —
+/** A static skeleton snapshot of the athlete's own pose at a given timestamp,
  * the "your form" reference on each drill card. Reuses the cached overlay. */
 export function PoseSnapshot({ analysisId, tMs }: { analysisId: string; tMs: number }) {
   const [overlay, setOverlay] = useState<OverlayData | null>(null);

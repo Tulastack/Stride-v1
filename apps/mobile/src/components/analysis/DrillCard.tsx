@@ -1,6 +1,6 @@
 // Visual-demo drill card (PROMPT F.4). Pairs the user's flaw frame with a loop
 // of the correct movement, the cue, sets/reps, and the "why this fixes it" line.
-// Every DrillRec MUST resolve to a demoAssetId — an orphan rec is a bug.
+// Every DrillRec MUST resolve to a demoAssetId, an orphan rec is a bug.
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Dumbbell, User } from 'lucide-react-native';
@@ -36,7 +36,7 @@ export function DrillCard({
           <Text style={styles.frameLabel}>your form</Text>
         </View>
         <View style={styles.frameCol}>
-          {/* No playable demo clips yet — a drill icon, never a play button
+          {/* No playable demo clips yet, a drill icon, never a play button
               that goes nowhere. Swap in a video thumbnail when assets land. */}
           <View style={[styles.frame, styles.demoFrame]} accessibilityLabel={`demo-${rec.demoAssetId}`} testID={`demo-${rec.demoAssetId}`}>
             <Dumbbell size={22} color={semantic.action.primary} />

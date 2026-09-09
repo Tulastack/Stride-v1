@@ -3,7 +3,7 @@
  *
  * Loads a REAL reconstructed-3D clip (the engine test fixture), then rotates the
  * entire skeleton about the gravity (vertical) axis through a sweep of camera
- * azimuths — 0° (side-on) up to 90° (head-on). For each simulated viewpoint it
+ * azimuths, 0° (side-on) up to 90° (head-on). For each simulated viewpoint it
  * runs the ACTUAL production engine (Stages 4–7: canonicalize → metrics →
  * confidence) and prints the resulting metric values, confidence bands, and
  * trust status.
@@ -91,7 +91,7 @@ for (const az of AZIMUTHS) {
 }
 
 const pad = (s: string, n: number) => s.padEnd(n);
-const num = (x: number | undefined, d = 1) => (x === undefined ? '—' : x.toFixed(d));
+const num = (x: number | undefined, d = 1) => (x === undefined ? 'n/a' : x.toFixed(d));
 
 for (const key of TRACK) {
   console.log(`\n── ${key} ──`);
@@ -102,7 +102,7 @@ for (const key of TRACK) {
         pad(num(r.values[key]), 10) +
         pad(num(r.conf[key], 3), 13) +
         pad(num(r.band[key], 2), 13) +
-        (r.trust[key] ?? '—'),
+        (r.trust[key] ?? 'n/a'),
     );
   }
   // Invariance check across azimuth for the VALUE.

@@ -138,7 +138,7 @@ Sprint Athlete Biomechanics Data:
 
 Instructions:
 1. Your ENTIRE response MUST be strictly valid JSON matching the schema. No preamble, no markdown.
-2. Focus on the SINGLE most impactful issue — the one that, if fixed, would improve performance the most. If there is a clear secondary issue, include it (max 2 total). Do NOT list 3+ issues — athletes fix one thing at a time.
+2. Focus on the SINGLE most impactful issue, the one that, if fixed, would improve performance the most. If there is a clear secondary issue, include it (max 2 total). Do NOT list 3+ issues, athletes fix one thing at a time.
 3. Determine a unified `overall_score` (0-100) reflecting their technique quality.
 4. Draft a concise, motivating `score_label` (1 sentence max). Be direct, not generic.
 5. For each issue (1-2 max):

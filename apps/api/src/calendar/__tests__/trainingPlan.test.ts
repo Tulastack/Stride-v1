@@ -1,5 +1,5 @@
 /**
- * Progressive drill programs — approving a suggestion must produce a real
+ * Progressive drill programs, approving a suggestion must produce a real
  * multi-week block (fixed weekly frequency, spaced sessions, escalating
  * volume) rather than a single occurrence.
  */
@@ -133,7 +133,7 @@ const strengthPhase: RecoveryPhase = {
 const twoPhases = [stabilityPhase, strengthPhase];
 
 describe('generateRecoveryProgram (pure)', () => {
-  it('is deterministic — same inputs yield the same output', () => {
+  it('is deterministic, same inputs yield the same output', () => {
     const a = generateRecoveryProgram('pelvic_drop', twoPhases, 'sugg-1', '2026-02-02');
     const b = generateRecoveryProgram('pelvic_drop', twoPhases, 'sugg-1', '2026-02-02');
     expect(a).toEqual(b);
@@ -147,7 +147,7 @@ describe('generateRecoveryProgram (pure)', () => {
     expect(phase2Sessions).toHaveLength(2 * 3); // 2 weeks x 3 days/week
   });
 
-  it('phases are strictly ordered — every phase-1 session is scheduled before every phase-2 session', () => {
+  it('phases are strictly ordered, every phase-1 session is scheduled before every phase-2 session', () => {
     const sessions = generateRecoveryProgram('pelvic_drop', twoPhases, 'sugg-1', '2026-02-02');
     const lastPhase1Date = Math.max(...sessions.filter((s) => s.details.phase === 1).map((s) => new Date(s.scheduledDate).getTime()));
     const firstPhase2Date = Math.min(...sessions.filter((s) => s.details.phase === 2).map((s) => new Date(s.scheduledDate).getTime()));
