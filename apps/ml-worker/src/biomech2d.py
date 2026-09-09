@@ -1015,14 +1015,14 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
                 direction = "below" if val < lo else "above"
                 explanation = (
                     f"{WHY[key]} This clip reads yours at {_fmt_value(val, UNIT[key])}, {direction} "
-                    f"the typical {_fmt_value(lo, UNIT[key])} to {_fmt_value(hi, UNIT[key])}. "
+                    f"the typical {_fmt_value(lo, UNIT[key])} to {_fmt_value(hi, UNIT[key])}, "
                     "but the capture wasn't clean enough to call it a fault. Worth confirming on a re-film."
                 )
             else:
                 explanation = (
-                    f"{WHY[key]} Your {_metric_label(key)} is inside the healthy range but close to the edge, "
-                    f"Yours is {_fmt_value(val, UNIT[key])}, against a typical {_fmt_value(lo, UNIT[key])} to {_fmt_value(hi, UNIT[key])}. "
-                    "Not a fault, a sharpening candidate."
+                    f"{WHY[key]} Your {_metric_label(key)} is inside the healthy range but close to the edge: "
+                    f"{_fmt_value(val, UNIT[key])}, against a typical {_fmt_value(lo, UNIT[key])} to {_fmt_value(hi, UNIT[key])}. "
+                    "Not a fault, just something to sharpen."
                 )
             focus_areas.append({
                 "id": f"focus-{key.replace('_', '-')}", "key": key, "name": NAMES[key],
