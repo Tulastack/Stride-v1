@@ -96,3 +96,7 @@ apps/mobile/.env
 # (training mix likely includes H3WB / Human3.6M, academic use only).
 .models/
 *.onnx
+
+# TypeScript incremental build state: a build artifact, not source.
+tsconfig.tsbuildinfo
+*.tsbuildinfo
