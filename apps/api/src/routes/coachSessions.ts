@@ -202,10 +202,11 @@ router.post('/:id/message', authenticate, async (req: any, res: Response, next: 
     const grounding = session.analysis_id
       ? analyses.find((a: any) => a.id === session.analysis_id)
       : analyses.find((a: any) => a.status === 'completed' && a.result_json);
-    const analysisContext = buildAnalysisContext(
-      (grounding?.result_json as any) ?? null,
-      req.user,
-    );
+    // The agent has get_athlete_metrics, so its grounding block stays short and
+    // the numbers arrive once, through the tool. The single-shot fallback below
+    // has no tools, so it gets the full block.
+    const agentContext = buildAnalysisContext((grounding?.result_json as any) ?? null, req.user, { brief: true });
+    const analysisContext = buildAnalysisContext((grounding?.result_json as any) ?? null, req.user);
 
     const toolset = buildCoachTools({
       userId: req.userId,
@@ -218,7 +219,7 @@ router.post('/:id/message', authenticate, async (req: any, res: Response, next: 
     try {
       assistantText = await runTrackCoach({
         userMessage: content,
-        analysisContext,
+        analysisContext: agentContext,
         history: history ?? [],
         toolset,
         onProgress: (ev) => { progress.push(ev.label); },

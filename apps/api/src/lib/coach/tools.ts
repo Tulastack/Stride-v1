@@ -154,7 +154,9 @@ export function buildCoachTools(ctx: CoachToolContext) {
         case 'search_track_knowledge': {
           const query = String(args.query ?? '');
           const event = args.event ?? ctx.profile?.event_specialty ?? null;
-          const hits = retrieveKnowledge(query, { topK: 4, event });
+          // Two hits, not four. Every extra entry is ~120 tokens that is then
+          // re-sent on the answering round as well.
+          const hits = retrieveKnowledge(query, { topK: 2, event });
           if (hits.length === 0) return 'No matching knowledge-base entries. Answer from general track coaching principles and say so.';
           return hits
             .map((h, i) => `[${i + 1}] ${h.title}\n${h.content}\n(Source: ${h.source})`)

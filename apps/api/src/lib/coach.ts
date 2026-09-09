@@ -6,29 +6,21 @@
 import { CoachRateLimitError } from './coach/errors.js';
 import { resolveCoachProvider, postToProvider } from './coach/provider.js';
 
-const SYSTEM_PROMPT = `You are "Stride Coach", an expert coach for runners and sprinters.
+const SYSTEM_PROMPT = `You are "Stride Coach", an expert coach for runners and sprinters. Scope: running form and biomechanics, track training and periodization, fuelling and hydration, recovery and injury prevention, plus mental performance, competition prep and recruiting. For anything outside athletics, decline in one sentence.
 
-SCOPE — your primary expertise is: (1) running form/biomechanics, (2) track training & periodization, (3) sports nutrition & hydration, (4) recovery & injury prevention. BUT you are also helpful with adjacent topics athletes care about: mental performance, team dynamics, recruiting/college athletics, competition prep, and general fitness. For topics completely outside athletics (math homework, coding, etc.), politely decline in one sentence.
+You are given the athlete's latest run analysis when there is one. Use it to explain what is happening in their running and why it costs them speed, not to recite a stat: not "your knee drive is 59 degrees, normal is 80 to 110" but "you are not driving the knee high enough in swing, which shortens your stride". Never invent a metric you were not given. Metrics marked [experimental] or low confidence are less certain, so hedge those.
 
-GROUNDING — you are given the athlete's LATEST run analysis if available. When discussing form, use the numbers to explain what's actually happening and why it costs them speed/efficiency — don't just recite a stat (e.g. not "your knee drive is 59°, normal is 80–110°" but "you're not driving your knee high enough in swing phase, which is shortening your stride"). Do not invent metrics you weren't given.
+You never schedule anything. The app shows a calendar button by itself when your reply contains a real plan. Only mention scheduling if they ask.
 
-CALENDAR INTEGRATION — you never schedule anything yourself. Workouts and drills are the primary things worth scheduling, and you don't need to ask whether to add a plan every time — the app shows a calendar button automatically when a reply contains a real plan. The athlete also has the flexibility to schedule other things themselves — hydration reminders, recovery (foam rolling, ice bath, mobility), cross-training (swimming, cycling, yoga) — but only build one of those into a plan if THEY specifically bring it up; don't volunteer it unprompted the way you would a workout. Only mention the calendar explicitly if the athlete asks about scheduling directly.
+Lead with the 1 or 2 things that matter most, worst first. Never diagnose an injury; for pain, send them to a professional.
 
-PRIORITISATION — surface the TOP 1–2 things to fix, worst first. Don't dump every metric.
-
-FORMATTING RULES (CRITICAL — follow exactly):
-• NEVER use markdown. No asterisks, hashtags, backticks, or emoji. Bold nothing, italicise nothing.
-• Start each section with a label on its own line: FOCUS:  FORM:  DRILL:  PLAN:  FUEL:  MIND:  TIP:
-  When discussing a measured issue also emit: METRIC: <key>
-  (keys: knee_drive, trunk_lean, hip_extension, knee_flexion, contact_time_ms, cadence_spm, overstride, arm_swing, vertical_oscillation)
-• Use • for bullets, not dashes or asterisks. Blank line between sections. 2–3 lines per section.
-• Total 120–250 words. Concise, specific, encouraging, second person.
-
-CONFIDENCE — metrics marked [experimental] or low-confidence are less certain; hedge on those.
-
-SAFETY — never diagnose injuries. For pain, advise seeing a professional.
-
-STYLE — concise, specific, encouraging, second person. Like a knowledgeable friend texting you back.`;
+FORMAT, exactly:
+- No markdown, no asterisks, no hashtags, no backticks, no emoji.
+- Never use an em dash or an en dash. Use a comma, a colon or a full stop.
+- Label each section on its own line: FOCUS:  FORM:  DRILL:  PLAN:  FUEL:  MIND:  TIP:
+  Add METRIC: <key> when you cite a measured issue. Keys: knee_drive, trunk_lean, hip_extension, knee_flexion, contact_time_ms, cadence_spm, overstride, arm_swing, vertical_oscillation.
+- Bullets start with •. One or two lines per section.
+- 70 to 130 words in total. Specific, direct, second person. No preamble, no sign-off.`;
 
 interface Metric {
   key: string;
@@ -50,14 +42,41 @@ interface Profile {
   display_name?: string | null;
 }
 
-/** Compact, LLM-friendly grounding block from the analyzer output + profile. */
-export function buildAnalysisContext(result: AnalysisLike | null, profile?: Profile | null): string {
+/**
+ * Compact, LLM-friendly grounding block from the analyzer output + profile.
+ *
+ * `brief` is for the agent path, which owns get_athlete_metrics: sending the
+ * full metric table here as well meant every request paid for the same numbers
+ * twice, once in the system turn and again in the tool result. Brief keeps who
+ * the athlete is and enough of a headline for the model to know whether it needs
+ * the tool at all. The single-shot fallback has no tools, so it still gets the
+ * whole block.
+ */
+export function buildAnalysisContext(
+  result: AnalysisLike | null,
+  profile?: Profile | null,
+  opts?: { brief?: boolean },
+): string {
   const who = profile
     ? `ATHLETE: ${profile.display_name ?? 'runner'}, event ${profile.event_specialty ?? 'unknown'}, level ${profile.experience_level ?? 'unknown'}${profile.personal_best_seconds ? `, PB ${profile.personal_best_seconds}s` : ''}.`
     : 'ATHLETE: (no profile set).';
 
   if (!result || !result.metrics?.length) {
-    return `${who}\nLATEST RUN ANALYSIS: none available yet — give general, encouraging guidance and invite them to record a side-on running clip.`;
+    return `${who}\nLATEST RUN ANALYSIS: none yet. Give general guidance and invite them to record a side-on running clip.`;
+  }
+
+  if (opts?.brief) {
+    const worst = (result.flaws ?? [])
+      .slice()
+      .sort((a, b) => b.severity - a.severity)
+      .slice(0, 2)
+      .map((f) => f.name)
+      .join(', ');
+    return [
+      who,
+      `LATEST RUN: economy ${result.economyScore ?? 'n/a'}/100${worst ? `, worst issues: ${worst}` : ', nothing flagged'}.`,
+      'Call get_athlete_metrics for the numbers before you discuss their form.',
+    ].join('\n');
   }
 
   const fmt = (n: number) => n.toLocaleString('en-US');
@@ -94,12 +113,11 @@ export async function generateCoachReply(params: {
   history?: { role: 'user' | 'assistant'; content: string }[];
   /**
    * Output budget. The default suits a chat reply (the prompt caps it at
-   * 120-250 words) PLUS headroom for a reasoning model's hidden thinking
-   * tokens, which consume this budget without appearing in completion_tokens —
-   * at 900 the reply came back truncated mid-sentence on Gemini Flash. The
-   * add-to-calendar path needs far more still, because it emits a
-   * two-week JSON array in one shot and a truncated array is unparseable —
-   * silently turning into a 422 rather than a short answer.
+   * 70-130 words) PLUS headroom for a reasoning model's hidden thinking tokens,
+   * which consume this budget without appearing in completion_tokens. The
+   * add-to-calendar path passes a far larger one, because it emits a two-week
+   * JSON array in one shot and a truncated array is unparseable — silently
+   * turning into a 422 rather than a short answer.
    */
   maxTokens?: number;
 }): Promise<string> {
@@ -108,13 +126,13 @@ export async function generateCoachReply(params: {
   // Single system turn — see the note in coach/agent.ts.
   const messages = [
     { role: 'system' as const, content: `${SYSTEM_PROMPT}\n\n${params.analysisContext}` },
-    ...(params.history ?? []).slice(-10),
+    ...(params.history ?? []).slice(-4),
     { role: 'user' as const, content: params.userMessage },
   ];
 
   const resp = await postToProvider(provider, {
     model: provider.model, messages, temperature: 0.7,
-    max_tokens: params.maxTokens ?? 900,
+    max_tokens: params.maxTokens ?? 650,
   });
   if (!resp.ok) {
     const t = await resp.text();
