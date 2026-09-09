@@ -72,6 +72,10 @@ CREATE TABLE IF NOT EXISTS calendar_events (
     status VARCHAR(20) DEFAULT 'scheduled'
         CHECK (status IN ('scheduled','completed','skipped','modified')),
     completion_note TEXT,
+    -- The athlete's own calendar date on the day they marked this complete.
+    -- NULL until completed (and on rows that predate the column). The streak
+    -- counts a day only when its completions were logged on that day.
+    completed_on DATE,
     created_at TIMESTAMPTZ DEFAULT now()
 );
 CREATE INDEX ASYNC IF NOT EXISTS idx_calendar_user_date ON calendar_events(user_id, scheduled_date);

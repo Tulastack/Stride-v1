@@ -212,6 +212,11 @@ export default function CalendarScreen() {
   const completeWithAnimation = useCallback(
     (event: CalendarEvent) => {
       if (completingId) return; // one at a time
+      // Work scheduled for a day that has not arrived cannot be done yet.
+      // Without this the streak was a slider: tap forward through the month and
+      // the number goes up. The server refuses these too.
+      if (event.scheduled_date > todayKey()) return;
+
       setCompletingId(event.id);
       checkAnim.value = 0;
       checkAnim.value = withSequence(
@@ -219,7 +224,9 @@ export default function CalendarScreen() {
         withTiming(1, { duration: CHECK_HOLD_MS }),
       );
 
-      strideApi.updateEvent(event.id, { status: 'completed' }).catch(() => {});
+      // The athlete's own date, so the server can tell "trained today" from
+      // "ticked off an old day". Only the first extends the streak.
+      strideApi.updateEvent(event.id, { status: 'completed', today: todayKey() }).catch(() => {});
       setTimeout(() => {
         setEvents((prev) => prev.map((e) => (e.id === event.id ? { ...e, status: 'completed' } : e)));
         setCompletingId(null);
@@ -370,6 +377,7 @@ export default function CalendarScreen() {
       <EventDetailModal
         event={detailEvent}
         colors={colors}
+        today={todayKey()}
         onClose={() => setDetailEvent(null)}
         onComplete={(event) => {
           setDetailEvent(null);

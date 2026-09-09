@@ -52,6 +52,12 @@ export interface CalendarEvent {
   details: Record<string, unknown> | null;
   status: 'scheduled' | 'completed' | 'skipped' | 'modified';
   completion_note: string | null;
+  /**
+   * The athlete's own date on the day they marked this complete. NULL until
+   * completed (and on rows written before the column existed). Only completions
+   * dated to their own scheduled_date extend the streak.
+   */
+  completed_on: string | null;
   source: CalendarEventSource;
   /** NULL until the athlete has seen this event's card in the reveal stack. */
   revealed_at: Date | null;

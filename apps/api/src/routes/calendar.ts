@@ -8,6 +8,7 @@ import {
   createCalendarEvents,
   getCalendarEvents,
   updateCalendarEvent,
+  getCalendarEventById,
   getUnrevealedEvents,
   markEventsRevealed,
   declineEvents,
@@ -34,9 +35,15 @@ const createEventsRequestSchema = z.union([
   z.array(singleEventSchema),
 ]);
 
+const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be in YYYY-MM-DD format');
+
 const updateEventRequestSchema = z.object({
   status: statusSchema.optional(),
   completionNote: z.string().max(1000).optional(),
+  // The athlete's local date, same discipline as GET /streak. Sent on a
+  // completion so the server dates the tap by the athlete's clock rather than
+  // its own, and so a day that has not started yet can be refused.
+  today: dateSchema.optional(),
 });
 
 /**
@@ -98,17 +105,38 @@ router.get('/events', authenticate, async (req: any, res: Response, next: NextFu
 });
 
 /**
- * 3. Update status or add completion note to an event
+ * 3. Update status or add completion note to an event.
+ *
+ * A completion is dated with the athlete's own `today`, and work scheduled for
+ * a day that has not arrived yet cannot be completed at all: tapping forward
+ * through the calendar to run the streak up was the single easiest way to make
+ * the number meaningless.
  */
 router.patch('/events/:eventId', authenticate, async (req: any, res: Response, next: NextFunction) => {
   try {
     const { eventId } = req.params;
-    const { status, completionNote } = updateEventRequestSchema.parse(req.body);
+    const { status, completionNote, today } = updateEventRequestSchema.parse(req.body);
     const userId = req.userId;
+
+    const existing = await getCalendarEventById(eventId, userId);
+    if (!existing) {
+      res.status(404).json({ error: 'Calendar event not found or unauthorized' });
+      return;
+    }
+
+    const completing = status === 'completed';
+    const day = today ?? new Date().toISOString().slice(0, 10);
+    if (completing && existing.scheduled_date > day) {
+      res.status(400).json({ error: "You can't complete a session before the day it's scheduled for" });
+      return;
+    }
 
     const updated = await updateCalendarEvent(eventId, userId, {
       status,
       completion_note: completionNote,
+      // Cleared when a completion is undone, so an event can never keep a stale
+      // date from a tap that was taken back.
+      completed_on: completing ? day : status !== undefined ? null : undefined,
     });
 
     if (!updated) {

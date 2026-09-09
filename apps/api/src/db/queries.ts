@@ -290,10 +290,26 @@ export async function getCalendarEvents(
   return rows;
 }
 
+/**
+ * One event, scoped to its owner. The completion route reads the scheduled date
+ * from here before it writes, because "is this day in the future?" cannot be
+ * answered from the request body alone.
+ */
+export async function getCalendarEventById(
+  eventId: string,
+  userId: string,
+): Promise<CalendarEvent | null> {
+  const { rows } = await pool.query<CalendarEvent>(
+    `SELECT * FROM calendar_events WHERE id = $1 AND user_id = $2`,
+    [eventId, userId],
+  );
+  return rows[0] ?? null;
+}
+
 export async function updateCalendarEvent(
   eventId: string,
   userId: string,
-  fields: { status?: string; completion_note?: string },
+  fields: { status?: string; completion_note?: string; completed_on?: string | null },
 ): Promise<CalendarEvent | null> {
   const setClauses: string[] = [];
   const values: unknown[] = [];
@@ -306,6 +322,13 @@ export async function updateCalendarEvent(
   if (fields.completion_note !== undefined) {
     setClauses.push(`completion_note = $${paramIndex++}`);
     values.push(fields.completion_note);
+  }
+  // The athlete's own date at the moment they ticked it off. This is what
+  // separates "trained on Tuesday" from "remembered Tuesday on Friday", and the
+  // streak refuses to count the second one (see calendar/streak.ts).
+  if (fields.completed_on !== undefined) {
+    setClauses.push(`completed_on = $${paramIndex++}`);
+    values.push(fields.completed_on);
   }
 
   if (setClauses.length === 0) return null;
@@ -398,13 +421,21 @@ export async function restoreEvents(userId: string, eventIds: string[]): Promise
  *
  * `outstanding` deliberately excludes 'rest' (prescribed recovery never needs
  * a tap) and 'skipped' (an explicit decline, not a miss).
+ *
+ * `banked` counts only the completions recorded on the day they were scheduled
+ * for. A NULL completed_on predates the column, so it is treated as banked
+ * rather than silently wiping streaks that already exist.
  */
 export async function getTrainingDays(
   userId: string,
-): Promise<{ date: string; completed: number; outstanding: number }[]> {
-  const { rows } = await pool.query<{ date: string; completed: string; outstanding: string }>(
+): Promise<{ date: string; completed: number; banked: number; outstanding: number }[]> {
+  const { rows } = await pool.query<{ date: string; completed: string; banked: string; outstanding: string }>(
     `SELECT scheduled_date::text AS date,
             COUNT(*) FILTER (WHERE status = 'completed') AS completed,
+            COUNT(*) FILTER (
+              WHERE status = 'completed'
+                AND (completed_on IS NULL OR completed_on <= scheduled_date)
+            ) AS banked,
             COUNT(*) FILTER (WHERE status IN ('scheduled','modified') AND event_type <> 'rest') AS outstanding
      FROM calendar_events
      WHERE user_id = $1
@@ -415,6 +446,7 @@ export async function getTrainingDays(
   return rows.map((r) => ({
     date: r.date,
     completed: Number(r.completed),
+    banked: Number(r.banked),
     outstanding: Number(r.outstanding),
   }));
 }

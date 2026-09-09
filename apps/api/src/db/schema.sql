@@ -54,6 +54,11 @@ CREATE TABLE calendar_events (
     status VARCHAR(20) DEFAULT 'scheduled'
         CHECK (status IN ('scheduled','completed','skipped','modified')),
     completion_note TEXT,
+    -- The athlete's own calendar date on the day they marked this complete.
+    -- NULL until it is completed (and on rows that predate the column). The
+    -- streak counts a day only when its completions were logged on that day,
+    -- so back-filling last Tuesday never rebuilds the run Tuesday broke.
+    completed_on DATE,
     -- Who put this on the calendar. Only externally-scheduled work (the coach
     -- LLM, or an approved ML drill suggestion) earns the full-screen card
     -- reveal on the Plan tab; anything the athlete added by hand is already

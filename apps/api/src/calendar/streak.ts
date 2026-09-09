@@ -2,13 +2,21 @@
 // clock of its own (the caller passes "today" so the athlete's local date wins
 // over the server's UTC date; see the local-date discipline in queries.ts).
 //
-// The rule, in one line: doing something extends the streak, having nothing to
-// do is neutral, and ghosting scheduled work breaks it.
+// The rule, in one line: doing the work ON THE DAY extends the streak, having
+// nothing to do is neutral, and ghosting scheduled work breaks it.
 //
-//   completed > 0                 -> ACTIVE   extends the streak
+//   banked > 0                    -> ACTIVE   extends the streak
 //   nothing scheduled             -> NEUTRAL  bridges (neither extends nor breaks)
 //   only rest / declined work     -> NEUTRAL  rest is prescribed; a decline is a decision
 //   scheduled work left undone    -> MISSED   breaks the streak, but only once the day is past
+//   ticked off after the day      -> MISSED   the work happened, the streak did not survive it
+//
+// "Banked" is the load-bearing word. A completion counts toward the streak only
+// when it was recorded on the day it was scheduled for. Going back a week later
+// and ticking off Tuesday still marks Tuesday done on the calendar, but it does
+// not rebuild the run that Tuesday broke — a streak you can repair by tapping
+// backwards is not a streak. Rows recorded before completions were dated are
+// treated as banked, so this never retroactively deletes an existing run.
 //
 // Today is never counted as missed: a day still in progress cannot have been
 // ghosted yet, so an athlete who opens the app at 8am keeps the streak they
@@ -19,8 +27,13 @@ export type DayState = 'active' | 'neutral' | 'missed';
 export interface TrainingDay {
   /** YYYY-MM-DD */
   date: string;
-  /** Events marked completed on this day. */
+  /** Events on this day marked completed, whenever that tap happened. */
   completed: number;
+  /**
+   * Of those, the ones ticked off on the day itself. Only these extend the
+   * streak; a later backfill leaves the day done but the run broken.
+   */
+  banked: number;
   /** Still-scheduled, non-rest work. Excludes declined ('skipped') events. */
   outstanding: number;
 }
@@ -62,7 +75,11 @@ function addDays(date: string, delta: number): string {
 
 export function classifyDay(day: TrainingDay | undefined, isPast: boolean): DayState {
   if (!day) return 'neutral';
-  if (day.completed > 0) return 'active';
+  if (day.banked > 0) return 'active';
+  // Work that was only ticked off after the day ended is the same thing, as far
+  // as the streak is concerned, as work that was never done: on the night the
+  // run had to survive, nothing had been logged.
+  if (day.completed > 0 && isPast) return 'missed';
   // Outstanding work only counts against the athlete once the day is over.
   if (day.outstanding > 0 && isPast) return 'missed';
   return 'neutral';
@@ -137,6 +154,6 @@ export function computeStreak(days: TrainingDay[], today: string): StreakSummary
     activeDates,
     streakStart,
     streakEnd,
-    atRiskToday: !!todayRow && todayRow.completed === 0 && todayRow.outstanding > 0,
+    atRiskToday: !!todayRow && todayRow.banked === 0 && todayRow.outstanding > 0,
   };
 }

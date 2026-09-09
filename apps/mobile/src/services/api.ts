@@ -162,7 +162,13 @@ export const strideApi = {
     });
   },
 
-  updateEvent: async (eventId: string, update: { status?: string; completionNote?: string }) => {
+  // `today` is the athlete's own local date. The server dates completions with
+  // it (so a day counts toward the streak only when it was ticked off on the
+  // day) and rejects completing work scheduled for a day that hasn't arrived.
+  updateEvent: async (
+    eventId: string,
+    update: { status?: string; completionNote?: string; today?: string },
+  ) => {
     return request<any>(`/calendar/events/${eventId}`, {
       method: 'PATCH',
       body: JSON.stringify(update),

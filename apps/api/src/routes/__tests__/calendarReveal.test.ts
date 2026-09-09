@@ -13,13 +13,16 @@ const mockMarkEventsRevealed = jest.fn<(u: string, ids?: string[]) => Promise<nu
 const mockDeclineEvents = jest.fn<(u: string, ids: string[]) => Promise<CalendarEvent[]>>();
 const mockRestoreEvents = jest.fn<(u: string, ids: string[]) => Promise<CalendarEvent[]>>();
 const mockGetTrainingDays =
-  jest.fn<() => Promise<{ date: string; completed: number; outstanding: number }[]>>();
+  jest.fn<() => Promise<{ date: string; completed: number; banked: number; outstanding: number }[]>>();
+const mockGetCalendarEventById = jest.fn<() => Promise<CalendarEvent | null>>();
+const mockUpdateCalendarEvent = jest.fn<(id: string, u: string, f: any) => Promise<CalendarEvent | null>>();
 
 jest.unstable_mockModule('../../db/queries.js', () => ({
   createCalendarEvent: jest.fn(),
   createCalendarEvents: jest.fn(),
   getCalendarEvents: jest.fn(async () => []),
-  updateCalendarEvent: jest.fn(),
+  updateCalendarEvent: mockUpdateCalendarEvent,
+  getCalendarEventById: mockGetCalendarEventById,
   getUnrevealedEvents: mockGetUnrevealedEvents,
   markEventsRevealed: mockMarkEventsRevealed,
   declineEvents: mockDeclineEvents,
@@ -58,6 +61,7 @@ const EVENT: CalendarEvent = {
   details: {},
   status: 'scheduled',
   completion_note: null,
+  completed_on: null,
   source: 'analysis',
   revealed_at: null,
   created_at: new Date(),
@@ -73,6 +77,8 @@ beforeEach(() => {
   mockDeclineEvents.mockResolvedValue([]);
   mockRestoreEvents.mockResolvedValue([]);
   mockGetTrainingDays.mockResolvedValue([]);
+  mockGetCalendarEventById.mockResolvedValue(EVENT);
+  mockUpdateCalendarEvent.mockImplementation(async (_id, _u, fields) => ({ ...EVENT, ...fields }));
 });
 
 describe('GET /calendar/unrevealed', () => {
@@ -150,8 +156,8 @@ describe('POST /calendar/decline/undo', () => {
 describe('GET /calendar/streak', () => {
   it('derives the streak against the caller’s local date', async () => {
     mockGetTrainingDays.mockResolvedValue([
-      { date: '2026-09-01', completed: 1, outstanding: 0 },
-      { date: '2026-09-02', completed: 1, outstanding: 0 },
+      { date: '2026-09-01', completed: 1, banked: 1, outstanding: 0 },
+      { date: '2026-09-02', completed: 1, banked: 1, outstanding: 0 },
     ]);
 
     const res = await request(buildApp()).get('/calendar/streak?today=2026-09-02');
@@ -173,5 +179,58 @@ describe('GET /calendar/streak', () => {
     const res = await request(buildApp()).get('/calendar/streak');
     expect(res.status).toBe(200);
     expect(res.body.current).toBe(0);
+  });
+});
+
+describe('PATCH /calendar/events/:id — completing a day', () => {
+  const url = `/calendar/events/${EVENT.id}`;
+
+  it('refuses to complete work scheduled for a day that has not arrived', async () => {
+    mockGetCalendarEventById.mockResolvedValue({ ...EVENT, scheduled_date: '2026-09-10' });
+    const res = await request(buildApp())
+      .patch(url)
+      .send({ status: 'completed', today: '2026-09-08' });
+
+    expect(res.status).toBe(400);
+    expect(mockUpdateCalendarEvent).not.toHaveBeenCalled();
+  });
+
+  it("dates a completion with the athlete's own today", async () => {
+    mockGetCalendarEventById.mockResolvedValue({ ...EVENT, scheduled_date: '2026-09-08' });
+    const res = await request(buildApp())
+      .patch(url)
+      .send({ status: 'completed', today: '2026-09-08' });
+
+    expect(res.status).toBe(200);
+    expect(mockUpdateCalendarEvent).toHaveBeenCalledWith(
+      EVENT.id,
+      'user-test-123',
+      expect.objectContaining({ status: 'completed', completed_on: '2026-09-08' }),
+    );
+  });
+
+  it('still allows a past day to be ticked off, dated to the day it was ticked', async () => {
+    mockGetCalendarEventById.mockResolvedValue({ ...EVENT, scheduled_date: '2026-09-01' });
+    const res = await request(buildApp())
+      .patch(url)
+      .send({ status: 'completed', today: '2026-09-08' });
+
+    expect(res.status).toBe(200);
+    expect(mockUpdateCalendarEvent).toHaveBeenCalledWith(
+      EVENT.id,
+      'user-test-123',
+      expect.objectContaining({ completed_on: '2026-09-08' }),
+    );
+  });
+
+  it('clears the completion date when a completion is taken back', async () => {
+    const res = await request(buildApp()).patch(url).send({ status: 'scheduled', today: '2026-09-08' });
+
+    expect(res.status).toBe(200);
+    expect(mockUpdateCalendarEvent).toHaveBeenCalledWith(
+      EVENT.id,
+      'user-test-123',
+      expect.objectContaining({ completed_on: null }),
+    );
   });
 });

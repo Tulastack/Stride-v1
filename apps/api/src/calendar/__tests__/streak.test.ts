@@ -6,9 +6,19 @@
  */
 import { computeStreak, classifyDay, type TrainingDay } from '../streak.js';
 
+/** A day trained on the day itself: every completion counted toward the run. */
 const day = (date: string, completed: number, outstanding = 0): TrainingDay => ({
   date,
   completed,
+  banked: completed,
+  outstanding,
+});
+
+/** A day ticked off after it ended. Done on the calendar, too late for the run. */
+const backfilled = (date: string, completed: number, outstanding = 0): TrainingDay => ({
+  date,
+  completed,
+  banked: 0,
   outstanding,
 });
 
@@ -24,6 +34,14 @@ describe('classifyDay', () => {
   it('only calls undone work a miss once the day is past', () => {
     expect(classifyDay(day('2026-03-02', 0, 1), true)).toBe('missed');
     expect(classifyDay(day('2026-03-02', 0, 1), false)).toBe('neutral');
+  });
+
+  it('counts a past day that was only ticked off later as missed', () => {
+    expect(classifyDay(backfilled('2026-03-02', 2), true)).toBe('missed');
+  });
+
+  it('treats an undated completion as banked, so old rows keep their streak', () => {
+    expect(classifyDay({ date: '2026-03-02', completed: 1, banked: 1, outstanding: 0 }, true)).toBe('active');
   });
 });
 
@@ -50,6 +68,16 @@ describe('computeStreak', () => {
     const summary = computeStreak(days, '2026-03-03');
     expect(summary.current).toBe(2);
     expect(summary.atRiskToday).toBe(true);
+  });
+
+  it('does not rebuild a broken run when a missed day is ticked off later', () => {
+    // Mar 2 was ghosted and later back-filled. The calendar shows it done; the
+    // streak still starts again at Mar 3.
+    const days = [day('2026-03-01', 1), backfilled('2026-03-02', 2), day('2026-03-03', 1)];
+    const summary = computeStreak(days, '2026-03-03');
+    expect(summary.current).toBe(1);
+    // ...but the day is still reported as active for the grid.
+    expect(summary.activeDates).toContain('2026-03-02');
   });
 
   it('is not at risk once today has a completion', () => {
