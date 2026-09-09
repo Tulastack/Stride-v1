@@ -32,20 +32,26 @@ describe('buildWeeks', () => {
 describe('streakRuns', () => {
   const week = buildWeeks(2026, 8)[1]!; // Sep 6 (Sun) .. Sep 12 (Sat)
 
-  it('spans a run across the days it covers', () => {
-    expect(streakRuns(week, '2026-09-07', '2026-09-10')).toEqual([{ start: 1, length: 4 }]);
+  it('spans a run across the days it covers, rounded at both true ends', () => {
+    expect(streakRuns(week, '2026-09-07', '2026-09-10')).toEqual([
+      { start: 1, length: 4, openStart: false, openEnd: false },
+    ]);
   });
 
   it('returns nothing when there is no live streak', () => {
     expect(streakRuns(week, null, null)).toEqual([]);
   });
 
-  it('clips a run that starts before the week to the part inside it', () => {
-    expect(streakRuns(week, '2026-09-01', '2026-09-08')).toEqual([{ start: 0, length: 3 }]);
+  it('clips a run that starts before the week, and cuts that edge square', () => {
+    expect(streakRuns(week, '2026-09-01', '2026-09-08')).toEqual([
+      { start: 0, length: 3, openStart: true, openEnd: false },
+    ]);
   });
 
-  it('runs to the row edge when the streak continues past it', () => {
-    expect(streakRuns(week, '2026-09-10', '2026-09-20')).toEqual([{ start: 4, length: 3 }]);
+  it('runs to the row edge when the streak continues past it, cut square there', () => {
+    expect(streakRuns(week, '2026-09-10', '2026-09-20')).toEqual([
+      { start: 4, length: 3, openStart: false, openEnd: true },
+    ]);
   });
 
   it('ignores a week the streak does not touch', () => {

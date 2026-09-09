@@ -2,6 +2,13 @@
 // live streak as one continuous bar across the days it spans (bridged rest days
 // included, which is why the run is a range rather than a set of dots), and it
 // bounces on demand so the card fold has something to land on.
+//
+// The run is drawn as a single piece of glass laid over the days: a translucent
+// accent fill, a brighter hairline round it, and a highlight along the top. It
+// expands from its own start edge when it appears, the way a drop spreads. Ends
+// are only rounded where the streak actually begins and ends; where it carries
+// on into the next week the edge is cut square, so the two rows read as one
+// ribbon wrapping rather than two separate pills.
 import React, { useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import Animated, {
@@ -56,6 +63,18 @@ export interface StreakCalendarProps {
 interface Cell {
   day: number | null;
   date: string | null;
+}
+
+/** One row's slice of the live streak, and how its two ends should be drawn. */
+export interface Run {
+  /** Column the slice starts at, 0-6. */
+  start: number;
+  /** How many columns it covers. */
+  length: number;
+  /** The streak began before this row, so the left edge is cut square. */
+  openStart: boolean;
+  /** The streak carries on after this row, so the right edge is cut square. */
+  openEnd: boolean;
 }
 
 export function StreakCalendar({
@@ -138,19 +157,7 @@ export function StreakCalendar({
               {/* Run bars sit behind the numbers so a streak reads as one
                   continuous stretch of days rather than seven separate pills. */}
               {runs.map((run) => (
-                <View
-                  key={`${wi}-${run.start}`}
-                  pointerEvents="none"
-                  style={[
-                    styles.runBar,
-                    {
-                      left: `${(run.start / 7) * 100}%`,
-                      width: `${(run.length / 7) * 100}%`,
-                      backgroundColor: colors.accent,
-                      borderColor: colors.accent,
-                    },
-                  ]}
-                />
+                <RunGlass key={`${wi}-${run.start}`} run={run} colors={colors} />
               ))}
 
               {week.map((cell, ci) => {
@@ -162,10 +169,10 @@ export function StreakCalendar({
                 const isToday = cell.date === today;
                 const dot = dotColorFor(eventsByDate.get(cell.date));
 
-                // On the bright run the number is knocked out of the accent;
-                // everywhere else it keeps normal text contrast.
+                // Inside the run the number sits on translucent glass, so it
+                // keeps the accent rather than being knocked out of it.
                 const numColor = inRun
-                  ? colors.accentText
+                  ? colors.accent
                   : isActive
                     ? colors.accent
                     : isToday
@@ -185,21 +192,19 @@ export function StreakCalendar({
                       style={[
                         styles.dayInner,
                         // A completed day outside the live run still earns a
-                        // dim marker — past streaks stay visible.
-                        isActive && !inRun && { backgroundColor: withAlpha(colors.accent, 0.16) },
-                        isSelected && [styles.daySelected, { borderColor: inRun ? colors.accentText : colors.accent }],
+                        // dim marker — past streaks stay visible. Days inside
+                        // the run get nothing of their own: the glass is the
+                        // marker, and a circle under it is the "bunch of
+                        // separate dots" look the run exists to replace.
+                        isActive && !inRun && { backgroundColor: withAlpha(colors.accent, 0.14) },
+                        isSelected && [styles.daySelected, { borderColor: colors.accent }],
                       ]}
                     >
                       <Text style={[styles.dayNum, { color: numColor }, (isToday || inRun) && styles.dayNumStrong]}>
                         {cell.day}
                       </Text>
                       {dot ? (
-                        <View
-                          style={[
-                            styles.dot,
-                            { backgroundColor: inRun ? colors.accentText : dot },
-                          ]}
-                        />
+                        <View style={[styles.dot, { backgroundColor: dot }]} />
                       ) : (
                         <View style={styles.dotSpacer} />
                       )}
@@ -211,6 +216,65 @@ export function StreakCalendar({
           );
         })}
       </Animated.View>
+    </Animated.View>
+  );
+}
+
+/**
+ * One week's slice of the live run. Grows out of its own leading edge on first
+ * paint, then holds. Square where the streak continues past the row edge,
+ * rounded where it genuinely starts or ends.
+ */
+function RunGlass({ run, colors }: { run: Run; colors: Palette }) {
+  const grow = useSharedValue(0);
+
+  useEffect(() => {
+    grow.value = withTiming(1, { duration: 420, easing: Easing.out(Easing.cubic) });
+  }, [grow]);
+
+  const style = useAnimatedStyle(() => ({
+    opacity: interpolate(grow.value, [0, 0.25, 1], [0, 0.7, 1], Extrapolation.CLAMP),
+    transform: [{ scaleX: interpolate(grow.value, [0, 1], [0.06, 1], Extrapolation.CLAMP) }],
+  }));
+
+  // A run that spills over the row edge is cut flat there, so the streak reads
+  // as one ribbon wrapping onto the next line.
+  const leftRadius = run.openStart ? 0 : radius.pill;
+  const rightRadius = run.openEnd ? 0 : radius.pill;
+
+  return (
+    <Animated.View
+      pointerEvents="none"
+      testID="streak-run"
+      style={[
+        styles.runBar,
+        {
+          left: `${(run.start / 7) * 100}%`,
+          width: `${(run.length / 7) * 100}%`,
+          backgroundColor: withAlpha(colors.accent, 0.18),
+          borderColor: withAlpha(colors.accent, 0.55),
+          borderTopLeftRadius: leftRadius,
+          borderBottomLeftRadius: leftRadius,
+          borderTopRightRadius: rightRadius,
+          borderBottomRightRadius: rightRadius,
+          // Grows from the leading edge. Falls back to growing from the centre
+          // on any runtime that ignores transformOrigin, which still reads fine.
+          transformOrigin: run.openStart ? 'right center' : 'left center',
+        },
+        style,
+      ]}
+    >
+      {/* The highlight is what makes it glass rather than a flat wash. */}
+      <View
+        style={[
+          styles.runSheen,
+          {
+            backgroundColor: withAlpha(colors.accent, 0.16),
+            borderTopLeftRadius: leftRadius,
+            borderTopRightRadius: rightRadius,
+          },
+        ]}
+      />
     </Animated.View>
   );
 }
@@ -238,26 +302,41 @@ export function buildWeeks(year: number, month: number): Cell[][] {
  * Maximal spans within one week row that fall inside the streak range. A run
  * crossing a week boundary naturally becomes one bar per row, which is what the
  * grid can actually draw.
+ *
+ * `openStart` / `openEnd` say the streak carries on past that edge of the row.
+ * The bar is drawn square there so the ribbon looks continuous across the wrap,
+ * and rounded only where the run truly begins or is cut off.
  */
 export function streakRuns(
   week: Cell[],
   streakStart: string | null,
   streakEnd: string | null,
-): { start: number; length: number }[] {
+): Run[] {
   if (!streakStart || !streakEnd) return [];
-  const runs: { start: number; length: number }[] = [];
+  const runs: Run[] = [];
   let start = -1;
+
+  const close = (end: number) => {
+    const firstDate = week[start]!.date!;
+    const lastDate = week[end - 1]!.date!;
+    runs.push({
+      start,
+      length: end - start,
+      openStart: firstDate > streakStart,
+      openEnd: lastDate < streakEnd,
+    });
+  };
 
   for (let i = 0; i < week.length; i++) {
     const date = week[i]!.date;
     const inRange = !!date && date >= streakStart && date <= streakEnd;
     if (inRange && start === -1) start = i;
     if (!inRange && start !== -1) {
-      runs.push({ start, length: i - start });
+      close(i);
       start = -1;
     }
   }
-  if (start !== -1) runs.push({ start, length: week.length - start });
+  if (start !== -1) close(week.length);
   return runs;
 }
 
@@ -302,9 +381,12 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 3,
     bottom: 3,
-    borderRadius: radius.pill,
     borderWidth: 1,
+    overflow: 'hidden',
   },
+  // Top-half highlight. Thin, and only on the upper edge, which is where light
+  // would actually catch a rounded surface.
+  runSheen: { position: 'absolute', top: 0, left: 0, right: 0, height: '45%' },
 
   dayCell: { flex: 1, alignItems: 'center', justifyContent: 'center', height: ROW_HEIGHT },
   dayInner: {
