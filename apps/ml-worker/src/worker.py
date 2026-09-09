@@ -214,10 +214,38 @@ def _image_down_from_capture(capture: dict) -> tuple[float, float] | None:
     return (-my / mag, mx / mag)
 
 
-# Longest stretch of a clip we analyse. The old cap was a bare 450-frame count,
-# which at POSE_FPS=15 silently truncated anything over 30 s -- a 400 m lost its
-# back half, where the race is actually decided, with nothing said about it.
-MAX_ANALYSIS_SECONDS = float(os.environ.get("MAX_ANALYSIS_SECONDS", "120"))
+# Longest stretch of a clip we analyse, and the thing that decides how long the
+# athlete waits. Analysis cost is essentially (seconds analysed x POSE_FPS) pose
+# inferences at ~55 ms each, so this number IS the latency budget:
+#
+#   seconds analysed   pose calls   measured end to end (dev Mac, 3d-geo)
+#   12                 180          13-17 s
+#   22 (IMG_0271)      337          30 s
+#   45 (4K stress)     675          50 s
+#   120 (the old cap)  1800         minutes
+#
+# It used to be 120 s, which made latency unbounded in practice: the Analyze
+# screen lets the athlete pick any video out of their library, and a phone
+# library is full of multi-minute 4K clips. Those produced the 300 s and 728 s
+# analyses in the database, and because the worker runs one job at a time, every
+# clip queued behind one of those sat in 'pending' until the 30-minute sweeper
+# failed it as `analysis_timeout`. That is the "it just freezes and never
+# analyses" the athlete sees, and the cause was upstream of any single slow job.
+#
+# 12 s is not an arbitrary trim: it is exactly what the in-app camera records
+# (recordAsync maxDuration: 12), so every clip filmed in Stride is analysed in
+# full and nothing about that path changes. It is also many strides. The metrics
+# are medians of per-stride peaks, so a dozen seconds of running measures form as
+# well as two minutes does, and unlike two minutes it comes back while the
+# athlete is still looking at the screen.
+MAX_ANALYSIS_SECONDS = float(os.environ.get("MAX_ANALYSIS_SECONDS", "12"))
+
+
+# How much of a clip we are willing to sample while looking for MAX_ANALYSIS_
+# SECONDS worth of frames the athlete is actually visible in. 1.5x buys a few
+# seconds of lead-in without letting a clip that never finds the athlete run to
+# its own end.
+LEAD_IN_ALLOWANCE = float(os.environ.get("LEAD_IN_ALLOWANCE", "1.5"))
 
 
 def _max_frames(pose_fps: float) -> int:
@@ -392,6 +420,34 @@ def _process_3d(analysis_id: str, s3_key: str, local_video: str) -> None:
     _run_3d(analysis_id, local_video, capture, s3_key)
 
 
+def _note_analysis_window(result: dict, included: list, eff_fps: float,
+                          source_fps: float, max_frames: int) -> None:
+    """Record which stretch of the clip the metrics came from.
+
+    Only written when the clip was long enough to be cut, so a normal in-app
+    recording carries nothing extra. Silence here would mean an athlete who
+    filmed a whole 400 m could not tell that the numbers describe part of it.
+    """
+    if len(included) < max_frames:
+        return
+    first = int(included[0].get("frame_index") or 0)
+    last = int(included[-1].get("frame_index") or 0)
+    start_s = first / max(source_fps, 1e-6)
+    end_s = last / max(source_fps, 1e-6)
+    cq = result.setdefault("captureQuality", {})
+    cq["analyzedWindow"] = {
+        "startSec": round(start_s, 1),
+        "endSec": round(end_s, 1),
+        "frames": len(included),
+    }
+    cq.setdefault(
+        "primaryNudge",
+        f"This clip is longer than we analyse in one go, so these numbers come "
+        f"from {round(end_s - start_s)} seconds of it. Shorter clips of the run "
+        f"you care about give the most useful read.",
+    )
+
+
 def _run_3d_geo(analysis_id: str, video_path: str, capture: dict, s3_key: str | None = None) -> None:
     """RTMPose 2D keypoints -> geometric bone-length 3D lift -> canonical frame
     -> virtual cameras -> AnalysisResult.
@@ -439,10 +495,27 @@ def _run_3d_geo(analysis_id: str, video_path: str, capture: dict, s3_key: str | 
     # clear their trust gate, re-projecting cannot add temporal resolution, so
     # the signal has to be collected here, from the original clip.
     timing_signal: list = []
+    # Two limits, and the run stops at whichever comes first.
+    #
+    #   max_frames USABLE frames  -> we have what we came for, stop early.
+    #   hard_cap SAMPLED frames   -> stop regardless.
+    #
+    # The second one is what actually bounds latency. Counting only usable
+    # frames lets a clip that opens on an empty track skip its lead-in, but on
+    # its own it is unbounded: a clip where the athlete is never confidently
+    # detected never reaches the usable count, and pays full pose inference on
+    # every sampled frame of a multi-minute video to find that out. The hard cap
+    # is the promise; the usable count is the courtesy.
+    hard_cap = int(max_frames * LEAD_IN_ALLOWANCE)
+    n_usable = 0
     for f in stream_frames(video_path, target_fps=pose_fps, target=target_xy,
                            timing_out=timing_signal):
         frames.append(f)
-        if len(frames) >= max_frames:
+        if not f.get("excluded"):
+            n_usable += 1
+            if n_usable >= max_frames:
+                break
+        if len(frames) >= hard_cap:
             break
     included = [f for f in frames if not f.get("excluded")]
     if len(included) < 4:
@@ -559,6 +632,10 @@ def _run_3d_geo(analysis_id: str, video_path: str, capture: dict, s3_key: str | 
             recon_conf=lift_quality["reconConf"],
             clip_id=analysis_id[:8])
         result["reconstructionMethod"] = "3d-mono-geometric"
+
+    # Applies to every branch above: the window was decided during extraction,
+    # before we knew which analysis would run on it.
+    _note_analysis_window(result, included, eff_fps, source_fps, max_frames)
 
     _finish_3d_geo(analysis_id, result, capture, pose_fps, lift_quality)
     return
