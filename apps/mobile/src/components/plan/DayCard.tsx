@@ -1,11 +1,13 @@
-// One training day, as a card in the deck. The front is a tear-off calendar
-// page — weekday, the day numeral, and what the day is for. Nothing else earns
-// its place there. Tapping flips it to the session list.
+// One training day, as a card in the deck. The card owns the page: full width,
+// full height, one thing to look at. The front is a tear-off calendar page,
+// weekday, the day numeral, and what the day is for. Nothing else earns its
+// place there. Tapping flips it to the session list, which scrolls, because a
+// day with five sessions on it must not silently cut the fifth one off.
 //
 // Presentational: the stack owns the pan gesture and hands down `stackStyle`,
 // so this file only deals with the flip and the swipe feedback.
 import React, { useCallback } from 'react';
-import { View, Text, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -17,7 +19,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
-import { Check, X } from 'lucide-react-native';
+import { Check } from 'lucide-react-native';
 import type { Palette } from '../../theme';
 import { space, radius } from '../../theme';
 import { EVENT_TYPE_COLORS, volumeLabel, type PlanDayCard } from '../../lib/planCards';
@@ -34,9 +36,13 @@ export interface DayCardProps {
   stackStyle?: StyleProp<ViewStyle>;
   /** Only the top card is interactive; the deck behind it is scenery. */
   interactive?: boolean;
-  /** Normalised drag. -1 = committed left, +1 = committed right/up. */
-  swipeX?: Readonly<SharedValue<number>>;
+  /** Normalised drag. +1 = committed. Only the accept direction is drawn. */
   swipeUp?: Readonly<SharedValue<number>>;
+  /**
+   * Fired when the card turns. The stack stands its pan gesture down while the
+   * back is showing, so the session list can scroll without fighting a swipe.
+   */
+  onFlipChange?: (flipped: boolean) => void;
   testID?: string;
 }
 
@@ -47,8 +53,8 @@ export function DayCard({
   height,
   stackStyle,
   interactive = false,
-  swipeX,
   swipeUp,
+  onFlipChange,
   testID,
 }: DayCardProps) {
   // 0 = front, 1 = back. Shared so the flip runs on the UI thread.
@@ -56,12 +62,14 @@ export function DayCard({
   const accent = EVENT_TYPE_COLORS[card.focusType];
 
   const onFlip = useCallback(() => {
-    flip.value = withTiming(flip.value > 0.5 ? 0 : 1, {
+    const toBack = flip.value <= 0.5;
+    flip.value = withTiming(toBack ? 1 : 0, {
       duration: FLIP_MS,
       easing: Easing.inOut(Easing.cubic),
     });
+    onFlipChange?.(toBack);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-  }, [flip]);
+  }, [flip, onFlipChange]);
 
   const tap = Gesture.Tap()
     .enabled(interactive)
@@ -89,17 +97,12 @@ export function DayCard({
     opacity: flip.value < 0.5 ? 0 : 1,
   }));
 
-  // Swipe feedback is a wash of colour and a single mark — no stamped words.
-  // The athlete should feel the decision, not read it.
+  // Swipe feedback is a wash of colour and a single mark, no stamped words. The
+  // athlete should feel the decision, not read it. There is only one decision
+  // left to feel: up takes the plan.
   const keepWash = useAnimatedStyle(() => {
-    if (!swipeX || !swipeUp) return { opacity: 0 };
-    const t = Math.max(Math.max(0, swipeX.value), Math.max(0, swipeUp.value));
-    return { opacity: interpolate(t, [0, 1], [0, 0.92], Extrapolation.CLAMP) };
-  });
-
-  const dropWash = useAnimatedStyle(() => {
-    if (!swipeX) return { opacity: 0 };
-    return { opacity: interpolate(-swipeX.value, [0, 1], [0, 0.92], Extrapolation.CLAMP) };
+    if (!swipeUp) return { opacity: 0 };
+    return { opacity: interpolate(swipeUp.value, [0, 1], [0, 0.92], Extrapolation.CLAMP) };
   });
 
   const face: ViewStyle = {
@@ -108,6 +111,8 @@ export function DayCard({
     backgroundColor: colors.card,
     borderColor: colors.border,
   };
+
+  const sessions = card.events.length;
 
   return (
     <GestureDetector gesture={tap}>
@@ -134,27 +139,20 @@ export function DayCard({
             <Text style={[styles.focus, { color: colors.text }]} numberOfLines={2}>
               {card.focus}
             </Text>
+            <Text style={[styles.count, { color: colors.muted }]}>
+              {sessions} session{sessions === 1 ? '' : 's'}
+            </Text>
           </View>
 
           {interactive ? (
-            <>
-              <Animated.View
-                style={[styles.wash, { backgroundColor: colors.card }, keepWash]}
-                pointerEvents="none"
-              >
-                <View style={[styles.washMark, { borderColor: colors.success }]}>
-                  <Check size={38} color={colors.success} strokeWidth={2.6} />
-                </View>
-              </Animated.View>
-              <Animated.View
-                style={[styles.wash, { backgroundColor: colors.card }, dropWash]}
-                pointerEvents="none"
-              >
-                <View style={[styles.washMark, { borderColor: colors.error }]}>
-                  <X size={38} color={colors.error} strokeWidth={2.6} />
-                </View>
-              </Animated.View>
-            </>
+            <Animated.View
+              style={[styles.wash, { backgroundColor: colors.card }, keepWash]}
+              pointerEvents="none"
+            >
+              <View style={[styles.washMark, { borderColor: colors.success }]}>
+                <Check size={44} color={colors.success} strokeWidth={2.6} />
+              </View>
+            </Animated.View>
           ) : null}
         </Animated.View>
 
@@ -169,26 +167,30 @@ export function DayCard({
             </Text>
           </View>
 
-          <View style={styles.list}>
+          {/* Scrolls. The list used to be centred in a fixed box, so a fourth
+              session simply fell off the bottom of the card with nothing to
+              suggest it was there. */}
+          <ScrollView
+            style={styles.list}
+            contentContainerStyle={styles.listContent}
+            showsVerticalScrollIndicator={false}
+            testID="day-card-sessions"
+          >
             {card.events.map((event) => {
               const volume = volumeLabel(event);
               return (
                 <View key={event.id} style={styles.item}>
-                  <Text style={[styles.itemTitle, { color: colors.text }]} numberOfLines={2}>
-                    {event.title}
-                  </Text>
+                  <Text style={[styles.itemTitle, { color: colors.text }]}>{event.title}</Text>
                   {volume ? (
                     <Text style={[styles.itemVolume, { color: colors.muted }]}>{volume}</Text>
                   ) : null}
                   {event.details?.cue ? (
-                    <Text style={[styles.itemCue, { color: colors.muted }]} numberOfLines={3}>
-                      {event.details.cue}
-                    </Text>
+                    <Text style={[styles.itemCue, { color: colors.muted }]}>{event.details.cue}</Text>
                   ) : null}
                 </View>
               );
             })}
-          </View>
+          </ScrollView>
         </Animated.View>
       </Animated.View>
     </GestureDetector>
@@ -204,8 +206,8 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     borderWidth: 1,
     paddingHorizontal: space.xl,
-    paddingTop: space.xl,
-    paddingBottom: space.xl,
+    paddingTop: space.xxl,
+    paddingBottom: space.xxl,
     overflow: 'hidden',
     backfaceVisibility: 'hidden',
     // One soft shadow so the deck reads as physical without looking sprayed on.
@@ -220,7 +222,7 @@ const styles = StyleSheet.create({
   // The only place the day's category shows up. A stripe down the edge would
   // read as a dashboard row; a single small mark reads as a considered detail.
   mark: { width: 7, height: 7 },
-  weekday: { fontSize: 12, fontWeight: '800', letterSpacing: 2.2 },
+  weekday: { fontSize: 13, fontWeight: '800', letterSpacing: 2.4 },
 
   // The card's whole hierarchy rests on this numeral, the way a tear-off
   // calendar page does. It fills the middle so the card reads as one composed
@@ -228,22 +230,24 @@ const styles = StyleSheet.create({
   // allowFontScaling is off: an accessibility text size would push a two-digit
   // date past the card edge.
   hero: { flex: 1, justifyContent: 'center' },
-  numeral: { fontSize: 150, fontWeight: '900', letterSpacing: -9, lineHeight: 134 },
+  numeral: { fontSize: 210, fontWeight: '900', letterSpacing: -13, lineHeight: 190 },
 
-  foot: { gap: 10 },
-  rule: { height: 1, width: 44 },
-  focus: { fontSize: 24, fontWeight: '800', letterSpacing: -0.5, lineHeight: 28 },
+  foot: { gap: 12 },
+  rule: { height: 1, width: 56 },
+  focus: { fontSize: 34, fontWeight: '800', letterSpacing: -0.8, lineHeight: 38 },
+  count: { fontSize: 15, fontWeight: '700' },
 
-  list: { flex: 1, justifyContent: 'center', gap: space.xl },
-  item: { gap: 3 },
-  itemTitle: { fontSize: 19, fontWeight: '800', letterSpacing: -0.3 },
-  itemVolume: { fontSize: 15, fontWeight: '700' },
-  itemCue: { fontSize: 14, lineHeight: 19 },
+  list: { flex: 1, marginTop: space.xl },
+  listContent: { gap: space.xl, paddingBottom: space.lg },
+  item: { gap: 4 },
+  itemTitle: { fontSize: 22, fontWeight: '800', letterSpacing: -0.4 },
+  itemVolume: { fontSize: 16, fontWeight: '700' },
+  itemCue: { fontSize: 15, lineHeight: 21 },
 
   wash: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
   washMark: {
-    width: 84,
-    height: 84,
+    width: 96,
+    height: 96,
     borderRadius: radius.pill,
     borderWidth: 3,
     alignItems: 'center',

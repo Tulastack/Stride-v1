@@ -1,12 +1,19 @@
 // Full-screen reveal for work the coach or the analysis engine just scheduled.
-// Cards fan out like a hand held at the table; the top one follows the finger
-// and flies off on release. Right/up accepts the day, left drops it (undoable). When the last
-// card clears, the whole stack folds upward into the calendar behind it.
+// Cards fill the page and fan out like a hand held at the table; the top one
+// follows the finger and flies off on release.
 //
-// Everything that moves per-frame is a shared value driven on the UI thread —
+// Two directions, and only two:
+//   RIGHT  moves on to the next day, so the athlete can look through what was
+//          scheduled one card at a time.
+//   UP     takes the whole plan. Every card still in the deck lifts and folds
+//          into the calendar together.
+// Left and down spring back. There is no third gesture to discover and no way
+// to end up somewhere the deck cannot explain.
+//
+// Everything that moves per-frame is a shared value driven on the UI thread,
 // no setState in the gesture path, so the drag stays at display rate.
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, Pressable, useWindowDimensions } from 'react-native';
+import { View, StyleSheet, Pressable, useWindowDimensions } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useDerivedValue,
@@ -21,9 +28,9 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
-import { Undo2, X } from 'lucide-react-native';
+import { X } from 'lucide-react-native';
 import type { Palette } from '../../theme';
-import { space, radius } from '../../theme';
+import { space } from '../../theme';
 import { DayCard } from './DayCard';
 import type { PlanDayCard } from '../../lib/planCards';
 
@@ -32,49 +39,39 @@ const VISIBLE_DEPTH = 3;
 // The deck fans like a hand of cards. Each card further back turns a little
 // more about a pivot at its OWN BOTTOM EDGE, so the cards splay from a shared
 // point at the base and their tops sweep an arc — that pivot is the whole
-// difference between a fanned hand and a pile of offset rectangles.
-const FAN_STEP_DEG = 4.5;
+// difference between a fanned hand and a pile of offset rectangles. The angle
+// is small now that a card fills the page: at full size, 4.5° threw the corners
+// clean off the screen.
+const FAN_STEP_DEG = 1.6;
 /** Fraction of the card width a drag must pass to count as a decision. */
 const X_THRESHOLD = 0.3;
-const Y_THRESHOLD = 0.22;
+const Y_THRESHOLD = 0.18;
 /** A fast flick commits even when it never crossed the distance threshold. */
 const VELOCITY_THRESHOLD = 700;
 const FLY_MS = 230;
 const FOLD_MS = 620;
-const UNDO_VISIBLE_MS = 4200;
 // How far up the screen the folding stack travels, and how small it gets, as it
 // converges on the calendar grid sitting behind the takeover.
 const FOLD_LIFT = 0.55;
 const FOLD_SCALE = 0.28;
 
-type Decision = 'accept' | 'decline';
-
 export interface PlanCardStackProps {
   cards: PlanDayCard[];
   colors: Palette;
-  /** Right/up swipe. Fired per card, as it leaves. */
+  /** Fired per card as it is taken: on a right swipe, and for the rest on up. */
   onAccept: (card: PlanDayCard) => void;
-  /** Left swipe. Fired per card; the stack surfaces its own undo affordance. */
-  onDecline: (card: PlanDayCard) => void;
-  onUndoDecline: (card: PlanDayCard) => void;
   /** Every remaining card was dismissed at once. */
   onSkipAll: (remaining: PlanDayCard[]) => void;
   /** Stack is finished and has folded away — play the calendar bounce now. */
   onDone: () => void;
 }
 
-export function PlanCardStack({
-  cards,
-  colors,
-  onAccept,
-  onDecline,
-  onUndoDecline,
-  onSkipAll,
-  onDone,
-}: PlanCardStackProps) {
+export function PlanCardStack({ cards, colors, onAccept, onSkipAll, onDone }: PlanCardStackProps) {
   const { width: winW, height: winH } = useWindowDimensions();
-  const cardW = Math.min(winW - 110, 286);
-  const cardH = Math.min(cardW * 1.42, winH * 0.52);
+  // The card is the page. A small card in the middle of a dimmed screen made
+  // every session on it fight for room; at this size the day can just be read.
+  const cardW = winW - space.xl * 2;
+  const cardH = Math.min(winH * 0.74, cardW * 1.62);
   // Pivot at the card's own bottom edge, in its local coordinates.
   const fanPivot = cardH / 2;
   // The fan only opens to the right, so the deck's visual mass would sit right
@@ -85,7 +82,9 @@ export function PlanCardStack({
 
   const [index, setIndex] = useState(0);
   const [folding, setFolding] = useState(false);
-  const [undoCard, setUndoCard] = useState<PlanDayCard | null>(null);
+  // While the top card is showing its session list, the list owns vertical
+  // drags. Panning at the same time would make the card fly off mid-read.
+  const [reading, setReading] = useState(false);
 
   // Top-card drag offset.
   const tx = useSharedValue(0);
@@ -94,8 +93,7 @@ export function PlanCardStack({
   const fold = useSharedValue(0);
 
   // Normalised drag, so the card's swipe feedback doesn't need to know the
-  // screen size. ±1 means "released here and it commits".
-  const swipeX = useDerivedValue(() => tx.value / (cardW * X_THRESHOLD));
+  // screen size. 1 means "released here and it commits".
   const swipeUp = useDerivedValue(() => -ty.value / (cardH * Y_THRESHOLD));
 
   const remaining = useMemo(() => cards.slice(index), [cards, index]);
@@ -109,29 +107,30 @@ export function PlanCardStack({
     });
   }, [fold, onDone]);
 
-  // Advance past the card that just flew off. Once the last one clears, the
-  // stack folds rather than sitting empty.
-  const commit = useCallback(
-    (decision: Decision) => {
-      const card = cards[index];
-      if (!card) return;
+  // Right swipe: take this day and bring the next one forward. Once the last
+  // card clears, the stack folds rather than sitting empty.
+  const advance = useCallback(() => {
+    const card = cards[index];
+    if (!card) return;
+    onAccept(card);
 
-      if (decision === 'accept') {
-        onAccept(card);
-      } else {
-        onDecline(card);
-        setUndoCard(card);
-      }
+    tx.value = 0;
+    ty.value = 0;
 
-      tx.value = 0;
-      ty.value = 0;
+    const next = index + 1;
+    setIndex(next);
+    setReading(false);
+    if (next >= cards.length) beginFold();
+  }, [cards, index, onAccept, beginFold, tx, ty]);
 
-      const next = index + 1;
-      setIndex(next);
-      if (next >= cards.length) beginFold();
-    },
-    [cards, index, onAccept, onDecline, beginFold, tx, ty],
-  );
+  // Up swipe: take everything still in the deck, in one gesture.
+  const acceptAll = useCallback(() => {
+    for (const card of cards.slice(index)) onAccept(card);
+    // Deliberately does NOT advance the index: the cards still on screen are
+    // what the fold animates, so emptying the stack first would leave the
+    // athlete watching nothing travel into the calendar.
+    beginFold();
+  }, [cards, index, onAccept, beginFold]);
 
   const buzz = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
@@ -140,48 +139,30 @@ export function PlanCardStack({
   const skipAll = useCallback(() => {
     if (folding) return;
     onSkipAll(cards.slice(index));
-    // Deliberately does NOT advance the index: the cards still on screen are
-    // what the fold animates, so emptying the stack first would leave the
-    // athlete watching nothing travel into the calendar.
     beginFold();
   }, [folding, cards, index, onSkipAll, beginFold]);
 
-  const undo = useCallback(() => {
-    if (!undoCard) return;
-    onUndoDecline(undoCard);
-    setUndoCard(null);
-  }, [undoCard, onUndoDecline]);
-
-  // The undo offer is transient — it must not linger over the calendar after
-  // the stack has folded away.
-  useEffect(() => {
-    if (!undoCard) return;
-    const t = setTimeout(() => setUndoCard(null), UNDO_VISIBLE_MS);
-    return () => clearTimeout(t);
-  }, [undoCard]);
-
   const pan = Gesture.Pan()
-    .enabled(!folding && remaining.length > 0)
+    .enabled(!folding && !reading && remaining.length > 0)
     .onChange((e) => {
       tx.value += e.changeX;
       ty.value += e.changeY;
     })
     .onEnd((e) => {
-      const xPast = Math.abs(tx.value) > cardW * X_THRESHOLD || Math.abs(e.velocityX) > VELOCITY_THRESHOLD;
+      const rightPast = tx.value > cardW * X_THRESHOLD || e.velocityX > VELOCITY_THRESHOLD;
       const upPast = -ty.value > cardH * Y_THRESHOLD || e.velocityY < -VELOCITY_THRESHOLD;
       // Whichever axis the athlete actually moved along decides the gesture, so
       // a diagonal flick can't register as both.
       const horizontal = Math.abs(tx.value) > Math.abs(ty.value);
 
-      if (horizontal && xPast) {
-        const goingRight = tx.value > 0 || e.velocityX > 0;
+      if (horizontal && rightPast) {
         runOnJS(buzz)();
         ty.value = withTiming(ty.value + e.velocityY * 0.06, { duration: FLY_MS });
         tx.value = withTiming(
-          goingRight ? winW * 1.3 : -winW * 1.3,
+          winW * 1.3,
           { duration: FLY_MS, easing: Easing.out(Easing.quad) },
           (done) => {
-            if (done) runOnJS(commit)(goingRight ? 'accept' : 'decline');
+            if (done) runOnJS(advance)();
           },
         );
         return;
@@ -189,19 +170,12 @@ export function PlanCardStack({
 
       if (!horizontal && upPast) {
         runOnJS(buzz)();
-        tx.value = withTiming(tx.value * 0.5, { duration: FLY_MS });
-        ty.value = withTiming(
-          -winH * 1.2,
-          { duration: FLY_MS, easing: Easing.out(Easing.quad) },
-          (done) => {
-            if (done) runOnJS(commit)('accept');
-          },
-        );
+        runOnJS(acceptAll)();
         return;
       }
 
-      // Not far enough — spring home. Velocity carries over so the release
-      // feels continuous with the drag rather than restarting.
+      // Left, down, or not far enough: spring home. Velocity carries over so the
+      // release feels continuous with the drag rather than restarting.
       tx.value = withSpring(0, { velocity: e.velocityX, damping: 18, stiffness: 190 });
       ty.value = withSpring(0, { velocity: e.velocityY, damping: 18, stiffness: 190 });
     });
@@ -220,9 +194,9 @@ export function PlanCardStack({
   const topCardStyle = useAnimatedStyle(() => {
     // Rotation comes from how far the card has been dragged sideways, which is
     // what makes it feel hinged at the wrist rather than sliding flat.
-    const rot = interpolate(tx.value, [-winW / 2, 0, winW / 2], [-11, 0, 11], Extrapolation.CLAMP);
-    // The top card folds with the rest of the stack, so a Skip sends everything
-    // still on screen up into the calendar together.
+    const rot = interpolate(tx.value, [-winW / 2, 0, winW / 2], [-8, 0, 8], Extrapolation.CLAMP);
+    // The top card folds with the rest of the stack, so an up swipe sends
+    // everything still on screen into the calendar together.
     const foldLift = interpolate(fold.value, [0, 1], [0, -winH * FOLD_LIFT], Extrapolation.CLAMP);
     const foldScale = interpolate(fold.value, [0, 1], [1, FOLD_SCALE], Extrapolation.CLAMP);
     return {
@@ -278,9 +252,9 @@ export function PlanCardStack({
                     width={cardW}
                     height={cardH}
                     interactive={!folding}
-                    swipeX={swipeX}
                     swipeUp={swipeUp}
                     stackStyle={topCardStyle}
+                    onFlipChange={setReading}
                     testID="plan-card-top"
                   />
                 </GestureDetector>
@@ -300,27 +274,6 @@ export function PlanCardStack({
             )}
         </View>
       </View>
-
-      {undoCard && !folding ? (
-        <View style={styles.undoWrap} pointerEvents="box-none">
-          <View style={[styles.undoBar, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Text style={[styles.undoText, { color: colors.text }]} numberOfLines={1}>
-              {undoCard.weekday} dropped
-            </Text>
-            <Pressable
-              onPress={undo}
-              hitSlop={10}
-              style={styles.undoBtn}
-              testID="plan-card-undo"
-              accessibilityRole="button"
-              accessibilityLabel="Undo dropping this day"
-            >
-              <Undo2 size={15} color={colors.accent} strokeWidth={2.2} />
-              <Text style={[styles.undoAction, { color: colors.accent }]}>Undo</Text>
-            </Pressable>
-          </View>
-        </View>
-      ) : null}
     </View>
   );
 }
@@ -375,7 +328,7 @@ function BehindCard({
         { translateY: fanPivot },
         { rotate: `${d.value * FAN_STEP_DEG}deg` },
         { translateY: -fanPivot },
-        { scale: 1 - d.value * 0.03 },
+        { scale: 1 - d.value * 0.02 },
       ],
       zIndex: 10 - depth,
     };
@@ -395,27 +348,9 @@ function BehindCard({
 
 const styles = StyleSheet.create({
   backdrop: { backgroundColor: 'rgba(9,9,7,0.94)' },
-  chrome: { position: 'absolute', top: 0, left: 0, right: 0, paddingTop: 60, paddingHorizontal: space.xl },
+  chrome: { position: 'absolute', top: 0, left: 0, right: 0, paddingTop: 60, paddingHorizontal: space.xl, zIndex: 20 },
   dismiss: { alignSelf: 'flex-end' },
 
   stageWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  // Nudged up: the fan sweeps down and to the right, so a dead-centre stage
-  // would leave the hand sitting low on the screen.
-  stage: { alignItems: 'center', justifyContent: 'center', marginBottom: 40 },
-
-  undoWrap: { position: 'absolute', left: 0, right: 0, bottom: 24, alignItems: 'center' },
-  undoBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: space.lg,
-    minWidth: 250,
-    paddingVertical: space.md,
-    paddingHorizontal: space.lg,
-    borderRadius: radius.md,
-    borderWidth: 1,
-  },
-  undoText: { fontSize: 14, fontWeight: '700', flexShrink: 1 },
-  undoBtn: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  undoAction: { fontSize: 14, fontWeight: '900', letterSpacing: 0.4 },
+  stage: { alignItems: 'center', justifyContent: 'center' },
 });

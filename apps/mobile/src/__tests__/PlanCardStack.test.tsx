@@ -30,8 +30,6 @@ function setup(overrides: Partial<React.ComponentProps<typeof PlanCardStack>> = 
     cards,
     colors: palettes.light,
     onAccept: jest.fn(),
-    onDecline: jest.fn(),
-    onUndoDecline: jest.fn(),
     onSkipAll: jest.fn(),
     onDone: jest.fn(),
     ...overrides,
@@ -71,7 +69,6 @@ describe('PlanCardStack', () => {
     expect(props.onSkipAll).toHaveBeenCalledWith(cards);
     // Nothing was swiped, so no day should have been individually accepted.
     expect(props.onAccept).not.toHaveBeenCalled();
-    expect(props.onDecline).not.toHaveBeenCalled();
   });
 
   it('still folds into the calendar after a skip', async () => {
@@ -80,6 +77,21 @@ describe('PlanCardStack', () => {
     const { getByTestId, props } = setup();
     fireEvent.press(getByTestId('plan-card-skip'));
     await waitFor(() => expect(props.onDone).toHaveBeenCalled());
+  });
+
+  it('fills the page rather than floating a small card in the middle', () => {
+    // 750x1334 is the jest-expo window. A card that only used a third of it was
+    // what forced every session on the back into tiny, crowded type.
+    const { getByTestId } = setup();
+    const style = getByTestId('plan-card-top').props.style;
+    const flat = Array.isArray(style) ? Object.assign({}, ...style.flat(Infinity).filter(Boolean)) : style;
+    expect(flat.width).toBeGreaterThan(600);
+    expect(flat.height).toBeGreaterThan(800);
+  });
+
+  it('lets a long session list scroll instead of cutting it off', () => {
+    const { getAllByTestId } = setup();
+    expect(getAllByTestId('day-card-sessions').length).toBeGreaterThan(0);
   });
 
   it('offers a way out without any instructional chrome', () => {

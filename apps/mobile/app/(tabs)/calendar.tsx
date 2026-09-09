@@ -184,14 +184,6 @@ export default function CalendarScreen() {
     strideApi.revealEvents(card.eventIds).catch(() => {});
   }, []);
 
-  const declineCard = useCallback((card: PlanDayCard) => {
-    strideApi.declineEvents(card.eventIds).catch(() => {});
-  }, []);
-
-  const undoDecline = useCallback((card: PlanDayCard) => {
-    strideApi.undoDeclineEvents(card.eventIds).catch(() => {});
-  }, []);
-
   const skipAll = useCallback(() => {
     // Sent with no ids on purpose: this clears every outstanding reveal,
     // including any that arrived while the stack was open, so a skip can never
@@ -395,8 +387,6 @@ export default function CalendarScreen() {
           cards={cards}
           colors={colors}
           onAccept={acceptCard}
-          onDecline={declineCard}
-          onUndoDecline={undoDecline}
           onSkipAll={skipAll}
           onDone={revealDone}
         />
