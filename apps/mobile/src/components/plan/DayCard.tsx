@@ -15,6 +15,7 @@ import Animated, {
   interpolate,
   Extrapolation,
   Easing,
+  type AnimatedStyle,
   type SharedValue,
 } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -32,8 +33,12 @@ export interface DayCardProps {
   colors: Palette;
   width: number;
   height: number;
-  /** Deck placement + swipe transform, owned by PlanCardStack. */
-  stackStyle?: StyleProp<ViewStyle>;
+  /**
+   * Deck placement + swipe transform, owned by PlanCardStack. This is a
+   * useAnimatedStyle result, which Reanimated 4 types as its own handle rather
+   * than a plain ViewStyle, so the prop has to admit both.
+   */
+  stackStyle?: StyleProp<AnimatedStyle<ViewStyle>>;
   /** Only the top card is interactive; the deck behind it is scenery. */
   interactive?: boolean;
   /** Normalised drag. +1 = committed. Only the accept direction is drawn. */
@@ -244,7 +249,7 @@ const styles = StyleSheet.create({
   itemVolume: { fontSize: 16, fontWeight: '700' },
   itemCue: { fontSize: 15, lineHeight: 21 },
 
-  wash: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
+  wash: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center' },
   washMark: {
     width: 96,
     height: 96,

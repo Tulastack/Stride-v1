@@ -132,10 +132,10 @@ export function TargetSelect({
 }
 
 const styles = StyleSheet.create({
-  wrap: { ...StyleSheet.absoluteFillObject, padding: space.lg, gap: space.md, justifyContent: 'center', zIndex: 10 },
+  wrap: { ...StyleSheet.absoluteFill, padding: space.lg, gap: space.md, justifyContent: 'center', zIndex: 10 },
   title: { ...typo.h2, textAlign: 'center' },
   frame: { width: '100%', aspectRatio: 9 / 16, maxHeight: 540, alignSelf: 'center', borderRadius: radius.md, borderWidth: 1, overflow: 'hidden' },
-  hintWrap: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'flex-end', paddingBottom: space.lg },
+  hintWrap: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'flex-end', paddingBottom: space.lg },
   hint: { ...typo.caption, paddingHorizontal: space.md, paddingVertical: space.sm, borderRadius: radius.pill, overflow: 'hidden' },
   actions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: space.sm },
   skip: { ...typo.body },

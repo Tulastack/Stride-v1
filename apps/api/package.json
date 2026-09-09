@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit",
     "validate:biomech": "tsx scripts/validate-biomech.ts",
     "research:metric": "tsx scripts/research/generate-metric-biomechanics.ts",
-    "test": "node --experimental-vm-modules node_modules/.bin/jest --config jest.config.cjs"
+    "test": "NODE_OPTIONS=--experimental-vm-modules npx jest --config jest.config.cjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.122.0",

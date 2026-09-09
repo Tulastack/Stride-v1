@@ -6,11 +6,6 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
-    "splash": {
-      "image": "./assets/splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#0B0D17"
-    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.stride.sprint",
@@ -46,6 +41,14 @@
         "expo-image-picker",
         {
           "photosPermission": "Choose an existing sprint video from your library to analyze."
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#0B0D17"
         }
       ]
     ],
