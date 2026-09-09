@@ -189,6 +189,11 @@ export async function writeCaptureSidecar(videoUri: string, manifest: CaptureMan
  * 1) `fetch(file://…).blob()` → "Network request failed"
  * 2) Server-built blob URLs that don't match the phone's working `apiBaseUrl`
  */
+/** What the API and the S3 presign both expect the video to be sent as. */
+const UPLOAD_CONTENT_TYPE = 'video/mp4';
+/** A video is large; give it room, but never unbounded. */
+const UPLOAD_TIMEOUT_MS = 180_000;
+
 export async function uploadCaptureVideo(
   videoUri: string,
   manifest: CaptureManifest,
@@ -212,7 +217,16 @@ export async function uploadCaptureVideo(
   // used exactly as signed.
   const uploadUrl = rewriteUploadUrl(part.url, analysisId, opts?.apiBaseUrl, opts?.token);
 
-  const fileBlob = await readLocalFileAsBlob(videoUri);
+  const raw = await readLocalFileAsBlob(videoUri);
+  // The blob's OWN type has to be video/mp4, not just the header. Expo SDK 57
+  // replaced the global fetch with a native one that rewrites Content-Type from
+  // `blob.type` (expo/src/winter/fetch/RequestUtils.ts, normalizeBodyInitAsync),
+  // so a .MOV read off the camera roll arrives as video/quicktime and silently
+  // overrides the header below. For an S3 presigned PUT that breaks the
+  // signature, because the server signed video/mp4.
+  const fileBlob =
+    raw.type === UPLOAD_CONTENT_TYPE ? raw : new Blob([raw], { type: UPLOAD_CONTENT_TYPE });
+
   let put: Response;
   try {
     put = await fetch(uploadUrl, {
@@ -220,12 +234,21 @@ export async function uploadCaptureVideo(
       body: fileBlob,
       // For S3 presigned PUTs this header must match what was signed, the
       // server signs 'video/mp4', which is also what the API blob PUT expects.
-      headers: { 'Content-Type': 'video/mp4' },
+      headers: { 'Content-Type': UPLOAD_CONTENT_TYPE },
+      // A video is megabytes over a LAN, so this needs far longer than a JSON
+      // call, but it still needs a limit: Expo's fetch otherwise sits on an
+      // unreachable host until the platform gives up, and the athlete is left
+      // watching a spinner with nothing to act on.
+      signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS),
     });
   } catch (err: any) {
     const host = (() => { try { return new URL(uploadUrl).host; } catch { return uploadUrl.slice(0, 40); } })();
+    const timedOut =
+      err?.name === 'TimeoutError' || err?.name === 'AbortError' || /timed out/i.test(String(err?.message));
     throw new Error(
-      `Video upload network failed (${host}): ${err?.message ?? err}`,
+      timedOut
+        ? `Upload to ${host} timed out. Check the API is running and the phone is on the same Wi-Fi.`
+        : `Video upload network failed (${host}): ${err?.message ?? err}`,
     );
   }
   if (!put.ok) {

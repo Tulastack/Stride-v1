@@ -7,7 +7,7 @@ exports[`F.0 primitive kit renders renders the primitives without crashing and m
       [
         {
           "borderColor": "#353A44",
-          "borderRadius": 8,
+          "borderRadius": 4,
           "borderWidth": 1,
           "padding": 16,
         },
@@ -116,7 +116,7 @@ exports[`F.0 primitive kit renders renders the primitives without crashing and m
       [
         {
           "alignSelf": "flex-start",
-          "borderRadius": 8,
+          "borderRadius": 4,
           "borderWidth": 1,
           "paddingHorizontal": 8,
           "paddingVertical": 4,
@@ -192,7 +192,7 @@ exports[`F.0 primitive kit renders renders the primitives without crashing and m
       [
         {
           "alignItems": "center",
-          "borderRadius": 8,
+          "borderRadius": 4,
           "justifyContent": "center",
           "paddingHorizontal": 24,
           "paddingVertical": 12,
@@ -258,7 +258,7 @@ exports[`F.0 primitive kit renders renders the primitives without crashing and m
       [
         {
           "alignItems": "center",
-          "borderRadius": 8,
+          "borderRadius": 4,
           "justifyContent": "center",
           "paddingHorizontal": 24,
           "paddingVertical": 12,

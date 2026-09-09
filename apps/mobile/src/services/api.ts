@@ -4,7 +4,31 @@ import type { CaptureManifest } from './capture';
 
 interface FetchOptions extends RequestInit {
   token?: string | null;
+  /** Milliseconds before the request is aborted. See REQUEST_TIMEOUT_MS. */
+  timeoutMs?: number;
 }
+
+/**
+ * How long to wait on a JSON call before giving up.
+ *
+ * Expo SDK 57 replaced the global fetch with its own native implementation
+ * (expo/src/winter/runtime.native.ts installs it unless EXPO_PUBLIC_USE_RN_FETCH
+ * is set), and that one carries a URLSession timeout that React Native's
+ * XHR-backed fetch did not. An unreachable host therefore stopped failing fast
+ * and started sitting for the best part of a minute before surfacing
+ * "UnexpectedException: The request timed out", with no clue which host it had
+ * been trying. Ten seconds is far longer than any of these calls needs on a LAN
+ * and short enough that a wrong address is obvious immediately.
+ */
+const REQUEST_TIMEOUT_MS = 10_000;
+
+/**
+ * The coach is a different kind of wait. It runs a tool-calling loop against an
+ * LLM (search the knowledge base, read the athlete's metrics, then answer), so
+ * tens of seconds is a normal success, not a fault. Holding it to the same
+ * deadline as a DB read would cancel good answers.
+ */
+const COACH_TIMEOUT_MS = 90_000;
 
 // Structured coach action chips, must match the server enum (no free-text chat, F.5).
 export type CoachActionChip =
@@ -27,11 +51,15 @@ async function request<T>(path: string, options: FetchOptions = {}): Promise<T> 
   const baseUrl = state.apiBaseUrl;
   if (!baseUrl) throw new Error('API URL not configured. Set EXPO_PUBLIC_API_BASE_URL.');
 
+  const url = `${baseUrl}${path}`;
   const doFetch = async (token?: string | null) => {
     const headers = new Headers(options.headers);
     headers.set('Content-Type', 'application/json');
     if (token) headers.set('Authorization', `Bearer ${token}`);
-    return fetch(`${baseUrl}${path}`, { ...options, headers });
+    // A caller's own signal still wins; this only adds a deadline when there
+    // isn't one, so nothing can hang indefinitely on a dead host.
+    const signal = options.signal ?? AbortSignal.timeout(options.timeoutMs ?? REQUEST_TIMEOUT_MS);
+    return fetch(url, { ...options, headers, signal });
   };
 
   // Fast path: the stored token is kept fresh by Supabase autoRefresh +
@@ -41,11 +69,19 @@ async function request<T>(path: string, options: FetchOptions = {}): Promise<T> 
   try {
     response = await doFetch(token);
   } catch (netErr: any) {
+    // Whatever the transport called it, the athlete (and whoever is debugging)
+    // needs the address that failed. The old branch only named the host for
+    // React Native's "Network request failed", so once Expo's fetch started
+    // reporting timeouts instead, the error became a bare
+    // "UnexpectedException: The request timed out" with nothing to act on.
     const msg = netErr?.message ?? String(netErr);
+    const timedOut =
+      netErr?.name === 'TimeoutError' || netErr?.name === 'AbortError' || /timed out/i.test(msg);
     throw new Error(
-      msg.includes('Network request failed')
-        ? `Network request failed talking to ${baseUrl}`
-        : msg,
+      timedOut
+        ? `Couldn't reach the Stride API at ${baseUrl} (timed out). ` +
+          'Check the API is running and that the phone is on the same Wi-Fi.'
+        : `Couldn't reach the Stride API at ${baseUrl}: ${msg}`,
     );
   }
 
@@ -265,6 +301,7 @@ export const strideApi = {
     return request<any>(`/coach-sessions/${sessionId}/message`, {
       method: 'POST',
       body: JSON.stringify({ content: content ?? CHIP_LABELS[actionChip], action_chip: actionChip }),
+      timeoutMs: COACH_TIMEOUT_MS,
     });
   },
 
@@ -273,6 +310,7 @@ export const strideApi = {
     return request<{ role: string; content: string; progress?: string[]; calendarRelevant?: boolean }>(`/coach-sessions/${sessionId}/message`, {
       method: 'POST',
       body: JSON.stringify({ content, history: history?.slice(-10) }),
+      timeoutMs: COACH_TIMEOUT_MS,
     });
   },
 
@@ -280,6 +318,7 @@ export const strideApi = {
   addCoachPlanToCalendar: async (sessionId: string) => {
     return request<{ created: number; events: any[] }>(`/coach-sessions/${sessionId}/add-to-calendar`, {
       method: 'POST',
+      timeoutMs: COACH_TIMEOUT_MS,
     });
   },
 
@@ -288,6 +327,7 @@ export const strideApi = {
     return request<any>(`/coach-sessions/${sessionId}/message`, {
       method: 'POST',
       body: JSON.stringify({ content: CHIP_LABELS.mark_understood, action_chip: 'mark_understood' }),
+      timeoutMs: COACH_TIMEOUT_MS,
     });
   },
 

@@ -1,24 +1,73 @@
 import { create } from 'zustand';
 import { NativeModules } from 'react-native';
+import Constants from 'expo-constants';
 
 /**
- * Resolve the API base URL. In dev we DERIVE the host from the Metro bundle URL
- * (the phone already connected to it), so it always matches the machine running
- * the dev server + API, no more stale hardcoded LAN IPs when DHCP changes it.
- * Falls back to the env var (e.g. a staging/prod URL) then localhost.
+ * Port the API listens on. Taken from EXPO_PUBLIC_API_BASE_URL when that is set
+ * so it stays configurable, and 3001 otherwise, which is what scripts/dev-up.sh
+ * starts and what apps/api/.env sets. It used to be hard-coded to 3000 here
+ * while the API ran on 3001, so every request the derived URL produced went to a
+ * port with nothing on it and hung until the network stack gave up.
  */
-function resolveApiBaseUrl(): string {
+function devApiPort(): string {
+  const configured = process.env.EXPO_PUBLIC_API_BASE_URL;
+  if (configured) {
+    try {
+      const port = new URL(configured).port;
+      if (port) return port;
+    } catch {
+      /* not a parseable URL, fall through to the default */
+    }
+  }
+  return '3001';
+}
+
+/**
+ * The machine serving this bundle, which in dev is also the machine running the
+ * API. Expo populates hostUri with the dev server's address; scriptURL is the
+ * older route and stays as a fallback for dev clients that do not set hostUri.
+ */
+function devHost(): string | null {
+  const fromConstants =
+    Constants.expoConfig?.hostUri ??
+    (Constants.expoGoConfig as { debuggerHost?: string } | null)?.debuggerHost ??
+    null;
+  const host = fromConstants?.split('/')[0]?.split(':')[0];
+  if (host && host !== 'localhost' && host !== '127.0.0.1') return host;
+
   try {
-    const scriptURL: string | undefined = (NativeModules as { SourceCode?: { scriptURL?: string } })?.SourceCode?.scriptURL;
+    const scriptURL: string | undefined = (
+      NativeModules as { SourceCode?: { scriptURL?: string } }
+    )?.SourceCode?.scriptURL;
     const m = scriptURL?.match(/^https?:\/\/([^/:]+)/);
-    if (m?.[1] && m[1] !== 'localhost' && m[1] !== '127.0.0.1') return `http://${m[1]}:3000`;
+    if (m?.[1] && m[1] !== 'localhost' && m[1] !== '127.0.0.1') return m[1];
   } catch {
-    /* not in a dev client (e.g. production build), fall through */
+    /* not in a dev client (e.g. a production build), fall through */
+  }
+  return null;
+}
+
+/**
+ * Resolve the API base URL. In dev we DERIVE the host from the machine serving
+ * the bundle, because that is the one thing guaranteed to be reachable: the
+ * phone just downloaded a bundle from it. A baked EXPO_PUBLIC_API_BASE_URL goes
+ * stale the moment DHCP hands the Mac a different address, and because
+ * EXPO_PUBLIC_* is inlined at bundle time, the app keeps calling the old one
+ * until someone re-bundles with --clear. That is the failure this exists to
+ * remove, so in dev the derived host WINS over the env var.
+ *
+ * Outside dev the env var is the answer, and a release build with nothing
+ * configured gets an empty string so request() can say so plainly.
+ */
+export function resolveApiBaseUrl(): string {
+  if (__DEV__) {
+    const host = devHost();
+    if (host) return `http://${host}:${devApiPort()}`;
   }
   if (process.env.EXPO_PUBLIC_API_BASE_URL) return process.env.EXPO_PUBLIC_API_BASE_URL;
   // Never silently point a release build at localhost, leave it empty so
   // request() throws a self-explanatory "API URL not configured" error.
-  return __DEV__ ? 'http://localhost:3000' : '';
+  return __DEV__ ? `http://localhost:${devApiPort()}` : '';
 }
 
 interface UserProfile {

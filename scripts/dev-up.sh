@@ -86,6 +86,11 @@ for _ in $(seq 1 30); do
 done
 curl -sf --max-time 3 "http://127.0.0.1:$API_PORT/health" >/dev/null \
   || die "API did not come up. See $LOG_DIR/api.log"
+# Loopback answering proves nothing about the phone: it reaches this Mac over
+# the LAN address, and a firewall or an interface-bound listener can serve
+# 127.0.0.1 happily while the phone times out.
+curl -sf --max-time 3 "http://$LAN_IP:$API_PORT/health" >/dev/null \
+  || die "API answers on 127.0.0.1 but not on $LAN_IP, which is the address the phone uses. Check the macOS firewall."
 say "api" "http://$LAN_IP:$API_PORT  (log: $LOG_DIR/api.log)"
 
 # The worker needs the API's own env (DB, storage dir) PLUS the pipeline choice
@@ -105,10 +110,11 @@ echo "────────────────────────�
 echo
 echo "  Now start Expo in your own terminal so you get the QR code:"
 echo
-echo "      cd apps/mobile && npx expo start --clear"
+echo "      cd apps/mobile && npx expo start"
 echo
-echo "  --clear matters: EXPO_PUBLIC_* is baked in at bundle time, so the API"
-echo "  address above only reaches the phone after a fresh bundle."
+echo "  The app derives the API host from whichever machine served its bundle"
+echo "  (src/store/useStrideStore.ts), so a new LAN IP no longer needs a rebuild."
+echo "  EXPO_PUBLIC_API_BASE_URL above is only the fallback."
 echo
 echo "  Phone and Mac must be on the SAME Wi-Fi network."
 echo
