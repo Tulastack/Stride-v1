@@ -25,6 +25,15 @@ import { getUserBySupabaseUid, createUser } from '../db/queries.js';
 
 const router = Router();
 
+function requireUuid(value: unknown, res: Response): string | null {
+  const parsed = z.string().uuid().safeParse(value);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'This session is not a saved analysis.' });
+    return null;
+  }
+  return parsed.data;
+}
+
 // Zod schemas for validation
 const uploadUrlSchema = z.object({
   numParts: z.number().int().min(1).max(100),
@@ -257,7 +266,8 @@ router.put(
         res.status(404).json({ error: 'Not found' });
         return;
       }
-      const { analysisId } = req.params;
+      const analysisId = requireUuid(req.params.analysisId, res);
+      if (!analysisId) return;
       const analysis = await getAnalysis(analysisId, req.userId);
       if (!analysis) {
         res.status(404).json({ error: 'Analysis not found' });
@@ -287,7 +297,9 @@ router.put(
  */
 router.get('/:analysisId/overlay', authenticate, async (req: any, res: Response, next: NextFunction) => {
   try {
-    const analysis = await getAnalysis(req.params.analysisId, req.userId);
+    const analysisId = requireUuid(req.params.analysisId, res);
+    if (!analysisId) return;
+    const analysis = await getAnalysis(analysisId, req.userId);
     if (!analysis) {
       res.status(404).json({ error: 'Analysis not found' });
       return;
@@ -317,7 +329,9 @@ router.get('/:analysisId/file', authenticateSSE, async (req: any, res: Response,
       res.status(501).json({ error: 'file serving is local-mode only for now' });
       return;
     }
-    const analysis = await getAnalysis(req.params.analysisId, req.userId);
+    const analysisId = requireUuid(req.params.analysisId, res);
+    if (!analysisId) return;
+    const analysis = await getAnalysis(analysisId, req.userId);
     if (!analysis) {
       res.status(404).json({ error: 'Analysis not found' });
       return;
@@ -370,7 +384,8 @@ router.get('/', authenticate, async (req: any, res: Response, next: NextFunction
  */
 router.get('/:analysisId', authenticate, async (req: any, res: Response, next: NextFunction) => {
   try {
-    const { analysisId } = req.params;
+    const analysisId = requireUuid(req.params.analysisId, res);
+    if (!analysisId) return;
     const userId = req.userId;
 
     const analysis = await getAnalysis(analysisId, userId);

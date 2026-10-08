@@ -1,192 +1,161 @@
-import React, { useCallback, useRef, useState } from 'react';
-import { View, Text, Pressable, StyleSheet, Switch, SafeAreaView, ScrollView, ActivityIndicator, Alert } from 'react-native';
-import { router } from 'expo-router';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { View, Text, Pressable, StyleSheet, Switch, ActivityIndicator } from 'react-native';
+import { router, useFocusEffect } from 'expo-router';
 import { CameraView, useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
-import { Camera, Zap, ChevronRight } from 'lucide-react-native';
+import * as Haptics from 'expo-haptics';
+import { Camera, Image as ImageIcon, ArrowUpRight } from 'lucide-react-native';
 import { strideApi } from '../../src/services/api';
-import { GyroRecorder, AccelRecorder, buildCaptureManifest, uploadCaptureVideo, CAPTURE_PREFS } from '../../src/services/capture';
+import { GyroRecorder, AccelRecorder, buildCaptureManifest, uploadCaptureVideo, CAPTURE_PREFS, type GyroSample, type AccelSample, type CaptureManifest } from '../../src/services/capture';
 import { useTheme } from '../../src/context/ThemeContext';
 import { useStrideStore } from '../../src/store/useStrideStore';
 import { TargetSelect } from '../../src/components/TargetSelect';
-import { space, radius, type as typo, iconStroke } from '../../src/theme';
+import { CaptureCamera } from '../../src/components/CaptureCamera';
+import { useTabChrome } from '../../src/context/TabChromeContext';
+import { Screen, ScreenHeader, TrackScene, Button, Notice, Sheet, StrideLogo } from '../../src/ui';
+import { space, radius, type as typo } from '../../src/theme';
 
-export default function UploadScreen() {
+type Clip = { uri: string; gyro: GyroSample[]; accel: AccelSample[]; durationMs: number; width?: number; height?: number };
+type Target = CaptureManifest['target'];
+
+export default function CaptureScreen() {
   const { colors } = useTheme();
-  const user = useStrideStore((s) => s.user);
+  const { setImmersive } = useTabChrome();
+  const user = useStrideStore((state) => state.user);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [micPermission, requestMicPermission] = useMicrophonePermissions();
   const [recording, setRecording] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [progressStep, setProgressStep] = useState<string | null>(null);
   const [showCamera, setShowCamera] = useState(false);
-  const [slowMo, setSlowMo] = useState(true);
-  const [pending, setPending] = useState<{ uri: string; gyro: any; accel?: any; durationMs: number; width?: number; height?: number } | null>(null);
+  const [cameraReady, setCameraReady] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const [preferHighRate, setPreferHighRate] = useState(true);
+  const [clip, setClip] = useState<Clip | null>(null);
+  const [selected, setSelected] = useState(false);
+  const [target, setTarget] = useState<Target>();
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState('');
+  const [showGuide, setShowGuide] = useState(false);
   const cameraRef = useRef<CameraView>(null);
   const gyroRef = useRef(new GyroRecorder());
   const accelRef = useRef(new AccelRecorder());
+  const discardRef = useRef(false);
+  const mounted = useRef(true);
+  const recordLock = useRef(false);
+  const recordingStartedAt = useRef<number | null>(null);
 
-  const firstName = user?.display_name ? user.display_name.split(' ')[0] : null;
+  useFocusEffect(useCallback(() => {
+    setImmersive(showCamera);
+    return () => {
+      setImmersive(false);
+      if (showCamera) {
+        discardRef.current = true;
+        cameraRef.current?.stopRecording();
+        setShowCamera(false);
+      }
+    };
+  }, [showCamera, setImmersive]));
 
-  const ensurePermissions = useCallback(async () => {
-    if (!cameraPermission?.granted) { const c = await requestCameraPermission(); if (!c.granted) throw new Error('Camera permission required.'); }
-    if (!micPermission?.granted) { const m = await requestMicPermission(); if (!m.granted) throw new Error('Microphone permission required.'); }
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; discardRef.current = true; cameraRef.current?.stopRecording(); gyroRef.current.stop(); accelRef.current.stop(); };
+  }, []);
+  useEffect(() => {
+    if (!recording) return;
+    const timer = setInterval(() => setElapsed(recordingStartedAt.current === null ? 0 : Math.min(12, (Date.now() - recordingStartedAt.current) / 1000)), 100);
+    return () => clearInterval(timer);
+  }, [recording]);
+
+  const openCamera = useCallback(async () => {
+    setError('');
+    try {
+      if (!cameraPermission?.granted && !(await requestCameraPermission()).granted) throw new Error('Camera access is needed to record. You can still import a video.');
+      if (!micPermission?.granted && !(await requestMicPermission()).granted) throw new Error('Microphone access is needed for video capture. You can still import a video.');
+      setCameraReady(false); setShowCamera(true);
+    } catch (failure) { setError(failure instanceof Error ? failure.message : 'Could not open camera.'); }
   }, [cameraPermission, micPermission, requestCameraPermission, requestMicPermission]);
 
-  const processVideo = async (uri: string, gyroSamples: any, durationMs: number, target?: any, accelSamples?: any) => {
-    setUploading(true); setProgressStep('UPLOADING');
+  const importVideo = async () => {
+    setError('');
     try {
-      const manifest = buildCaptureManifest({
-        videoUri: uri,
-        gyro: gyroSamples,
-        accelerometer: accelSamples,
-        durationMs,
-        // TODO: high-fps capture needs react-native-vision-camera or native
-        // camera config, CameraView records at the platform default (~30fps).
-        fps: 30,
-        preferredFps: CAPTURE_PREFS.preferredFps,
-        sloMoRequested: slowMo,
-      });
-      if (target) manifest.target = target;
-      setProgressStep('ANALYZING SPRINT');
-      const { analysisId } = await uploadCaptureVideo(uri, manifest, strideApi, {
-        apiBaseUrl: useStrideStore.getState().apiBaseUrl,
-        token: useStrideStore.getState().token,
-      });
-      setUploading(false); setProgressStep(null);
-      router.push({ pathname: '/(tabs)/analysis', params: { analysisId } });
-    } catch (err: any) {
-      setUploading(false); setProgressStep(null);
-      if (err?.code === 'CONSENT_REQUIRED') { router.push('/(onboarding)/consent'); return; }
-      Alert.alert('Failed', err.message || 'Error.');
-    }
+      const picked = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['videos'], quality: 1 });
+      if (picked.canceled || !picked.assets[0]) return;
+      const video = picked.assets[0];
+      setSelected(false); setTarget(undefined);
+      setClip({ uri: video.uri, gyro: [], accel: [], durationMs: video.duration ?? 4000, width: video.width, height: video.height });
+    } catch (failure) { setError(failure instanceof Error ? failure.message : 'Could not import your video.'); }
   };
 
-  const handleSelectVideo = async () => {
+  const record = async () => {
+    if (!cameraRef.current || !cameraReady || recordLock.current) return;
+    recordLock.current = true; discardRef.current = false; recordingStartedAt.current = null; setElapsed(0); setRecording(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     try {
-      const pick = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['videos'], quality: 1 });
-      if (pick.canceled || !pick.assets[0]) return;
-      const a = pick.assets[0];
-      setPending({ uri: a.uri, gyro: [], accel: [], durationMs: a.duration ?? 4000, width: a.width, height: a.height });
-    } catch (err: any) { Alert.alert('Import failed', err.message); }
-  };
-
-  const handleStartRecord = async () => {
-    try { await ensurePermissions(); setShowCamera(true); }
-    catch (err: any) { Alert.alert('Permissions', err.message); }
-  };
-
-  const handleRecord = async () => {
-    if (!cameraRef.current || recording) return;
-    setRecording(true);
-    await Promise.all([gyroRef.current.start(), accelRef.current.start()]);
-    try {
-      // Real duration from wall-clock timestamps, recordAsync resolves on stop.
-      const startedAt = Date.now();
+      await Promise.all([gyroRef.current.start(), accelRef.current.start()]);
+      if (!mounted.current || discardRef.current || !cameraRef.current) return;
+      const start = Date.now();
+      recordingStartedAt.current = start;
       const video = await cameraRef.current.recordAsync({ maxDuration: 12 });
-      const durationMs = Date.now() - startedAt;
-      const gyro = gyroRef.current.stop();
-      const accel = accelRef.current.stop();
-      setRecording(false); setShowCamera(false);
-      if (video?.uri) setPending({ uri: video.uri, gyro, accel, durationMs });
-    } catch {
-      gyroRef.current.stop();
-      accelRef.current.stop();
-      setRecording(false); setShowCamera(false);
+      const durationMs = Date.now() - start;
+      const gyro = gyroRef.current.stop(), accel = accelRef.current.stop();
+      if (mounted.current && !discardRef.current && video?.uri) {
+        setClip({ uri: video.uri, gyro, accel, durationMs }); setSelected(false); setTarget(undefined);
+      }
+    } catch (failure) {
+      if (mounted.current && !discardRef.current) setError(failure instanceof Error ? failure.message : 'Recording failed. Please try again.');
+    } finally {
+      gyroRef.current.stop(); accelRef.current.stop(); recordLock.current = false; recordingStartedAt.current = null;
+      if (mounted.current) { setRecording(false); setShowCamera(false); }
     }
   };
 
-  if (showCamera) {
-    return (
-      <SafeAreaView style={[styles.safe, { backgroundColor: colors.bg }]}>
-        <CameraView ref={cameraRef} style={{ flex: 1 }} mode="video" facing="back" videoQuality="1080p">
-          <View style={styles.cameraOverlay}>
-            <Pressable style={styles.closeBtn} onPress={() => { setRecording(false); setShowCamera(false); }}>
-              <Text style={styles.closeBtnText}>✕</Text>
-            </Pressable>
-            <Text style={styles.cameraHint}>{slowMo ? CAPTURE_PREFS.sloMoLabel : 'Standard capture'} · Handheld OK</Text>
-            <Pressable style={[styles.camBtn, recording && { borderColor: colors.error }]} onPress={recording ? () => cameraRef.current?.stopRecording() : handleRecord}>
-              <View style={[styles.camInner, recording && { width: 20, height: 20, borderRadius: 4 }]} />
-            </Pressable>
-          </View>
-        </CameraView>
-      </SafeAreaView>
-    );
-  }
+  const upload = async (video: Clip, chosenTarget?: Target) => {
+    if (uploading) return;
+    setUploading(true); setError(''); setSelected(true); setTarget(chosenTarget);
+    try {
+      const manifest = buildCaptureManifest({ videoUri: video.uri, gyro: video.gyro, accelerometer: video.accel, durationMs: video.durationMs, fps: 30, preferredFps: CAPTURE_PREFS.preferredFps, sloMoRequested: preferHighRate, widthPx: video.width, heightPx: video.height });
+      if (chosenTarget) manifest.target = chosenTarget;
+      const { analysisId } = await uploadCaptureVideo(video.uri, manifest, strideApi, { apiBaseUrl: useStrideStore.getState().apiBaseUrl, token: useStrideStore.getState().token });
+      if (!mounted.current) return;
+      setClip(null); router.push({ pathname: '/(tabs)/analysis', params: { analysisId } });
+    } catch (failure: any) {
+      if (!mounted.current) return;
+      if (failure?.code === 'CONSENT_REQUIRED') router.push('/(onboarding)/consent');
+      setError(failure?.message ?? 'Upload failed. Your clip is kept here so you can retry.');
+    } finally { if (mounted.current) setUploading(false); }
+  };
 
-  if (pending) {
-    return (
-      <SafeAreaView style={[styles.safe, { backgroundColor: colors.bg }]}>
-        <TargetSelect uri={pending.uri} videoWidth={pending.width} videoHeight={pending.height}
-          onConfirm={(t) => { const p = pending; setPending(null); processVideo(p.uri, p.gyro, p.durationMs, t, p.accel); }}
-          onSkip={() => { const p = pending; setPending(null); processVideo(p.uri, p.gyro, p.durationMs, undefined, p.accel); }} />
-      </SafeAreaView>
-    );
-  }
+  const cancelCamera = () => {
+    discardRef.current = true;
+    if (recording) cameraRef.current?.stopRecording();
+    setShowCamera(false);
+  };
 
-  if (uploading) {
-    return (
-      <SafeAreaView style={[styles.safe, { backgroundColor: colors.bg }]}>
-        <View style={styles.uploadWrap}>
-          <ActivityIndicator size="large" color={colors.accent} />
-          <Text style={[styles.uploadStep, { color: colors.accent }]}>{progressStep}</Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
+  if (showCamera) return <CaptureCamera cameraRef={cameraRef} ready={cameraReady} recording={recording} elapsed={elapsed} onReady={() => setCameraReady(true)} onRecord={record} onStop={() => cameraRef.current?.stopRecording()} onCancel={cancelCamera} onImport={() => { setShowCamera(false); importVideo(); }} onError={(message) => { setError(message); setShowCamera(false); }} />;
+  if (clip && !selected) return <Screen scroll={false}><TargetSelect uri={clip.uri} videoWidth={clip.width} videoHeight={clip.height} onConfirm={(chosen) => upload(clip, chosen)} onSkip={() => upload(clip)} onCancel={() => setClip(null)} /></Screen>;
+  if (clip && selected) return <Screen>
+    <ScreenHeader logo title={uploading ? 'Sending your sprint.' : 'Your clip is safe here.'} />
+    <View style={[styles.stage, { backgroundColor: colors.well }]}><TrackScene /><Text accessibilityLiveRegion="polite" style={[typo.h2, { color: colors.wellText, padding: 24 }]}>{uploading ? 'Uploading video' : 'Ready to retry'}</Text></View>
+    {uploading ? <View style={{ gap: 16 }}><ActivityIndicator color={colors.goldInk} /><Text style={[typo.body, { color: colors.muted }]}>The analysis starts after the upload completes. Keep Stride open.</Text></View> : <><Notice tone="error">{error}</Notice><Button label="Retry upload" onPress={() => upload(clip, target)} /><Button label="Choose another clip" variant="secondary" onPress={() => { setClip(null); setError(''); }} /></>}
+  </Screen>;
 
-  return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: colors.bg }]}>
-      <ScrollView contentContainerStyle={styles.scroll}>
-        <View style={styles.headerRow}>
-          <View>
-            <Text style={[styles.wordmark, { color: colors.accent }]}>STRIDE</Text>
-            <Text style={[styles.tagline, { color: colors.muted }]}>{firstName ? `Welcome back, ${firstName}` : 'AI sprint analysis'}</Text>
-          </View>
-        </View>
-
-        <View style={styles.hero}>
-          <Text style={[styles.heroTitle, { color: colors.text }]}>Film a sprint.{'\n'}Get it scored.</Text>
-          <Text style={[styles.heroSub, { color: colors.muted }]}>Side-on, 10–20 m away · 12 seconds max</Text>
-          <Pressable style={({ pressed }) => [styles.recordBtn, { backgroundColor: colors.accent }, pressed && { opacity: 0.85 }]} onPress={handleStartRecord}>
-            <Camera size={20} color={colors.accentText} strokeWidth={2.25} />
-            <Text style={[styles.recordBtnText, { color: colors.accentText }]}>Record sprint</Text>
-          </Pressable>
-          <Pressable style={({ pressed }) => [styles.importBtn, { borderColor: colors.border }, pressed && { opacity: 0.7 }]} hitSlop={8} onPress={handleSelectVideo}>
-            <Text style={[styles.importText, { color: colors.text }]}>Import from library</Text>
-          </Pressable>
-        </View>
-
-        <View style={[styles.settingRow, { borderTopColor: colors.border }]}>
-          <Text style={[styles.settingLabel, { color: colors.text }]}>High frame rate when available</Text>
-          <Switch value={slowMo} onValueChange={setSlowMo} trackColor={{ false: colors.border, true: colors.accent }} thumbColor={colors.card} />
-        </View>
-      </ScrollView>
-    </SafeAreaView>
-  );
+  return <Screen>
+    <View style={styles.brand}><StrideLogo height={32} />{user?.display_name ? <Text style={[typo.caption, { color: colors.muted }]}>{user.display_name.split(' ')[0]}</Text> : null}</View>
+    <View><Text style={[typo.display, { color: colors.text }]}>Meet your stride.</Text><Text style={[typo.body, { color: colors.muted, marginTop: 8 }]}>A few seconds of movement. A clearer way forward.</Text></View>
+    <View style={[styles.stage, { backgroundColor: colors.well }]}><View style={styles.stageHeading}><StrideLogo markOnly height={28} color={colors.accent} /></View><TrackScene /><View style={styles.stageFooter}><View style={{ flex: 1, gap: 6 }}><Text style={[typo.h2, { color: colors.wellText }]}>Your movement,{'\n'}in focus.</Text><Text style={[typo.caption, { color: colors.wellMuted }]}>Side-on · Full body · Up to 12 s</Text></View><Pressable accessibilityRole="button" accessibilityLabel="Record sprint" onPress={openCamera} style={[styles.shutter, { borderColor: colors.wellBorder }]}><View style={[styles.shutterFill, { backgroundColor: colors.accent }]}><Camera color={colors.accentText} size={24} strokeWidth={1.6} /></View></Pressable></View></View>
+    <Pressable accessibilityRole="button" accessibilityLabel="Import from library" onPress={importVideo} style={[styles.importRow, { borderBottomColor: colors.border }]}><ImageIcon size={20} color={colors.goldInk} /><View style={{ flex: 1 }}><Text style={[typo.bodyMedium, { color: colors.text }]}>Bring your own footage</Text><Text style={[typo.caption, { color: colors.muted }]}>Import a sprint from your library</Text></View><ArrowUpRight size={18} color={colors.muted} /></Pressable>
+    {error ? <Notice tone="error">{error}</Notice> : null}
+    <View style={styles.importRow}><View style={{ flex: 1 }}><Text style={[typo.bodyMedium, { color: colors.text }]}>Prefer high-rate footage</Text><Text style={[typo.caption, { color: colors.muted }]}>Import 120 fps for clearer foot contacts. In-app recording is standard ~30 fps.</Text></View><Switch accessibilityLabel="Prefer high-rate footage" value={preferHighRate} onValueChange={setPreferHighRate} trackColor={{ false: colors.border, true: colors.accent }} thumbColor={colors.card} /></View>
+    <Button label="How to film a useful sprint" variant="quiet" onPress={() => setShowGuide(true)} />
+    <Sheet visible={showGuide} title="A clear view changes everything." onClose={() => setShowGuide(false)}><Text style={[typo.body, { color: colors.muted }]}>Place your phone 10–20 m from your running line. Film from the side, keep your full body and feet visible, and use good lighting. Keep the phone steady. Capture a short running segment, not just a standing pose.</Text><Notice>For high-frame-rate footage, use your phone's camera and import the clip. The in-app camera does not guarantee 120 fps.</Notice><Button label="Open camera" onPress={() => { setShowGuide(false); openCamera(); }} /></Sheet>
+  </Screen>;
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1 },
-  scroll: { flexGrow: 1, paddingHorizontal: space.xl, paddingTop: space.lg, paddingBottom: space.xl, justifyContent: 'space-between' },
-  headerRow: { marginBottom: space.md },
-  wordmark: { fontSize: 24, fontWeight: '900', letterSpacing: 3 },
-  tagline: { fontSize: 13, marginTop: 2, letterSpacing: 0.4 },
-  hero: { justifyContent: 'center', gap: space.sm, paddingVertical: space.xxl },
-  heroTitle: { fontSize: 34, fontWeight: '800', letterSpacing: -0.8, lineHeight: 38 },
-  heroSub: { fontSize: 13, fontWeight: '500', letterSpacing: 0.2, marginBottom: space.lg },
-  recordBtn: { flexDirection: 'row', gap: 10, alignItems: 'center', justifyContent: 'center', paddingVertical: 16, borderRadius: radius.sm },
-  recordBtnText: { fontSize: 16, fontWeight: '800', letterSpacing: 0.3 },
-  importBtn: { borderWidth: 1, paddingVertical: 14, alignItems: 'center', borderRadius: radius.sm, marginTop: space.sm },
-  importText: { fontSize: 14, fontWeight: '600' },
-  settingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderTopWidth: 1, paddingTop: space.lg },
-  settingLabel: { fontSize: 15, fontWeight: '500' },
-  uploadWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: space.xl },
-  uploadStep: { fontSize: 12, fontWeight: '600', letterSpacing: 1.1 },
-  cameraOverlay: { flex: 1, justifyContent: 'flex-end', alignItems: 'center', paddingBottom: space.xxxl, gap: space.lg },
-  closeBtn: { position: 'absolute', top: space.xl, right: space.xl, width: 36, height: 36, borderRadius: radius.pill, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center' },
-  closeBtnText: { color: '#fff', fontSize: 18, fontWeight: '600' },
-  cameraHint: { fontSize: 12, color: '#fff', backgroundColor: 'rgba(0,0,0,0.5)', padding: space.sm, borderRadius: radius.sm },
-  camBtn: { width: 64, height: 64, borderRadius: radius.pill, borderWidth: 2, borderColor: '#fff', alignItems: 'center', justifyContent: 'center' },
-  camInner: { width: 44, height: 44, borderRadius: radius.pill, backgroundColor: '#C1432B' },
+  brand: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  stage: { borderRadius: radius.lg, overflow: 'hidden' },
+  stageHeading: { padding: space.xl, alignItems: 'flex-start' },
+  stageFooter: { padding: space.xl, paddingTop: 0, flexDirection: 'row', alignItems: 'center', gap: 16 },
+  shutter: { width: 76, height: 76, borderWidth: 1, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' },
+  shutterFill: { width: 56, height: 56, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' },
+  importRow: { flexDirection: 'row', gap: 16, alignItems: 'center', paddingVertical: 12, borderBottomWidth: 0.5 },
 });

@@ -21,7 +21,7 @@ function InnerLayout() {
   const setToken = useStrideStore((s) => s.setToken);
   const setUser = useStrideStore((s) => s.setUser);
   const setAuthHydrated = useStrideStore((s) => s.setAuthHydrated);
-  const { colors, mode } = useTheme();
+  const { colors, mode, reduceMotion } = useTheme();
 
   useEffect(() => {
     if (!supabase) {
@@ -67,13 +67,14 @@ function InnerLayout() {
       <Stack
         screenOptions={{
           headerShown: false,
+          animation: reduceMotion ? 'none' : 'fade',
           contentStyle: { backgroundColor: colors.bg },
         }}
       >
         <Stack.Screen name="index" />
-        <Stack.Screen name="(auth)" options={{ animation: 'fade' }} />
-        <Stack.Screen name="(onboarding)" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
+        <Stack.Screen name="(auth)" options={{ animation: reduceMotion ? 'none' : 'fade' }} />
+        <Stack.Screen name="(onboarding)" options={{ animation: reduceMotion ? 'none' : 'slide_from_right' }} />
+        <Stack.Screen name="(tabs)" options={{ animation: reduceMotion ? 'none' : 'fade' }} />
       </Stack>
     </>
   );

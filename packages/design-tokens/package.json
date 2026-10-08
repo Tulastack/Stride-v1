@@ -3,10 +3,12 @@
   "version": "0.0.1",
   "private": true,
   "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "types": "./src/tokens.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
+      "types": "./src/tokens.ts",
+      "react-native": "./src/tokens.ts",
+      "browser": "./src/tokens.ts",
       "default": "./dist/index.js"
     }
   },

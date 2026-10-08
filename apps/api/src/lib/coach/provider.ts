@@ -76,6 +76,19 @@ const PROVIDERS = {
     model: 'openai/gpt-oss-120b',
     keyEnv: 'GROQ_API_KEY',
   },
+  mercury: {
+    name: 'Inception Mercury',
+    // Diffusion language model. Same OpenAI /chat/completions wire format and
+    // tool_calls as the agent loop already speaks. Output is billed per token
+    // but generated in parallel, which is the cost and latency saving versus
+    // a large autoregressive model. Mercury 2.5 is the coach model.
+    // Leave LLM_BASE_URL blank; this URL is the default.
+    // Key: https://platform.inceptionlabs.ai
+    url: 'https://api.inceptionlabs.ai/v1/chat/completions',
+    model: 'mercury-2.5',
+    extraParams: { reasoning_effort: 'low', temperature: 0.75 },
+    keyEnv: 'INCEPTION_API_KEY',
+  },
 } as const;
 
 export type ProviderName = keyof typeof PROVIDERS;
@@ -104,24 +117,26 @@ export function resolveCoachProvider(): CoachProvider {
   const explicit = (explicitRaw && explicitRaw.trim() !== ''
     ? explicitRaw.trim()
     : undefined) as ProviderName | undefined;
-  // Preference order when nothing is pinned: Google first, because its free
-  // tier is the only one measured to actually fit this agent's token footprint.
+  // When nothing is pinned, a Mercury key wins. Otherwise Google, because its
+  // free tier is what this agent's token footprint was measured against.
   const auto: ProviderName | undefined =
-    process.env.GOOGLE_API_KEY ? 'google'
-      : process.env.OPENROUTER_API_KEY ? 'openrouter'
-        : process.env.GROQ_API_KEY ? 'groq'
-          : undefined;
+    process.env.INCEPTION_API_KEY?.trim() ? 'mercury'
+      : process.env.GOOGLE_API_KEY?.trim() ? 'google'
+        : process.env.OPENROUTER_API_KEY?.trim() ? 'openrouter'
+          : process.env.GROQ_API_KEY?.trim() ? 'groq'
+            : undefined;
 
   const chosen: ProviderName =
     explicit && explicit in PROVIDERS ? explicit : (auto ?? 'google');
 
   const provider = PROVIDERS[chosen];
-  const apiKey = process.env[provider.keyEnv];
+  const apiKey = process.env[provider.keyEnv]?.trim();
   if (!apiKey) {
     throw new Error(
       `Coach LLM is not configured, set ${provider.keyEnv}` +
         (chosen === 'openrouter' ? ' (free key at https://openrouter.ai/keys)'
-          : chosen === 'google' ? ' (free key at https://aistudio.google.com/apikey)' : ''),
+          : chosen === 'google' ? ' (free key at https://aistudio.google.com/apikey)'
+            : chosen === 'mercury' ? ' (key at https://platform.inceptionlabs.ai)' : ''),
     );
   }
 

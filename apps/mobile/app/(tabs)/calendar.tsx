@@ -1,432 +1,112 @@
-// Plan tab. Three things live here, in the order the athlete meets them:
-//
-//   1. The reveal, work the coach or the analysis engine just scheduled takes
-//      the screen over as a stack of day cards, then folds into the grid.
-//   2. The grid, the month, with the live streak drawn as one continuous run.
-//   3. The day, whatever is scheduled for the date currently selected.
-//
-// Manually-added events never trigger step 1 (see calendar_events.source).
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, SafeAreaView, Pressable, ActivityIndicator } from 'react-native';
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withTiming,
-  withSequence,
-  interpolate,
-  Extrapolation,
-  Easing,
-} from 'react-native-reanimated';
-import { useFocusEffect } from 'expo-router';
-import { CheckCircle2, Circle } from 'lucide-react-native';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
+import { View, Text, Pressable, ScrollView, useWindowDimensions } from 'react-native';
+import { useFocusEffect, router } from 'expo-router';
+import { CheckCircle2, Circle, ChevronLeft, ChevronRight } from 'lucide-react-native';
+import * as Haptics from 'expo-haptics';
 import { strideApi } from '../../src/services/api';
 import { useTheme } from '../../src/context/ThemeContext';
-import { space, radius } from '../../src/theme';
+import { space, radius, type as typo } from '../../src/theme';
 import { EventDetailModal } from '../../src/components/EventDetailModal';
 import { PlanCardStack } from '../../src/components/plan/PlanCardStack';
-import { StreakCalendar } from '../../src/components/plan/StreakCalendar';
-import { StreakBadge } from '../../src/components/plan/StreakBadge';
-import { toDateKey, todayKey } from '../../src/lib/dates';
-import {
-  groupIntoDayCards,
-  volumeLabel,
-  dayPanelState,
-  EVENT_TYPE_COLORS,
-  type CalendarEvent,
-  type PlanDayCard,
-} from '../../src/lib/planCards';
+import { StreakCalendar, StreakDateRow, StreakSummary } from '../../src/components/plan/StreakCalendar';
+import { toDateKey, todayKey, fromDateKey, addDaysToKey } from '../../src/lib/dates';
+import { groupIntoDayCards, volumeLabel, dayPanelState, type CalendarEvent, type PlanDayCard } from '../../src/lib/planCards';
+import { Screen, ScreenHeader, SectionTitle, Button, Notice, TrackScene, IconButton } from '../../src/ui';
 
-const CHECK_ANIM_MS = 220;
-const CHECK_HOLD_MS = 220;
-
-// Workouts and drills lead, they are the coach's focus. The rest are things
-// the athlete adds for themselves.
-const CATEGORY_ORDER: { type: CalendarEvent['event_type']; label: string }[] = [
-  { type: 'workout', label: 'WORKOUTS' },
-  { type: 'drill', label: 'FORM' },
-  { type: 'hydration', label: 'HYDRATION' },
-  { type: 'recovery', label: 'RECOVERY' },
-  { type: 'cross_training', label: 'CROSS-TRAINING' },
-  { type: 'rest', label: 'REST' },
-  { type: 'competition', label: 'COMPETITION' },
-];
-
-interface StreakState {
-  current: number;
-  longest: number;
-  activeDates: string[];
-  streakStart: string | null;
-  streakEnd: string | null;
-  atRiskToday: boolean;
-}
-
-const EMPTY_STREAK: StreakState = {
-  current: 0,
-  longest: 0,
-  activeDates: [],
-  streakStart: null,
-  streakEnd: null,
-  atRiskToday: false,
-};
-
-function monthRange(year: number, month: number) {
-  return {
-    startDate: toDateKey(new Date(year, month, 1)),
-    endDate: toDateKey(new Date(year, month + 1, 0)),
-  };
-}
+interface Streak { current: number; longest: number; activeDates: string[]; streakStart: string | null; streakEnd: string | null; atRiskToday: boolean }
+const EMPTY_STREAK: Streak = { current: 0, longest: 0, activeDates: [], streakStart: null, streakEnd: null, atRiskToday: false };
 
 export default function CalendarScreen() {
   const { colors } = useTheme();
-  const [monthOffset, setMonthOffset] = useState(0);
+  const { width } = useWindowDimensions();
+  const [selectedDate, setSelectedDate] = useState(todayKey());
+  const [monthDate, setMonthDate] = useState(() => new Date());
+  const [monthVisible, setMonthVisible] = useState(false);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
-  const [streak, setStreak] = useState<StreakState>(EMPTY_STREAK);
-  const [loading, setLoading] = useState(true);
-  const [selectedDate, setSelectedDate] = useState<string>(todayKey());
-  const [completingId, setCompletingId] = useState<string | null>(null);
-  const [detailEvent, setDetailEvent] = useState<CalendarEvent | null>(null);
-
-  // Reveal state. `cards` is non-empty only while the takeover is on screen.
+  const [streak, setStreak] = useState<Streak>(EMPTY_STREAK);
+  const [streakLoaded, setStreakLoaded] = useState(false);
   const [cards, setCards] = useState<PlanDayCard[]>([]);
-  const [bounceKey, setBounceKey] = useState(0);
-  const [celebrateKey, setCelebrateKey] = useState(0);
-  // One reveal per focus: without this, the refetch triggered by the fold would
-  // immediately re-open the stack it just closed.
+  const [detail, setDetail] = useState<CalendarEvent | null>(null);
+  const [completingId, setCompletingId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [attempt, setAttempt] = useState(0);
   const revealInFlight = useRef(false);
-
-  const checkAnim = useSharedValue(0);
-  const dayPanel = useSharedValue(1);
-
-  const now = new Date();
-  const viewDate = new Date(now.getFullYear(), now.getMonth() + monthOffset, 1);
-  const viewYear = viewDate.getFullYear();
-  const viewMonth = viewDate.getMonth();
-
-  // ── Loading ───────────────────────────────────────────────────────
-
-  const loadEvents = useCallback(async () => {
-    const { startDate, endDate } = monthRange(viewYear, viewMonth);
-    try {
-      const data = await strideApi.listEvents(startDate, endDate);
-      setEvents((data as CalendarEvent[]) ?? []);
-    } catch {
-      setEvents([]);
-    }
-  }, [viewYear, viewMonth]);
-
+  const completionLock = useRef(false);
+  const year = monthDate.getFullYear(), month = monthDate.getMonth();
   const loadStreak = useCallback(async () => {
+    const data = await strideApi.getStreak(todayKey());
+    setStreak({ ...data, activeDates: data.activeDates ?? [], streakStart: data.streakStart ?? null, streakEnd: data.streakEnd ?? null });
+  }, []);
+  useFocusEffect(useCallback(() => {
+    let active = true;
+    setLoading(true); setError('');
+    Promise.all([strideApi.listEvents(addDaysToKey(toDateKey(new Date(year, month, 1)), -7), addDaysToKey(toDateKey(new Date(year, month + 1, 0)), 7)), strideApi.getStreak(todayKey())]).then(([list, adherence]) => {
+      if (!active) return;
+      setEvents((list as CalendarEvent[]) ?? []); setStreak({ ...adherence, activeDates: adherence.activeDates ?? [], streakStart: adherence.streakStart ?? null, streakEnd: adherence.streakEnd ?? null }); setStreakLoaded(true);
+    }).catch(() => { if (active) setError('Could not refresh your plan. Check your connection and try again.'); }).finally(() => { if (active) setLoading(false); });
+    if (!revealInFlight.current) strideApi.listUnrevealedEvents().then((list) => {
+      if (active && list?.length) { revealInFlight.current = true; setCards(groupIntoDayCards(list as CalendarEvent[])); }
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [year, month, attempt]));
+  const complete = async (event: CalendarEvent) => {
+    if (completionLock.current || event.scheduled_date > todayKey()) return;
+    completionLock.current = true; setCompletingId(event.id); setError('');
     try {
-      // The athlete's local date decides when their day ends, not the server's.
-      const s = await strideApi.getStreak(todayKey());
-      setStreak({
-        current: s.current,
-        longest: s.longest,
-        activeDates: s.activeDates ?? [],
-        streakStart: s.streakStart ?? null,
-        streakEnd: s.streakEnd ?? null,
-        atRiskToday: s.atRiskToday,
-      });
-    } catch {
-      // A streak we cannot fetch is shown as no streak rather than a stale one.
-      setStreak(EMPTY_STREAK);
-    }
-  }, []);
-
-  const loadReveal = useCallback(async () => {
-    if (revealInFlight.current) return;
-    try {
-      const pending = await strideApi.listUnrevealedEvents();
-      const list = (pending as CalendarEvent[]) ?? [];
-      if (list.length > 0) {
-        revealInFlight.current = true;
-        setCards(groupIntoDayCards(list));
-      }
-    } catch {
-      // No reveal is a fine failure mode, the plan is still in the grid.
-    }
-  }, []);
-
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    await Promise.all([loadEvents(), loadStreak()]);
-    setLoading(false);
-  }, [loadEvents, loadStreak]);
-
-  useFocusEffect(
-    useCallback(() => {
-      refresh();
-      loadReveal();
-    }, [refresh, loadReveal]),
-  );
-
-  // Month navigation refetches without re-triggering the reveal. The first run
-  // is skipped because focus has already loaded this month, otherwise every
-  // mount would fire the same request twice.
-  const monthMounted = useRef(false);
-  useEffect(() => {
-    if (!monthMounted.current) {
-      monthMounted.current = true;
-      return;
-    }
-    loadEvents();
-  }, [loadEvents]);
-
-  // Fade the day panel when the selection changes, so switching days reads as a
-  // change of content rather than a flicker.
-  useEffect(() => {
-    dayPanel.value = 0;
-    dayPanel.value = withTiming(1, { duration: 220, easing: Easing.out(Easing.cubic) });
-  }, [selectedDate, dayPanel]);
-
-  // ── Reveal handlers ───────────────────────────────────────────────
-
-  const acceptCard = useCallback((card: PlanDayCard) => {
-    strideApi.revealEvents(card.eventIds).catch(() => {});
-  }, []);
-
-  const skipAll = useCallback(() => {
-    // Sent with no ids on purpose: this clears every outstanding reveal,
-    // including any that arrived while the stack was open, so a skip can never
-    // leave the takeover to reappear on the next visit.
-    strideApi.revealEvents().catch(() => {});
-  }, []);
-
-  const revealDone = useCallback(() => {
-    setCards([]);
-    revealInFlight.current = false;
-    // The grid bounces as the cards land in it, and the streak celebrates.
-    setBounceKey((k) => k + 1);
-    setCelebrateKey((k) => k + 1);
-    refresh();
-  }, [refresh]);
-
-  // ── Completion ────────────────────────────────────────────────────
-
-  const completeWithAnimation = useCallback(
-    (event: CalendarEvent) => {
-      if (completingId) return; // one at a time
-      // Work scheduled for a day that has not arrived cannot be done yet.
-      // Without this the streak was a slider: tap forward through the month and
-      // the number goes up. The server refuses these too.
-      if (event.scheduled_date > todayKey()) return;
-
-      setCompletingId(event.id);
-      checkAnim.value = 0;
-      checkAnim.value = withSequence(
-        withTiming(1, { duration: CHECK_ANIM_MS, easing: Easing.out(Easing.back(2.2)) }),
-        withTiming(1, { duration: CHECK_HOLD_MS }),
-      );
-
-      // The athlete's own date, so the server can tell "trained today" from
-      // "ticked off an old day". Only the first extends the streak.
-      strideApi.updateEvent(event.id, { status: 'completed', today: todayKey() }).catch(() => {});
-      setTimeout(() => {
-        setEvents((prev) => prev.map((e) => (e.id === event.id ? { ...e, status: 'completed' } : e)));
-        setCompletingId(null);
-        // A completion can start or extend the streak, so re-derive it rather
-        // than guessing locally.
-        loadStreak();
-      }, CHECK_ANIM_MS + CHECK_HOLD_MS);
-    },
-    [completingId, checkAnim, loadStreak],
-  );
-
-  // ── Derived ───────────────────────────────────────────────────────
-
+      await strideApi.updateEvent(event.id, { status: 'completed', today: todayKey() });
+      setEvents((previous) => previous.map((item) => item.id === event.id ? { ...item, status: 'completed' } : item));
+      setDetail(null); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      await loadStreak();
+    } catch { setError('Could not confirm the update. Refresh the plan before trying again.'); }
+    finally { completionLock.current = false; setCompletingId(null); }
+  };
+  const select = (date: string) => { setSelectedDate(date); const next = fromDateKey(date); if (next.getFullYear() !== year || next.getMonth() !== month) setMonthDate(next); };
   const eventsByDate = useMemo(() => {
     const map = new Map<string, CalendarEvent[]>();
-    for (const e of events) {
-      const bucket = map.get(e.scheduled_date);
-      if (bucket) bucket.push(e);
-      else map.set(e.scheduled_date, [e]);
-    }
+    for (const event of events) map.set(event.scheduled_date, [...(map.get(event.scheduled_date) ?? []), event]);
     return map;
   }, [events]);
-
-  const activeDates = useMemo(() => new Set(streak.activeDates), [streak.activeDates]);
-
-  // Everything on the selected day, whatever its status. The panel needs the
-  // completed ones to tell "you finished" apart from "nothing was scheduled".
-  const dayAll = useMemo(
-    () => events.filter((e) => e.scheduled_date === selectedDate),
-    [events, selectedDate],
-  );
-
-  const dayEvents = useMemo(
-    () => dayAll.filter((e) => e.status !== 'completed' && e.status !== 'skipped'),
-    [dayAll],
-  );
-
-  const panel = useMemo(() => dayPanelState(dayAll), [dayAll]);
-
-  const checkStyle = useAnimatedStyle(() => ({
-    opacity: Math.min(1, checkAnim.value * 2),
-    transform: [{ scale: interpolate(checkAnim.value, [0, 0.6, 1], [0.5, 1.25, 1], Extrapolation.CLAMP) }],
-  }));
-
-  const dayPanelStyle = useAnimatedStyle(() => ({
-    opacity: dayPanel.value,
-    transform: [{ translateY: interpolate(dayPanel.value, [0, 1], [10, 0], Extrapolation.CLAMP) }],
-  }));
-
-  return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bg }]}>
-      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-        <View style={styles.header}>
-          <View>
-            <Text style={[styles.kicker, { color: colors.muted }]}>TRAINING</Text>
-            <Text style={[styles.title, { color: colors.text }]}>Plan</Text>
-          </View>
-          <StreakBadge
-            value={streak.current}
-            atRisk={streak.atRiskToday}
-            colors={colors}
-            celebrateKey={celebrateKey}
-            testID="streak-badge"
-          />
+  const dayEvents = eventsByDate.get(selectedDate) ?? [];
+  const panel = dayEvents.length ? dayPanelState(dayEvents) : {
+    kind: 'unscheduled',
+    title: events.length ? 'An open day.' : 'Your plan starts here.',
+    subtitle: events.length ? 'Nothing is scheduled for this day. Follow your existing recovery guidance or ask your coach what fits.' : 'Turn your goals and sprint feedback into purposeful sessions. Nothing is scheduled until you choose to add it.',
+  };
+  const weekday = fromDateKey(selectedDate).getDay();
+  const monday = addDaysToKey(selectedDate, -(weekday === 0 ? 6 : weekday - 1));
+  const week = Array.from({ length: 7 }, (_, index) => addDaysToKey(monday, index));
+  const completed = dayEvents.filter((event) => event.status === 'completed').length;
+  const outstanding = dayEvents.filter((event) => event.status !== 'completed' && event.status !== 'skipped');
+  return <Screen>
+    <ScreenHeader logo title="Your plan." />
+    {error ? <><Notice tone="error">{error}</Notice><Button label="Refresh plan" variant="secondary" onPress={() => setAttempt(attempt + 1)} /></> : null}
+    <View testID="plan-calendar-surface" style={{ padding: 12, borderRadius: radius.lg, backgroundColor: colors.card }}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ flexGrow: 1 }}>
+        <View style={{ width: Math.max(308, Math.min(width, 640) - 72), gap: 8 }}>
+          {monthVisible ? <StreakCalendar year={year} month={month} selectedDate={selectedDate} eventsByDate={eventsByDate} activeDates={new Set(streak.activeDates)} streakStart={streak.streakStart} streakEnd={streak.streakEnd} colors={colors} onSelectDate={select} onPrevMonth={() => setMonthDate(new Date(year, month - 1, 1))} onNextMonth={() => setMonthDate(new Date(year, month + 1, 1))} /> : <>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <IconButton label="Previous week" onPress={() => select(addDaysToKey(selectedDate, -7))}><ChevronLeft color={colors.muted} size={18} /></IconButton>
+              <Text style={[typo.bodyMedium, { color: colors.text }]}>{fromDateKey(monday).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – {fromDateKey(week[6]).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</Text>
+              <IconButton label="Next week" onPress={() => select(addDaysToKey(selectedDate, 7))}><ChevronRight color={colors.muted} size={18} /></IconButton>
+            </View>
+            <View style={{ flexDirection: 'row' }}>{week.map((date) => <Text key={date} style={[typo.tiny, { flex: 1, textAlign: 'center', color: colors.muted }]}>{fromDateKey(date).toLocaleDateString('en-US', { weekday: 'narrow' })}</Text>)}</View>
+            <StreakDateRow cells={week.map((date) => ({ date, day: fromDateKey(date).getDate() }))} selectedDate={selectedDate} eventsByDate={eventsByDate} activeDates={new Set(streak.activeDates)} streakStart={streak.streakStart} streakEnd={streak.streakEnd} colors={colors} onSelectDate={select} />
+          </>}
         </View>
-
-        <StreakCalendar
-          year={viewYear}
-          month={viewMonth}
-          selectedDate={selectedDate}
-          eventsByDate={eventsByDate}
-          activeDates={activeDates}
-          streakStart={streak.streakStart}
-          streakEnd={streak.streakEnd}
-          colors={colors}
-          onSelectDate={setSelectedDate}
-          onPrevMonth={() => setMonthOffset((o) => o - 1)}
-          onNextMonth={() => setMonthOffset((o) => o + 1)}
-          bounceKey={bounceKey}
-        />
-
-        {streak.current > 0 ? (
-          <Text style={[styles.streakLine, { color: colors.muted }]}>
-            {streak.atRiskToday
-              ? `${streak.current}-day streak. Today is still open`
-              : `${streak.current}-day streak · best ${streak.longest}`}
-          </Text>
-        ) : null}
-
-        <Animated.View style={dayPanelStyle}>
-          {loading ? (
-            <ActivityIndicator size="large" color={colors.accent} style={styles.loader} />
-          ) : dayEvents.length === 0 ? (
-            <View style={styles.emptyState} testID={`day-panel-${panel.kind}`}>
-              <Text style={[styles.emptyTitle, { color: colors.text }]}>{panel.title}</Text>
-              <Text style={[styles.emptySubtitle, { color: colors.muted }]}>{panel.subtitle}</Text>
-            </View>
-          ) : (
-            <View style={styles.eventList}>
-              {CATEGORY_ORDER.map(({ type, label }) => {
-                const items = dayEvents.filter((e) => e.event_type === type);
-                if (!items.length) return null;
-                return (
-                  <View key={type} style={styles.categoryGroup}>
-                    <Text style={[styles.categoryLabel, { color: colors.muted }]}>{label}</Text>
-                    {items.map((event) => {
-                      const completing = completingId === event.id;
-                      const volume = volumeLabel(event);
-                      return (
-                        <Pressable
-                          key={event.id}
-                          style={[styles.eventCard, { backgroundColor: colors.card, borderColor: colors.border }]}
-                          onPress={() => setDetailEvent(event)}
-                          disabled={completing}
-                        >
-                          <View style={styles.eventLeft}>
-                            {completing ? (
-                              <Animated.View style={checkStyle}>
-                                <CheckCircle2 color={colors.success} size={22} />
-                              </Animated.View>
-                            ) : (
-                              <Circle color={colors.muted} size={22} />
-                            )}
-                            <View style={styles.eventInfo}>
-                              <View style={styles.eventTitleRow}>
-                                <View
-                                  style={[styles.eventDot, { backgroundColor: EVENT_TYPE_COLORS[event.event_type] }]}
-                                />
-                                <Text style={[styles.eventTitle, { color: colors.text }]}>{event.title}</Text>
-                              </View>
-                              {volume ? (
-                                <Text style={[styles.eventVolume, { color: colors.muted }]}>{volume}</Text>
-                              ) : null}
-                              {event.details?.cue ? (
-                                <Text style={[styles.eventCue, { color: colors.muted }]} numberOfLines={2}>
-                                  {event.details.cue}
-                                </Text>
-                              ) : null}
-                            </View>
-                          </View>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                );
-              })}
-            </View>
-          )}
-        </Animated.View>
       </ScrollView>
-
-      <EventDetailModal
-        event={detailEvent}
-        colors={colors}
-        today={todayKey()}
-        onClose={() => setDetailEvent(null)}
-        onComplete={(event) => {
-          setDetailEvent(null);
-          completeWithAnimation(event as CalendarEvent);
-        }}
-      />
-
-      {cards.length > 0 ? (
-        <PlanCardStack
-          cards={cards}
-          colors={colors}
-          onAccept={acceptCard}
-          onSkipAll={skipAll}
-          onDone={revealDone}
-        />
-      ) : null}
-    </SafeAreaView>
-  );
+      {streakLoaded ? <StreakSummary current={streak.current} longest={streak.longest} atRiskToday={streak.atRiskToday} colors={colors} /> : null}
+      <Button label={monthVisible ? 'Close monthly calendar' : 'View monthly calendar'} variant="quiet" onPress={() => setMonthVisible(!monthVisible)} />
+    </View>
+    <SectionTitle aside={selectedDate !== todayKey() ? <Button label="Today" variant="quiet" onPress={() => select(todayKey())} /> : undefined}>{selectedDate === todayKey() ? 'Today' : fromDateKey(selectedDate).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</SectionTitle>
+    {loading ? <Notice>Loading scheduled sessions…</Notice> : error && !events.length ? <Notice>Your schedule is unavailable, not necessarily empty. Reconnect to see what is planned.</Notice> : !outstanding.length ? <View testID={`day-panel-${panel.kind}`} style={{ borderRadius: radius.lg, overflow: 'hidden', backgroundColor: colors.well }}><TrackScene compact /><View style={{ padding: 24, gap: 12 }}><Text style={[typo.editorial, { color: colors.wellText }]}>{panel.title}</Text><Text style={[typo.body, { color: colors.wellMuted }]}>{panel.subtitle}</Text>{!dayEvents.length ? <Button label="Build a plan with your coach" onPress={() => router.push('/(tabs)/coach')} /> : null}</View></View> : <View style={{ gap: 16 }}>
+      {outstanding.map((event, index) => <Pressable key={event.id} accessibilityRole="button" testID={`session-${event.id}`} accessibilityLabel={`${event.title}. ${volumeLabel(event)}`} onPress={() => setDetail(event)} style={{ padding: space.xl, borderRadius: radius.md, backgroundColor: index === 0 ? colors.well : colors.cardAlt, gap: 12 }}>
+        <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}><Text style={[typo.label, { color: index === 0 ? colors.accent : colors.goldInk, flex: 1 }]}>{event.event_type.replace(/_/g, ' ').toUpperCase()} / {index === 0 ? 'NEXT UP' : 'LATER'}</Text><Circle size={18} color={index === 0 ? colors.wellMuted : colors.muted} /></View>
+        <Text style={[typo.h2, { color: index === 0 ? colors.wellText : colors.text }]}>{event.title}</Text><Text style={[typo.body, { color: index === 0 ? colors.wellMuted : colors.muted }]}>{volumeLabel(event)}</Text>{event.details?.cue ? <Text style={[typo.caption, { color: index === 0 ? colors.wellMuted : colors.muted }]}>{event.details.cue}</Text> : null}
+      </Pressable>)}
+    </View>}
+    {completed ? <><SectionTitle>Completed / {completed}</SectionTitle>{dayEvents.filter((event) => event.status === 'completed').map((event) => <Pressable key={event.id} accessibilityRole="button" onPress={() => setDetail(event)} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 48 }}><CheckCircle2 color={colors.success} size={18} /><Text style={[typo.body, { color: colors.muted }]}>{event.title}</Text></Pressable>)}</> : null}
+    <EventDetailModal event={detail} colors={colors} today={todayKey()} onClose={() => { if (!completingId) setDetail(null); }} onComplete={(event) => complete(event as CalendarEvent)} busy={!!completingId} />
+    {cards.length ? <PlanCardStack cards={cards} colors={colors} onAccept={async (card) => { await strideApi.revealEvents(card.eventIds); }} onSkipAll={async () => { await strideApi.revealEvents(); }} onDone={() => { setCards([]); revealInFlight.current = false; setAttempt(attempt + 1); }} /> : null}
+  </Screen>;
 }
-
-const styles = StyleSheet.create({
-  safeArea: { flex: 1 },
-  container: { padding: space.xl, paddingBottom: 40, gap: space.lg },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  kicker: { fontSize: 11, fontWeight: '900', letterSpacing: 1.8 },
-  title: { fontSize: 32, fontWeight: '900', letterSpacing: -1 },
-
-  streakLine: { fontSize: 12, fontWeight: '700', textAlign: 'center', letterSpacing: 0.2 },
-
-  loader: { marginTop: 40 },
-  emptyState: { alignItems: 'center', marginTop: space.xl, gap: space.sm },
-  emptyTitle: { fontSize: 20, fontWeight: '800' },
-  emptySubtitle: { fontSize: 14 },
-
-  eventList: { gap: space.lg },
-  categoryGroup: { gap: space.sm },
-  categoryLabel: { fontSize: 11, fontWeight: '900', letterSpacing: 1.5 },
-  eventCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: space.lg,
-    borderWidth: 1,
-    borderRadius: radius.md,
-    overflow: 'hidden',
-  },
-  eventLeft: { flexDirection: 'row', alignItems: 'flex-start', gap: space.md, flex: 1 },
-  eventInfo: { flex: 1, gap: 3 },
-  // The day's category reads as one small mark beside the title, which keeps
-  // the card a plain rectangle instead of a dashboard row with a stripe.
-  eventTitleRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
-  eventDot: { width: 6, height: 6, borderRadius: 3 },
-  eventTitle: { fontSize: 15, fontWeight: '800', flex: 1 },
-  eventVolume: { fontSize: 13, fontWeight: '700' },
-  eventCue: { fontSize: 12, fontStyle: 'italic', lineHeight: 16 },
-});

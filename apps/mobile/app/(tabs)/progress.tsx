@@ -1,366 +1,77 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, SafeAreaView, ActivityIndicator, Pressable, Modal, Animated } from 'react-native';
+import React, { useCallback, useState } from 'react';
+import { View, Text, Pressable, ScrollView } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { TrendingUp, Users, AlertTriangle } from 'lucide-react-native';
+import { ArrowUpRight } from 'lucide-react-native';
 import { fetchAnalysisHistory } from '../../src/lib/analysisApi';
-import { strideApi } from '../../src/services/api';
+import { computeDelta } from '../../src/lib/briefing';
+import { trustedReading, sameMeasurementContext, hasMeasuredSession, sharesTrustedMeasurement } from '../../src/lib/measurementTrust';
 import { useTheme } from '../../src/context/ThemeContext';
-import { space, radius, iconStroke } from '../../src/theme';
+import { space, radius, type as typo } from '../../src/theme';
 import type { AnalysisResult } from '../../src/types/analysis';
 import { TrendChart } from '../../src/components/progress/TrendChart';
-import { pickRunnerOfTheDay } from '../../src/data/exampleRunners';
+import { SessionThumbnail } from '../../src/components/analysis/SessionThumbnail';
+import { Screen, ScreenHeader, SectionTitle, Button, Notice, TrackScene, SegmentedControl, Sheet, SheetScroll } from '../../src/ui';
 
-/** Real score for an analysis, the computed running-economy index when
- * available, falling back to a flaw-count heuristic (same formula as the
- * Analysis screen, see app/(tabs)/analysis.tsx). */
-function scoreFor(analysis: AnalysisResult): number {
-  return analysis.economyScore ?? (analysis.flaws.length === 0 ? 95 : Math.max(40, 100 - analysis.flaws.length * 10));
+function day(analysis: AnalysisResult) {
+  return analysis.createdAt ? new Date(analysis.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Undated session';
 }
-
-const TRACKED_METRICS = ['knee_drive', 'cadence_spm'];
-const METRIC_LABELS: Record<string, string> = { knee_drive: 'Knee drive', cadence_spm: 'Cadence' };
-
-/** Short trend sentence derived from the already-loaded history, compares
- * the average score of the most recent sprints against the earliest ones. */
-function improvementSummary(history: AnalysisResult[]): string {
-  if (history.length < 2) return 'Log a couple more sprints to start seeing a trend.';
-  const scores = history.map(scoreFor);
-  const windowSize = Math.min(3, Math.floor(scores.length / 2)) || 1;
-  const earlierAvg = scores.slice(0, windowSize).reduce((a, b) => a + b, 0) / windowSize;
-  const recentAvg = scores.slice(-windowSize).reduce((a, b) => a + b, 0) / windowSize;
-  const delta = Math.round(recentAvg - earlierAvg);
-  if (delta > 2) return `Trending up. Your form score is averaging ${delta} points higher than when you started.`;
-  if (delta < -2) return `Your form score has dipped ${Math.abs(delta)} points recently. Worth a look at what changed.`;
-  return `Your form score has stayed steady over your last ${scores.length} sprints.`;
-}
-
-interface RecurringIssue {
-  name: string;
-  count: number;
-  explanation: string;
-}
-
-/** Aggregates flaws by name across every analysis (not just the latest),
- * ranked by how severe and how frequent they are, so the athlete sees what
- * actually keeps coming up rather than a single run's snapshot. */
-function topRecurringIssues(history: AnalysisResult[]): RecurringIssue[] {
-  const byName = new Map<string, { count: number; totalSeverity: number; explanation: string }>();
-  for (const analysis of history) {
-    for (const flaw of analysis.flaws) {
-      const entry = byName.get(flaw.name) ?? { count: 0, totalSeverity: 0, explanation: flaw.plainExplanation };
-      entry.count += 1;
-      entry.totalSeverity += flaw.severity;
-      entry.explanation = flaw.plainExplanation; // keep the most recent wording
-      byName.set(flaw.name, entry);
-    }
-  }
-  return [...byName.entries()]
-    .map(([name, v]) => ({ name, count: v.count, avgSeverity: v.totalSeverity / v.count, explanation: v.explanation }))
-    .sort((a, b) => b.avgSeverity * b.count - a.avgSeverity * a.count)
-    .slice(0, 3)
-    .map(({ name, count, explanation }) => ({ name, count, explanation }));
-}
-
 export default function ProgressScreen() {
   const router = useRouter();
   const { colors } = useTheme();
   const [history, setHistory] = useState<AnalysisResult[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedAnalysis, setSelectedAnalysis] = useState<AnalysisResult | null>(null);
+  const [error, setError] = useState('');
+  const [attempt, setAttempt] = useState(0);
   const [view, setView] = useState<'history' | 'insights'>('history');
-  const [metrics, setMetrics] = useState<Record<string, { value: number }[]> | null>(null);
+  const [selectedAnalysis, setSelectedAnalysis] = useState<AnalysisResult | null>(null);
+  const [compare, setCompare] = useState<string | null>(null);
+  const [visibleSessions, setVisibleSessions] = useState(8);
+  useFocusEffect(useCallback(() => {
+    let active = true;
+    setLoading(true); setError('');
+    fetchAnalysisHistory().then((data) => { if (active) setHistory(data); }).catch(() => { if (active) setError('Could not load your sprint history. Your previous analyses have not been deleted.'); }).finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [attempt]));
+  const sessions = history.filter(hasMeasuredSession);
+  const latest = sessions[sessions.length - 1];
+  const scored = sessions.filter((analysis) => Number.isFinite(analysis.economyScore));
+  const tracked = [...new Set(sessions.flatMap((analysis) => (analysis.metrics ?? []).map((metric) => metric.key)))];
+  const comparable = selectedAnalysis ? sessions.filter((analysis) => sharesTrustedMeasurement(selectedAnalysis, analysis)) : [];
+  const previous = selectedAnalysis ? comparable.find((analysis) => analysis.id === compare) : null;
+  const comparison = previous && selectedAnalysis && sameMeasurementContext(previous, selectedAnalysis) ? selectedAnalysis.metrics.flatMap((metric) => {
+    const before = previous.metrics.find((item) => item.key === metric.key);
+    return before && before.unit === metric.unit && trustedReading(previous, before) && trustedReading(selectedAnalysis, metric) ? [computeDelta(before, metric)] : [];
+  }) : [];
 
-  const metricsLoaded = useRef(false);
-
-  // Refetch whenever the tab regains focus (tab screens stay mounted, so a
-  // mount-only effect would never show newly analyzed sprints).
-  useFocusEffect(
-    useCallback(() => {
-      fetchAnalysisHistory()
-        .then(setHistory)
-        .catch(() => setHistory([]))
-        .finally(() => setLoading(false));
-      // Refresh metric trends too, once Insights has loaded them before.
-      if (metricsLoaded.current) {
-        strideApi.getMetrics(90).then(setMetrics).catch(() => {});
-      }
-    }, [])
-  );
-
-  // Lazy-load metric trend data the first time Insights is opened.
-  useEffect(() => {
-    if (view !== 'insights' || metricsLoaded.current) return;
-    metricsLoaded.current = true;
-    strideApi.getMetrics(90).then(setMetrics).catch(() => setMetrics({}));
-  }, [view]);
-
-  if (loading) {
-    return (
-      <SafeAreaView style={[styles.safe, { backgroundColor: colors.bg }]}>
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color={colors.accent} />
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  const maxScore = 100;
-
-  return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: colors.bg }]}>
-      <ScrollView contentContainerStyle={styles.scroll}>
-        {/* Big title */}
-        <View style={styles.titleBlock}>
-          <TrendingUp size={28} color={colors.accent} strokeWidth={iconStroke} />
-          <Text style={[styles.title, { color: colors.text }]}>Your{'\n'}Progress</Text>
-          <Text style={[styles.subtitle, { color: colors.muted }]}>{history.length} sprint{history.length !== 1 ? 's' : ''} analyzed</Text>
-        </View>
-
-        {/* Top segmented view, History (default) vs. Insights, Progress tab only */}
-        <View style={styles.segmentRow}>
-          <Pressable
-            accessibilityLabel="progress-view-history"
-            onPress={() => setView('history')}
-            style={[styles.segmentChip, { borderColor: view === 'history' ? colors.accent : colors.border, backgroundColor: view === 'history' ? colors.accent : 'transparent' }]}
-          >
-            <Text style={[styles.segmentText, { color: view === 'history' ? colors.accentText : colors.text }]}>History</Text>
-          </Pressable>
-          <Pressable
-            accessibilityLabel="progress-view-insights"
-            onPress={() => setView('insights')}
-            style={[styles.segmentChip, { borderColor: view === 'insights' ? colors.accent : colors.border, backgroundColor: view === 'insights' ? colors.accent : 'transparent' }]}
-          >
-            <Text style={[styles.segmentText, { color: view === 'insights' ? colors.accentText : colors.text }]}>Insights</Text>
-          </Pressable>
-        </View>
-
-        {view === 'insights' ? (
-          <View style={styles.list}>
-            <View style={[styles.summaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <Text style={[styles.summaryText, { color: colors.text }]}>{improvementSummary(history)}</Text>
-            </View>
-
-            {history.length >= 2 && (
-              <TrendChart
-                title="Form score over time"
-                points={history.map(scoreFor)}
-                color={colors.accent}
-                mutedColor={colors.muted}
-                cardColor={colors.card}
-                borderColor={colors.border}
-                textColor={colors.text}
-              />
-            )}
-
-            {TRACKED_METRICS.map((key) => {
-              const rows = metrics?.[key];
-              if (!rows || rows.length < 2) return null;
-              const points = [...rows].reverse().map((r) => r.value);
-              return (
-                <TrendChart
-                  key={key}
-                  title={METRIC_LABELS[key] ?? key}
-                  points={points}
-                  color={colors.accent}
-                  mutedColor={colors.muted}
-                  cardColor={colors.card}
-                  borderColor={colors.border}
-                  textColor={colors.text}
-                />
-              );
-            })}
-
-            {topRecurringIssues(history).length > 0 && (
-              <>
-                <View style={styles.runnersHeader}>
-                  <AlertTriangle size={16} color={colors.accent} strokeWidth={iconStroke} />
-                  <Text style={[styles.runnersTitle, { color: colors.text }]}>TOP ISSUES ACROSS YOUR SPRINTS</Text>
-                </View>
-                {topRecurringIssues(history).map((issue) => (
-                  <View key={issue.name} style={[styles.runnerCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                    <View style={styles.issueTop}>
-                      <Text style={[styles.runnerName, { color: colors.text }]}>{issue.name.replace(/_/g, ' ')}</Text>
-                      <Text style={[styles.issueCount, { color: colors.muted }]}>
-                        {issue.count} of {history.length} sprint{history.length !== 1 ? 's' : ''}
-                      </Text>
-                    </View>
-                    <Text style={[styles.runnerNote, { color: colors.muted }]}>{issue.explanation}</Text>
-                  </View>
-                ))}
-              </>
-            )}
-
-            <View style={styles.runnersHeader}>
-              <Users size={16} color={colors.accent} strokeWidth={iconStroke} />
-              <Text style={[styles.runnersTitle, { color: colors.text }]}>RUNNER TO WATCH</Text>
-            </View>
-            {(() => {
-              const runner = pickRunnerOfTheDay();
-              return (
-                <View style={[styles.runnerSpotlight, { backgroundColor: colors.cardAlt, borderColor: colors.accent }]}>
-                  <Text style={[styles.runnerName, { color: colors.text }]}>{runner.name} · {runner.specialty}</Text>
-                  <Text style={[styles.runnerNote, { color: colors.muted }]}>{runner.formNote}</Text>
-                </View>
-              );
-            })()}
-          </View>
-        ) : history.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Text style={[styles.emptyTitle, { color: colors.text }]}>No analyses yet</Text>
-            <Text style={[styles.emptySubtitle, { color: colors.muted }]}>Upload your first sprint to start tracking</Text>
-            <Pressable
-              accessibilityLabel="retest-cta"
-              onPress={() => router.push('/(tabs)/')}
-              style={[styles.retestCta, { backgroundColor: colors.accent }]}
-            >
-              <Text style={[styles.retestCtaText, { color: colors.accentText }]}>Record a sprint</Text>
-            </Pressable>
-          </View>
-        ) : (
-          <View style={styles.list}>
-            <Pressable
-              accessibilityLabel="retest-cta"
-              onPress={() => router.push('/(tabs)/')}
-              style={[styles.retestCta, { backgroundColor: colors.accent }]}
-            >
-              <Text style={[styles.retestCtaText, { color: colors.accentText }]}>Record another sprint</Text>
-            </Pressable>
-            {/* history is stored oldest-first (needed for the delta math below,
-                which compares each sprint to the one chronologically before it);
-                reverse only for display so the most recent sprint shows first. */}
-            {history
-              .map((analysis, index) => {
-                const score = scoreFor(analysis);
-                const prev = index > 0 ? scoreFor(history[index - 1]) : score;
-                return { analysis, score, delta: score - prev, hasPrev: index > 0 };
-              })
-              .reverse()
-              .map(({ analysis, score, delta, hasPrev }, displayIndex) => {
-                const barWidth = `${(score / maxScore) * 100}%`;
-                const date = new Date(analysis.createdAt || Date.now());
-
-                return (
-                  <Pressable
-                    key={analysis.id || displayIndex}
-                    accessibilityLabel={`progress-log-${analysis.id || displayIndex}`}
-                    style={[styles.logCard, { backgroundColor: colors.card, borderColor: colors.border }]}
-                    onPress={() => setSelectedAnalysis(analysis)}
-                  >
-                    <View style={styles.logTop}>
-                      <Text style={[styles.logDate, { color: colors.text }]}>
-                        {date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                      </Text>
-                      <View style={styles.logScoreRow}>
-                        <Text style={[styles.logScore, { color: colors.accent }]}>{score}</Text>
-                        {delta !== 0 && hasPrev && (
-                          <Text style={[styles.logDelta, delta > 0 ? { color: colors.success } : { color: colors.error }]}>
-                            {delta > 0 ? '+' : ''}{delta}
-                          </Text>
-                        )}
-                      </View>
-                    </View>
-                    {/* Score bar */}
-                    <View style={[styles.barBg, { backgroundColor: colors.cardAlt }]}>
-                      <View style={[styles.barFill, { width: barWidth as any, backgroundColor: colors.accent }]} />
-                    </View>
-                    <Text style={[styles.logIssues, { color: colors.muted }]}>{analysis.flaws.length} issue{analysis.flaws.length !== 1 ? 's' : ''} detected</Text>
-                  </Pressable>
-                );
-              })}
-          </View>
-        )}
-      </ScrollView>
-
-      {/* Score Breakdown Modal */}
-      <Modal visible={!!selectedAnalysis} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
-            {/* No X up here. The sheet already ends in a Close button, and two
-                ways to shut the same panel is one too many. */}
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: colors.text }]}>SCORE BREAKDOWN</Text>
-            </View>
-            {selectedAnalysis && (
-              <ScrollView>
-                <View style={styles.modalScore}>
-                  <Text style={[styles.modalScoreNum, { color: colors.accent }]}>
-                    {scoreFor(selectedAnalysis)}
-                  </Text>
-                  <Text style={[styles.modalScoreLabel, { color: colors.muted }]}>FORM SCORE</Text>
-                </View>
-
-                {selectedAnalysis.flaws.length === 0 ? (
-                  <Text style={[styles.modalNoIssues, { color: colors.success }]}>No issues. Great form.</Text>
-                ) : (
-                  selectedAnalysis.flaws.map((flaw) => (
-                    <View key={flaw.id} style={[styles.modalFlaw, { borderBottomColor: colors.border }]}>
-                      <Text style={[styles.modalFlawName, { color: colors.text }]}>{flaw.name.replace(/_/g, ' ')}</Text>
-                      <Text style={[styles.modalFlawDesc, { color: colors.muted }]}>{flaw.plainExplanation}</Text>
-                    </View>
-                  ))
-                )}
-
-                <Pressable
-                  style={[styles.modalViewFull, { backgroundColor: colors.accent }]}
-                  onPress={() => setSelectedAnalysis(null)}
-                >
-                  <Text style={[styles.modalViewFullText, { color: colors.accentText }]}>Close</Text>
-                </Pressable>
-              </ScrollView>
-            )}
-          </View>
-        </View>
-      </Modal>
-    </SafeAreaView>
-  );
+  return <Screen>
+    <ScreenHeader logo title="Small changes. Real progress." subtitle={`${sessions.length} sprint${sessions.length !== 1 ? 's' : ''} analyzed`} />
+    {loading ? <Notice>Loading your movement history…</Notice> : error ? <><Notice tone="error">{error}</Notice><Button label="Try again" onPress={() => setAttempt(attempt + 1)} /></> : !sessions.length ? <>
+      <View style={{ backgroundColor: colors.well, borderRadius: radius.lg, overflow: 'hidden' }}><TrackScene /><View style={{ padding: 24, gap: 12 }}><Text style={[typo.editorial, { color: colors.wellText }]}>Your first sprint{'\n'}is your starting line.</Text><Text style={[typo.body, { color: colors.wellMuted }]}>Film once to establish a baseline. Come back to see what changes, not what an app guesses.</Text></View></View>
+      <View style={{ gap: 16 }}>{['Capture your natural stride', 'Understand your movement', 'Practice, then compare'].map((step, index) => <View key={step} style={{ flexDirection: 'row', gap: 16, alignItems: 'center' }}><Text style={[typo.label, { color: colors.goldInk }]}>0{index + 1}</Text><Text style={[typo.body, { color: colors.text }]}>{step}</Text></View>)}</View>
+      <Button label="Record a sprint" testID="retest-cta" onPress={() => router.push('/(tabs)/')} />
+    </> : <>
+      {scored.length ? <View style={{ gap: 12 }}><Text style={[typo.label, { color: colors.goldInk }]}>MEASURED FORM SCORE</Text><TrendChart title="Form score over time" points={scored.map((analysis) => analysis.economyScore!)} labels={scored.map(day)} /></View> : <Notice>Your reports have no form-score measurement yet. Individual readings and observations are available below.</Notice>}
+      <SegmentedControl value={view} onChange={setView} options={[{ value: 'history', label: 'Sessions', testID: 'progress-view-history' }, { value: 'insights', label: 'Insights', testID: 'progress-view-insights' }]} />
+      {view === 'history' ? <><SectionTitle>Your film archive</SectionTitle>{[...sessions].reverse().slice(0, visibleSessions).map((analysis) => <Pressable key={analysis.id} accessibilityRole="button" testID={`progress-log-${analysis.id}`} accessibilityLabel={`Sprint on ${day(analysis)}. ${analysis.summary}`} onPress={() => { setSelectedAnalysis(analysis); setCompare(null); }} style={{ flexDirection: 'row', gap: 16, alignItems: 'center', paddingVertical: 12, borderBottomWidth: 0.5, borderColor: colors.border }}>
+        <View style={{ width: 76, height: 92, backgroundColor: colors.cardAlt, borderRadius: radius.sm, overflow: 'hidden' }}><SessionThumbnail analysisId={analysis.id} /></View>
+        <View style={{ flex: 1, gap: 6 }}><Text style={[typo.h2, { color: colors.text }]}>{day(analysis)}</Text><Text style={[typo.caption, { color: colors.muted }]}>{(analysis.phase ?? 'Sprint').replace(/_/g, ' ')} · {analysis.flaws.length} issue{analysis.flaws.length !== 1 ? 's' : ''}</Text><Text numberOfLines={2} style={[typo.caption, { color: colors.muted }]}>{analysis.summary}</Text></View>
+        <ArrowUpRight color={colors.goldInk} size={18} />
+      </Pressable>)}{visibleSessions < sessions.length ? <Button label="Show older sessions" variant="secondary" onPress={() => setVisibleSessions(visibleSessions + 8)} /> : null}</> : <><SectionTitle>Movement, over time</SectionTitle><Text style={[typo.caption, { color: colors.muted }]}>Trusted readings only, in the same running phase and pipeline as your latest session. Similar framing is still important; these changes are not proof of improved performance.</Text>{tracked.map((key) => {
+        const series = sessions.flatMap((analysis) => { const metric = analysis.metrics.find((item) => item.key === key); return metric && trustedReading(analysis, metric) && latest && sameMeasurementContext(analysis, latest) ? [{ metric, analysis }] : []; });
+        if (!series.length) return null;
+        return <TrendChart key={key} title={key.replace(/_/g, ' ')} unit={series[0].metric.unit} points={series.map((point) => point.metric.measured.value)} labels={series.map((point) => day(point.analysis))} />;
+      })}
+      <SectionTitle>Latest focus</SectionTitle>{latest.flaws.length ? latest.flaws.map((flaw) => <View key={flaw.id} style={{ gap: 8 }}><Text style={[typo.h2, { color: colors.text }]}>{flaw.name.replace(/_/g, ' ')}</Text><Text style={[typo.body, { color: colors.muted }]}>{flaw.plainExplanation}</Text></View>) : <Notice>No confirmed issues in your latest report.</Notice>}</>}
+      <Button label="Record another sprint" testID="retest-cta" onPress={() => router.push('/(tabs)/')} />
+    </>}
+    <Sheet visible={!!selectedAnalysis} title="SCORE BREAKDOWN" onClose={() => setSelectedAnalysis(null)}>
+      {selectedAnalysis ? <><SheetScroll contentContainerStyle={{ gap: 20 }}>
+        <Text style={[typo.label, { color: colors.goldInk }]}>{day(selectedAnalysis)}</Text><Text style={[typo.editorial, { color: colors.text }]}>{selectedAnalysis.summary}</Text>
+        <Text style={[typo.caption, { color: colors.muted }]}>Form score: {Number.isFinite(selectedAnalysis.economyScore) ? selectedAnalysis.economyScore + ' / 100' : 'not available'}</Text>
+        {selectedAnalysis.flaws.map((flaw) => <View key={flaw.id} style={{ gap: 6 }}><Text style={[typo.h2, { color: colors.text }]}>{flaw.name.replace(/_/g, ' ')}</Text><Text style={[typo.body, { color: colors.muted }]}>{flaw.plainExplanation}</Text></View>)}
+        {comparable.length ? <><SectionTitle>Compare a session</SectionTitle><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>{comparable.map((analysis) => <Button key={analysis.id} label={day(analysis)} variant={compare === analysis.id ? 'primary' : 'secondary'} onPress={() => setCompare(analysis.id)} />)}</ScrollView>
+        {comparison.length ? <><Text style={[typo.caption, { color: colors.muted }]}>Same phase and pipeline; match camera framing when comparing. Changes are not proof of performance improvement.</Text>{comparison.map((delta) => <View key={delta.key} style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 16 }}><Text style={[typo.body, { color: colors.text, flex: 1 }]}>{delta.label}</Text><Text style={[typo.bodyMedium, { color: colors.text }]}>{delta.from} → {delta.to} {delta.unit}</Text></View>)}</> : null}</> : null}
+      </SheetScroll><Button label="Open full analysis" onPress={() => { const analysisId = selectedAnalysis.id; setSelectedAnalysis(null); router.push({ pathname: '/(tabs)/analysis', params: { analysisId } }); }} /></> : null}
+    </Sheet>
+  </Screen>;
 }
-
-const styles = StyleSheet.create({
-  safe: { flex: 1 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  scroll: { padding: space.xl, paddingBottom: space.xxxl },
-  titleBlock: { marginBottom: space.xxl, gap: space.xs },
-  title: { fontSize: 36, fontWeight: '900', letterSpacing: -1, lineHeight: 42 },
-  segmentRow: { flexDirection: 'row', gap: space.sm, marginBottom: space.xl },
-  segmentChip: { flex: 1, alignItems: 'center', paddingVertical: space.sm, borderWidth: 1, borderRadius: radius.pill },
-  segmentText: { fontSize: 13, fontWeight: '800' },
-  summaryCard: { padding: space.lg, borderWidth: 1, borderRadius: radius.md, marginBottom: space.md },
-  summaryText: { fontSize: 14, lineHeight: 20, fontWeight: '600' },
-  runnersHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: space.sm, marginBottom: space.sm },
-  runnersTitle: { fontSize: 12, fontWeight: '900', letterSpacing: 1.5 },
-  runnerCard: { padding: space.lg, borderWidth: 1, borderRadius: radius.md, marginBottom: space.sm, gap: 4 },
-  runnerName: { fontSize: 14, fontWeight: '800' },
-  runnerNote: { fontSize: 13, lineHeight: 18 },
-  runnerSpotlight: { padding: space.lg, borderWidth: 1.5, borderRadius: radius.md, marginBottom: space.md, gap: 4 },
-  issueTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  issueCount: { fontSize: 11, fontWeight: '700' },
-  subtitle: { fontSize: 14, marginTop: space.xs },
-  emptyState: { alignItems: 'center', marginTop: 80, gap: space.sm },
-  emptyTitle: { fontSize: 18, fontWeight: '700' },
-  emptySubtitle: { fontSize: 14, textAlign: 'center' },
-  list: { gap: space.md },
-  retestCta: { paddingVertical: space.md, paddingHorizontal: space.lg, borderRadius: radius.sm, alignItems: 'center', marginBottom: space.sm },
-  retestCtaText: { fontSize: 14, fontWeight: '800' },
-  logCard: { padding: space.lg, borderWidth: 1, borderRadius: radius.md, gap: space.sm },
-  logTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  logDate: { fontSize: 14, fontWeight: '600' },
-  logScoreRow: { flexDirection: 'row', alignItems: 'baseline', gap: space.sm },
-  logScore: { fontSize: 28, fontWeight: '900' },
-  logDelta: { fontSize: 14, fontWeight: '700' },
-  barBg: { height: 6, borderRadius: 3, overflow: 'hidden' },
-  barFill: { height: 6, borderRadius: 3 },
-  logIssues: { fontSize: 12 },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
-  modalContent: { borderTopLeftRadius: radius.md, borderTopRightRadius: radius.md, maxHeight: '75%', padding: space.xl },
-  modalHeader: { marginBottom: space.xl },
-  modalTitle: { fontSize: 14, fontWeight: '800', letterSpacing: 1 },
-  modalScore: { alignItems: 'center', marginBottom: space.xl },
-  modalScoreNum: { fontSize: 48, fontWeight: '900' },
-  modalScoreLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 2 },
-  modalNoIssues: { fontSize: 14, fontWeight: '600', textAlign: 'center' },
-  modalFlaw: { paddingVertical: space.md, borderBottomWidth: 1 },
-  modalFlawName: { fontSize: 15, fontWeight: '700', textTransform: 'capitalize' },
-  modalFlawDesc: { fontSize: 13, marginTop: 4, lineHeight: 18 },
-  modalViewFull: { marginTop: space.xl, paddingVertical: 14, alignItems: 'center', borderRadius: radius.sm },
-  modalViewFullText: { fontSize: 14, fontWeight: '800' },
-});

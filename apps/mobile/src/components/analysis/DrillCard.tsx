@@ -1,90 +1,23 @@
-// Visual-demo drill card (PROMPT F.4). Pairs the user's flaw frame with a loop
-// of the correct movement, the cue, sets/reps, and the "why this fixes it" line.
-// Every DrillRec MUST resolve to a demoAssetId, an orphan rec is a bug.
-import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
-import { Dumbbell, User } from 'lucide-react-native';
-import { semantic, spacing, radius, borderWidth, typography } from '../../ui/theme';
-import { resolveDemoAsset } from '@stride/content';
+import React, { useState } from 'react';
+import { View, Text, Pressable } from 'react-native';
+import { ArrowUpRight } from 'lucide-react-native';
+import { useTheme } from '../../context/ThemeContext';
+import { space, radius, type as typo } from '../../theme';
+import { Sheet, SheetScroll, Notice, Button } from '../../ui';
 import type { DrillRec } from '../../types/analysis';
 import { PoseSnapshot } from './PoseSnapshot';
 
-export function DrillCard({
-  rec,
-  testID,
-  analysisId,
-  seekMs,
-}: {
-  rec: DrillRec;
-  testID?: string;
-  analysisId?: string;
-  seekMs?: number;
-}) {
-  const asset = resolveDemoAsset(rec.demoAssetId);
-  return (
-    <View style={styles.card} testID={testID} accessibilityLabel={`drill-${rec.drillId}`}>
-      <Text style={styles.kicker}>YOUR FIX</Text>
-      <Text style={styles.name}>{rec.drillName}</Text>
-
-      <View style={styles.frames}>
-        <View style={styles.frameCol} testID={`your-form-${rec.drillId}`}>
-          {analysisId && seekMs != null ? (
-            <PoseSnapshot analysisId={analysisId} tMs={seekMs} />
-          ) : (
-            <View style={styles.frame}><User size={20} color={semantic.text.muted} /></View>
-          )}
-          <Text style={styles.frameLabel}>your form</Text>
-        </View>
-        <View style={styles.frameCol}>
-          {/* No playable demo clips yet, a drill icon, never a play button
-              that goes nowhere. Swap in a video thumbnail when assets land. */}
-          <View style={[styles.frame, styles.demoFrame]} accessibilityLabel={`demo-${rec.demoAssetId}`} testID={`demo-${rec.demoAssetId}`}>
-            <Dumbbell size={22} color={semantic.action.primary} />
-          </View>
-          <Text style={[styles.frameLabel, { color: semantic.action.primary }]}>
-            {asset ? 'the drill' : 'reference'}
-          </Text>
-        </View>
-      </View>
-
-      <Text style={styles.cue}>{rec.cue}</Text>
-
-      <View style={styles.metaRow}>
-        <Text style={styles.meta}>{rec.sets} × {rec.reps}</Text>
-        <Text style={styles.rationale}>{rec.rationale}</Text>
-      </View>
-    </View>
-  );
+export function DrillCard({ rec, testID, analysisId, seekMs }: { rec: DrillRec; testID?: string; analysisId?: string; seekMs?: number }) {
+  const { colors } = useTheme();
+  const [open, setOpen] = useState(false);
+  return <><Pressable accessibilityRole="button" accessibilityLabel={`Practice ${rec.drillName}`} testID={testID ?? `drill-${rec.drillId}`} onPress={() => setOpen(true)} style={{ padding: space.xl, backgroundColor: colors.cardAlt, borderRadius: radius.md, gap: 14 }}>
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}><Text style={[typo.label, { color: colors.goldInk, flex: 1 }]}>PRACTICE / {rec.sets} × {rec.reps}</Text><ArrowUpRight color={colors.goldInk} size={18} /></View>
+    <Text style={[typo.h2, { color: colors.text }]}>{rec.drillName}</Text><Text style={[typo.body, { color: colors.muted }]}>{rec.cue}</Text>
+  </Pressable><Sheet visible={open} title={rec.drillName} onClose={() => setOpen(false)}><SheetScroll contentContainerStyle={{ gap: 20 }}>
+    {analysisId && seekMs != null ? <View testID={`your-form-${rec.drillId}`}><PoseSnapshot analysisId={analysisId} tMs={seekMs} /><Text style={[typo.caption, { color: colors.muted }]}>Tracked 2D joints from your own video, not a demonstration</Text></View> : null}
+    <Text style={[typo.numeric, { color: colors.goldInk }]}>{rec.sets} <Text style={typo.caption}>sets ×</Text> {rec.reps} <Text style={typo.caption}>reps</Text></Text>
+    <Text style={[typo.editorial, { color: colors.text }]}>{rec.cue}</Text><Text style={[typo.label, { color: colors.muted }]}>WHY THIS PRACTICE</Text><Text style={[typo.body, { color: colors.text }]}>{rec.rationale || 'Follow the prescribed cue and dose. Ask your coach if you need more guidance.'}</Text>
+    <Notice>Video demonstration is not available for this drill yet. No simulated movement is shown as a real demonstration.</Notice>
+    <Text style={[typo.caption, { color: colors.muted }]}>Scheduling is a separate approval below your report. Stop if you feel pain.</Text>
+  </SheetScroll><Button label="Back to report" variant="secondary" onPress={() => setOpen(false)} /></Sheet></>;
 }
-
-const styles = StyleSheet.create({
-  card: {
-    backgroundColor: semantic.surface.overlay,
-    borderRadius: radius.sm,
-    borderWidth: borderWidth.hairline,
-    borderColor: semantic.border,
-    padding: spacing.lg,
-    gap: spacing.sm,
-  },
-  kicker: { ...(typography.caption as object), color: semantic.action.primary, letterSpacing: 1 },
-  name: { ...(typography.title as object), color: semantic.text.primary },
-  frames: { flexDirection: 'row', gap: spacing.sm, marginVertical: spacing.sm },
-  frameCol: { flex: 1, gap: spacing.xs, alignItems: 'center' },
-  frame: {
-    width: '100%',
-    height: 84,
-    borderRadius: radius.sm,
-    borderWidth: borderWidth.hairline,
-    borderColor: semantic.border,
-    backgroundColor: semantic.surface.sunken,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.xs,
-  },
-  demoFrame: { borderColor: semantic.action.primary },
-  frameLabel: { ...(typography.caption as object), color: semantic.text.muted },
-  cue: { ...(typography.bodyStrong as object), color: semantic.text.primary },
-  metaRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  meta: { ...(typography.metricSmall as object), color: semantic.action.primary, fontSize: 16 },
-  rationale: { ...(typography.caption as object), color: semantic.text.secondary, flex: 1 },
-});

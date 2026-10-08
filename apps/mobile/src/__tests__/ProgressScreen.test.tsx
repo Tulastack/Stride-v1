@@ -31,23 +31,23 @@ describe('ProgressScreen', () => {
   });
 
   it('renders the history score log from fixture uploads', async () => {
-    const { getByText, getByLabelText, getAllByText } = render(<ProgressScreen />);
+    const { getByText, getByTestId, getAllByText } = render(<ProgressScreen />);
     await waitFor(() => expect(getByText(/2 sprints analyzed/i)).toBeTruthy());
-    expect(getByLabelText('progress-log-upload-1')).toBeTruthy();
-    expect(getByLabelText('progress-log-upload-2')).toBeTruthy();
+    expect(getByTestId('progress-log-upload-1')).toBeTruthy();
+    expect(getByTestId('progress-log-upload-2')).toBeTruthy();
     expect(getAllByText(/issue/i).length).toBeGreaterThan(0);
   });
 
   it('opens a score breakdown when a log card is pressed', async () => {
-    const { getByLabelText, getByText, getAllByText } = render(<ProgressScreen />);
-    await waitFor(() => expect(getByLabelText('progress-log-upload-1')).toBeTruthy());
-    fireEvent.press(getByLabelText('progress-log-upload-1'));
+    const { getByTestId, getByText, getAllByText } = render(<ProgressScreen />);
+    await waitFor(() => expect(getByTestId('progress-log-upload-1')).toBeTruthy());
+    fireEvent.press(getByTestId('progress-log-upload-1'));
     await waitFor(() => expect(getByText('SCORE BREAKDOWN')).toBeTruthy());
     expect(getAllByText(/Low knee drive/i).length).toBeGreaterThan(0);
   });
 
   it('shows the re-test CTA (between-analyses loop)', async () => {
-    const { getByLabelText } = render(<ProgressScreen />);
-    await waitFor(() => expect(getByLabelText('retest-cta')).toBeTruthy());
+    const { getByTestId } = render(<ProgressScreen />);
+    await waitFor(() => expect(getByTestId('retest-cta')).toBeTruthy());
   });
 });

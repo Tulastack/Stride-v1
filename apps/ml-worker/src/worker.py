@@ -118,6 +118,22 @@ PIPELINE = os.environ.get("STRIDE_PIPELINE", "2d").lower()
 # the measured split between healthy and failed reconstructions on real clips
 # (0.14 vs 1.22); 0.35 sits clear of both.
 LIFT_FALLBACK_REL_TORSO = float(os.environ.get("STRIDE_LIFT_FALLBACK_REL", "0.35"))
+
+
+def lift_left_a_score(result: dict) -> bool:
+    """True when at least one metric is allowed to enter the form score.
+
+    A lift can close under the rejection line and still leave every reading
+    under the usable confidence floor. That result is stored as economyScore 0,
+    which the app shows as a real grade. Callers should take the 2D path
+    instead. A reconstruction that did produce usable metrics is left alone.
+    """
+    usable = (result.get("captureQuality") or {}).get("perMetricUsable") or {}
+    for metric in result.get("metrics") or []:
+        value = ((metric.get("measured") or {}).get("value")) or 0
+        if usable.get(metric.get("key")) and value > 0:
+            return True
+    return False
 # Minimum median torso height, as a fraction of frame height, for the geometric
 # lift to be attempted at all. Clips at 0.11-0.13 reconstruct cleanly; clips at
 # 0.016-0.051 fail regardless of keypoint quality. 0.08 sits between them.
@@ -632,6 +648,26 @@ def _run_3d_geo(analysis_id: str, video_path: str, capture: dict, s3_key: str | 
             recon_conf=lift_quality["reconConf"],
             clip_id=analysis_id[:8])
         result["reconstructionMethod"] = "3d-mono-geometric"
+        if not lift_left_a_score(result):
+            logger.warning(
+                "3D lift kept (closure %.3f, reconConf %.3f) but no metric was usable, "
+                "falling back to the 2D sagittal path",
+                lift_quality["closingRelTorso"], lift_quality["reconConf"])
+            notify_progress(analysis_id, "biomechanics_calculation", 80,
+                            "2D sagittal biomechanics (3D lift unscorable)")
+            kept = {
+                "closingRelTorso": lift_quality["closingRelTorso"],
+                "reconConf": lift_quality["reconConf"],
+            }
+            result = _analyze_2d_fallback(analysis_id, included, eff_fps, capture,
+                                          source_fps, capture_fps)
+            cq_u = result.setdefault("captureQuality", {})
+            cq_u["liftUnscorable"] = kept
+            cq_u.setdefault(
+                "primaryNudge",
+                "The 3D reconstruction was too uncertain to score, so this used "
+                "the 2D analysis. A steadier side-on shot usually lets 3D count.",
+            )
 
     # Applies to every branch above: the window was decided during extraction,
     # before we knew which analysis would run on it.

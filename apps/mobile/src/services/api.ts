@@ -315,9 +315,10 @@ export const strideApi = {
   },
 
   // Add coach's suggested plan to the user's calendar
-  addCoachPlanToCalendar: async (sessionId: string) => {
+  addCoachPlanToCalendar: async (sessionId: string, history?: { role: string; content: string }[]) => {
     return request<{ created: number; events: any[] }>(`/coach-sessions/${sessionId}/add-to-calendar`, {
       method: 'POST',
+      body: JSON.stringify({ history: history?.slice(-50) }),
       timeoutMs: COACH_TIMEOUT_MS,
     });
   },

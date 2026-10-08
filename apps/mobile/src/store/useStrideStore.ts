@@ -110,7 +110,7 @@ export const useStrideStore = create<StrideState>((set) => ({
   setToken: (token) => set({ token }),
   setUser: (user) => set({ user }),
   setAuthHydrated: (v) => set({ authHydrated: v }),
-  logout: () => set({ token: null, user: null }),
+  logout: () => set({ token: null, user: null, consentGiven: false, isInjured: false, drillIntensityCap: null }),
   setConsentGiven: (v) => set({ consentGiven: v }),
   setIsInjured: (v) => set({ isInjured: v }),
   setDrillIntensityCap: (v) => set({ drillIntensityCap: v }),

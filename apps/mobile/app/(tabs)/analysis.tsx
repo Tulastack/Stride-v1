@@ -1,13 +1,19 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, SafeAreaView, Pressable } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { CalendarPlus, Check, X, ChevronRight, Target, ArrowRight } from 'lucide-react-native';
 import { strideApi } from '../../src/services/api';
 import { parseAnalysisResult, waitForAnalysisResult, type AnalysisRow } from '../../src/lib/analysisApi';
 import { PoseVideoPlayer } from '../../src/components/analysis/PoseVideoPlayer';
+import { MetricRow } from '../../src/components/analysis/MetricRow';
+import { DrillCard } from '../../src/components/analysis/DrillCard';
+import { CaptureQualityCard } from '../../src/components/analysis/CaptureQualityCard';
+import { Screen, ScreenHeader, TrackScene, Button, Notice, SectionTitle, SegmentedControl } from '../../src/ui';
 import { useTheme } from '../../src/context/ThemeContext';
-import { space, radius, iconStroke } from '../../src/theme';
+import { space, radius, type as typo } from '../../src/theme';
 import type { AnalysisResult } from '../../src/types/analysis';
+import { trustedReading } from '../../src/lib/measurementTrust';
+import { useRecoveryStatus } from '../../src/hooks/useRecoveryStatus';
+import { RecoveryControls } from '../../src/components/RecoveryControls';
 
 type Status = 'pending' | 'processing' | 'failed' | 'done';
 
@@ -20,29 +26,13 @@ interface DrillSuggestion {
   status: 'pending' | 'approved' | 'skipped';
 }
 
-// Severity index → label + a red-to-green color, worst to mildest.
-const SEVERITY_LABELS: Record<number, { label: string; color: string }> = {
-  5: { label: 'MAJOR', color: '#DC2626' },
-  4: { label: 'SIGNIFICANT', color: '#EA580C' },
-  3: { label: 'MODERATE', color: '#D97706' },
-  2: { label: 'MINOR', color: '#CA8A04' },
-  1: { label: 'MINOR', color: '#65A30D' },
-};
-
-// Friendly labels for every metric key the analyzers emit (sagittal + frontal).
-const METRIC_LABEL: Record<string, string> = {
-  trunk_lean: 'Trunk lean', knee_drive: 'Knee drive', hip_extension: 'Hip extension',
-  knee_flexion: 'Knee flexion', arm_swing: 'Arm swing', overstride: 'Overstride',
-  vertical_oscillation: 'Vertical bounce', contact_time_ms: 'Ground contact', cadence_spm: 'Cadence',
-  knee_valgus: 'Knee collapse', pelvic_drop: 'Hip drop', arm_crossover: 'Arm crossover',
-  foot_crossover: 'Foot crossover', stance_width: 'Stance width', head_tilt: 'Head tilt',
-};
-const metricLabel = (k: string) => METRIC_LABEL[k] ?? k.replace(/_/g, ' ');
-
-function severityInfo(index: number, total: number): { label: string; color: string } {
-  if (total <= 1) return SEVERITY_LABELS[3];
-  return SEVERITY_LABELS[Math.max(1, 5 - index)] ?? SEVERITY_LABELS[3];
+// Engine severity is 1..3 (see severityFrom). Anything above 3 still reads as major.
+function severityLabel(severity: number): 'MAJOR' | 'MODERATE' | 'MINOR' {
+  if (severity >= 3) return 'MAJOR';
+  if (severity === 2) return 'MODERATE';
+  return 'MINOR';
 }
+
 
 function friendlyError(err?: string | null): string {
   if (!err) return 'Something went wrong analyzing your run.';
@@ -66,9 +56,17 @@ export default function AnalysisScreen() {
   const { analysisId } = useLocalSearchParams<{ analysisId?: string }>();
   const router = useRouter();
   const { colors } = useTheme();
+  const recovery = useRecoveryStatus();
+  const canPrescribe = recovery.ready && !recovery.isInjured && !recovery.busy;
   const [status, setStatus] = useState<Status>('pending');
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [lens, setLens] = useState<'overview' | 'measurements' | 'practice'>('overview');
+  const [seek, setSeek] = useState<number | undefined>();
+  const [scheduleError, setScheduleError] = useState('');
+  const [suggestionError, setSuggestionError] = useState('');
+  const loadGenRef = useRef(0);
+  const mutationLocks = useRef(new Set<string>());
 
   // Approval-gate state
   const [suggestions, setSuggestions] = useState<DrillSuggestion[]>([]);
@@ -78,17 +76,19 @@ export default function AnalysisScreen() {
   const [planSizes, setPlanSizes] = useState<Record<string, number>>({});
 
   const loadSuggestions = useCallback(async (id: string) => {
+    const generation = loadGenRef.current;
+    setSuggestionError('');
     try {
       const rows = (await strideApi.getSuggestions(id)) as DrillSuggestion[];
+      if (generation !== loadGenRef.current) return;
       setSuggestions(rows ?? []);
     } catch {
-      setSuggestions([]);
+      if (generation === loadGenRef.current) setSuggestionError('Could not load your practice suggestions. Your measured report is still available.');
     }
   }, []);
 
   // Each load bumps the generation; stale loops (unmount, analysisId change,
   // retry) see a newer generation, stop polling, and never setState again.
-  const loadGenRef = useRef(0);
 
   const load = useCallback(async (id?: string) => {
     const gen = ++loadGenRef.current;
@@ -98,6 +98,7 @@ export default function AnalysisScreen() {
     setStatus('pending');
     setError(null);
     setResult(null);
+    setSuggestions([]); setPlanSizes({}); setLens('overview'); setScheduleError(''); setSuggestionError(''); setBusyIds(new Set()); mutationLocks.current.clear();
 
     try {
       const row = (await strideApi.getAnalysis(id)) as AnalysisRow;
@@ -106,7 +107,7 @@ export default function AnalysisScreen() {
       if (row.status === 'completed') {
         const parsed = parseAnalysisResult(row);
         if (!parsed) { setStatus('failed'); setError('Result is missing or invalid.'); return; }
-        setResult(parsed); setStatus('done'); loadSuggestions(id); return;
+        setResult({ ...parsed, id: row.id || id }); setStatus('done'); loadSuggestions(id); return;
       }
       setStatus('processing');
       const outcome = await waitForAnalysisResult(id, { intervalMs: 2000, timeoutMs: 180_000, isCancelled });
@@ -130,25 +131,34 @@ export default function AnalysisScreen() {
     setBusyIds((prev) => { const next = new Set(prev); on ? next.add(id) : next.delete(id); return next; });
 
   const approve = useCallback(async (s: DrillSuggestion) => {
+    if (!canPrescribe || mutationLocks.current.has(s.id)) return;
+    mutationLocks.current.add(s.id);
+    const generation = loadGenRef.current;
+    setScheduleError('');
     setBusy(s.id, true);
     try {
       const result = await strideApi.approveSuggestion(s.id);
-      const sessionCount = Array.isArray(result?.plan) ? result.plan.length : 1;
-      setPlanSizes((prev) => ({ ...prev, [s.id]: sessionCount }));
+      if (generation !== loadGenRef.current) return;
+      if (Array.isArray(result?.plan)) setPlanSizes((prev) => ({ ...prev, [s.id]: result.plan.length }));
       setSuggestions((prev) => prev.map((x) => (x.id === s.id ? { ...x, status: 'approved' } : x)));
     } catch {
-      // leave as pending so the user can retry
-    } finally { setBusy(s.id, false); }
-  }, []);
+      if (generation === loadGenRef.current) setScheduleError('Could not confirm scheduling. Check your plan before trying again.');
+    } finally { mutationLocks.current.delete(s.id); if (generation === loadGenRef.current) setBusy(s.id, false); }
+  }, [canPrescribe]);
 
   const skip = useCallback(async (s: DrillSuggestion) => {
+    if (mutationLocks.current.has(s.id)) return;
+    mutationLocks.current.add(s.id);
+    const generation = loadGenRef.current;
+    setScheduleError('');
     setBusy(s.id, true);
     try {
       await strideApi.skipSuggestion(s.id);
+      if (generation !== loadGenRef.current) return;
       setSuggestions((prev) => prev.map((x) => (x.id === s.id ? { ...x, status: 'skipped' } : x)));
     } catch {
-      // no-op
-    } finally { setBusy(s.id, false); }
+      if (generation === loadGenRef.current) setScheduleError('Could not skip this recommendation. Please try again.');
+    } finally { mutationLocks.current.delete(s.id); if (generation === loadGenRef.current) setBusy(s.id, false); }
   }, []);
 
   const topFlaws = useMemo(() => {
@@ -159,291 +169,66 @@ export default function AnalysisScreen() {
   const pending = suggestions.filter((s) => s.status === 'pending');
   const approved = suggestions.filter((s) => s.status === 'approved');
 
-  if (status === 'pending' || status === 'processing') {
-    return (
-      <SafeAreaView style={[styles.container, { backgroundColor: colors.bg }]}>
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color={colors.accent} />
-          <Text style={[styles.loadingText, { color: colors.muted }]}>
-            {status === 'processing' ? 'Analyzing your sprint...' : 'Loading...'}
-          </Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
+  if (status === 'pending' || status === 'processing') return <Screen>
+    <ScreenHeader logo title="Reading your movement." />
+    <View style={[styles.observatory, { backgroundColor: colors.well }]}><TrackScene /><View style={styles.observatoryCopy}><Text style={[typo.label, { color: colors.accent }]}>REPORT / {status === 'processing' ? 'PROCESSING' : 'REQUESTED'}</Text><Text accessibilityLiveRegion="polite" style={[typo.h2, { color: colors.wellText }]}>{status === 'processing' ? 'Analyzing your sprint...' : 'Loading...'}</Text><ActivityIndicator color={colors.accent} /></View></View>
+    <Text style={[typo.body, { color: colors.muted }]}>Your report appears when the analysis is complete. Measurements are checked for confidence before they become coaching cues.</Text>
+    <Button label="Back to capture" variant="secondary" onPress={() => router.push('/(tabs)/')} />
+  </Screen>;
 
-  if (status === 'failed' || !result) {
-    return (
-      <SafeAreaView style={[styles.container, { backgroundColor: colors.bg }]}>
-        <View style={styles.center}>
-          <Text style={[styles.failTitle, { color: colors.error }]}>Analysis Failed</Text>
-          <Text style={[styles.failMsg, { color: colors.muted }]}>{friendlyError(error)}</Text>
-          <Pressable style={[styles.retryBtn, { borderColor: colors.border }]} onPress={() => load(analysisId)}>
-            <Text style={[styles.retryText, { color: colors.text }]}>Try Again</Text>
-          </Pressable>
-        </View>
-      </SafeAreaView>
-    );
-  }
+  if (status === 'failed' || !result) return <Screen>
+    <ScreenHeader title="Let's get a clearer view." />
+    <Notice tone="error">Analysis Failed</Notice><Text style={[typo.body, { color: colors.muted }]}>{friendlyError(error)}</Text>
+    <Button label="Try Again" onPress={() => load(analysisId)} /><Button label="Record another sprint" variant="secondary" onPress={() => router.push('/(tabs)/')} />
+  </Screen>;
 
-  const formScore = result.economyScore ?? (result.flaws.length === 0 ? 95 : Math.max(40, 100 - result.flaws.length * 10));
+  const trustedCount = (result.metrics ?? []).filter((metric) => trustedReading(result, metric, 0.5)).length;
+  const score = Number.isFinite(result.economyScore) ? result.economyScore : null;
 
-  return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.bg }]}>
-      <ScrollView contentContainerStyle={styles.scroll}>
-        {/* Skeleton overlay video */}
-        {analysisId ? (
-          <PoseVideoPlayer analysisId={analysisId} seekToMs={topFlaws[0]?.evidence?.frameTimestampMs} />
-        ) : null}
-
-        {/* Score, ink, not accent: the number is the fact, gold is for actions */}
-        <View style={styles.scoreSection}>
-          <Text style={[styles.scoreLabel, { color: colors.muted }]}>FORM SCORE</Text>
-          <View style={styles.scoreRow}>
-            <Text style={[styles.scoreNumber, { color: colors.text }]}>{formScore}</Text>
-            <Text style={[styles.scoreOutOf, { color: colors.muted }]}>/100</Text>
-          </View>
-        </View>
-
-        <Text style={[styles.summary, { color: colors.text }]}>{result.summary}</Text>
-
-        {/* Measurements, the full breakdown, so it's never "just a score". Every
-            metric shows its value, ideal range, and whether we could trust it. */}
-        {result.metrics && result.metrics.length > 0 && (
-          <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>YOUR MEASUREMENTS</Text>
-            {result.metrics.map((m) => {
-              const [lo, hi] = m.normalRange ?? [0, 0];
-              const experimental = m.trustStatus === 'experimental';
-              const inRange = !experimental && m.measured.value >= lo && m.measured.value <= hi;
-              const valueColor = experimental ? colors.muted : inRange ? colors.success : colors.accent;
-              return (
-                <View key={m.key} style={[styles.metricRow, { borderBottomColor: colors.border }]}>
-                  <View style={styles.metricLeft}>
-                    <Text style={[styles.metricLabel, { color: experimental ? colors.muted : colors.text }]}>
-                      {metricLabel(m.key)}
-                    </Text>
-                    {experimental ? (
-                      <Text style={[styles.metricTag, { color: colors.muted }]}>experimental</Text>
-                    ) : !inRange ? (
-                      <Text style={[styles.metricTag, { color: colors.accent }]}>needs work</Text>
-                    ) : null}
-                  </View>
-                  <View style={styles.metricRight}>
-                    <Text style={[styles.metricValue, { color: valueColor }]}>
-                      {m.measured.value}
-                      <Text style={[styles.metricUnit, { color: colors.muted }]}> {m.unit}</Text>
-                    </Text>
-                    {(lo || hi) ? (
-                      <Text style={[styles.metricRange, { color: colors.muted }]}>ideal {lo}–{hi}</Text>
-                    ) : null}
-                  </View>
-                </View>
-              );
-            })}
-            <Text style={[styles.sectionHint, { color: colors.muted }]}>
-              "Experimental" values need a cleaner side-on, well-lit, high-frame-rate clip before we'll stand behind them.
-            </Text>
-          </View>
-        )}
-
-        {/* Issues */}
-        {topFlaws.length > 0 && (
-          <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>AREAS TO IMPROVE</Text>
-            {topFlaws.map((flaw, index) => {
-              const { label, color } = severityInfo(index, topFlaws.length);
-              return (
-                <View key={flaw.id} style={[styles.issueCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                  <View style={styles.issueHeader}>
-                    <View style={[styles.severityDot, { backgroundColor: color }]} />
-                    <Text style={[styles.severityText, { color }]}>{label}</Text>
-                  </View>
-                  <Text style={[styles.issueTitle, { color: colors.text }]}>{flaw.name.replace(/_/g, ' ')}</Text>
-                  <Text style={[styles.issueDesc, { color: colors.muted }]}>{flaw.plainExplanation}</Text>
-                </View>
-              );
-            })}
-          </View>
-        )}
-
-        {/* Focus areas, measured but non-authoritative: unconfirmed reads and
-            near-edge refinements. Never mixed into AREAS TO IMPROVE, which is
-            reserved for faults we stand behind. */}
-        {result.focusAreas && result.focusAreas.length > 0 && (
-          <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>REFINE NEXT</Text>
-            {result.focusAreas.map((fa) => (
-              <View key={fa.id} style={[styles.issueCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                <Text style={[styles.focusKind, { color: colors.muted }]}>
-                  {fa.kind === 'unconfirmed' ? 'UNCONFIRMED READ' : 'CLOSE TO THE EDGE'}
-                </Text>
-                <Text style={[styles.issueTitle, { color: colors.text }]}>{fa.name.replace(/_/g, ' ')}</Text>
-                <Text style={[styles.issueDesc, { color: colors.muted }]}>{fa.plainExplanation}</Text>
-                {fa.drill ? (
-                  <Text style={[styles.focusDrill, { color: colors.muted }]}>
-                    Drill: {fa.drill.drillName}, {fa.drill.sets} sets × {fa.drill.reps} reps
-                  </Text>
-                ) : null}
-              </View>
-            ))}
-          </View>
-        )}
-
-        {/* Approval gate, Add to your plan / Skip. Nothing is auto-scheduled. */}
-        {(pending.length > 0 || approved.length > 0) && (
-          <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>ADD TO YOUR PLAN</Text>
-            <Text style={[styles.sectionHint, { color: colors.muted }]}>
-              You choose what gets scheduled. Approving builds a multi-week program targeting this issue, not a single session.
-            </Text>
-
-            {pending.map((s) => {
-              const busy = busyIds.has(s.id);
-              return (
-                <View key={s.id} style={[styles.suggCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                  <View style={styles.suggInfo}>
-                    <Text style={[styles.suggName, { color: colors.text }]}>{s.drill_name}</Text>
-                    <Text style={[styles.suggDate, { color: colors.muted }]}>Progressive program, starting {formatDay(s.suggested_date)}</Text>
-                  </View>
-                  <View style={styles.suggActions}>
-                    <Pressable
-                      accessibilityLabel={`skip-${s.drill_key}`}
-                      disabled={busy}
-                      style={[styles.iconBtn, { borderColor: colors.border }]}
-                      onPress={() => skip(s)}
-                    >
-                      <X size={18} color={colors.muted} strokeWidth={2.25} />
-                    </Pressable>
-                    <Pressable
-                      accessibilityLabel={`add-to-plan-${s.drill_key}`}
-                      disabled={busy}
-                      style={[styles.addBtn, { backgroundColor: colors.accent }]}
-                      onPress={() => approve(s)}
-                    >
-                      {busy ? (
-                        <ActivityIndicator size="small" color={colors.accentText} />
-                      ) : (
-                        <>
-                          <CalendarPlus size={16} color={colors.accentText} strokeWidth={2.25} />
-                          <Text style={[styles.addBtnText, { color: colors.accentText }]}>Add</Text>
-                        </>
-                      )}
-                    </Pressable>
-                  </View>
-                </View>
-              );
-            })}
-
-            {approved.map((s) => (
-              <View key={s.id} style={[styles.approvedRow]}>
-                <Check size={16} color={colors.success} strokeWidth={2.5} />
-                <Text style={[styles.approvedText, { color: colors.muted }]}>
-                  {/* Session count is only known for approvals made this session,
-                      plan length varies per athlete, so never guess a number. */}
-                  {s.drill_name}, {planSizes[s.id] ? `${planSizes[s.id]} sessions added` : 'program scheduled'}, starting {formatDay(s.suggested_date)}
-                </Text>
-              </View>
-            ))}
-
-            {approved.length > 0 && (
-              <Pressable style={[styles.viewPlanBtn, { borderColor: colors.accent }]} onPress={() => router.push('/(tabs)/calendar')}>
-                <Text style={[styles.viewPlanText, { color: colors.accent }]}>View in Plan</Text>
-                <ArrowRight size={16} color={colors.accent} strokeWidth={2.25} />
-              </Pressable>
-            )}
-          </View>
-        )}
-
-        {/* Fallback quick fixes when no structured suggestions were generated */}
-        {suggestions.length === 0 && result.recommendations && result.recommendations.length > 0 && (
-          <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>QUICK FIXES</Text>
-            {result.recommendations.slice(0, 3).map((rec) => (
-              <View key={rec.drillId} style={[styles.drillItem, { borderBottomColor: colors.border }]}>
-                <Target size={16} color={colors.accent} strokeWidth={iconStroke} />
-                <View style={styles.drillInfo}>
-                  <Text style={[styles.drillName, { color: colors.text }]}>{rec.drillName}</Text>
-                  <Text style={[styles.drillVolume, { color: colors.muted }]}>{rec.sets} sets × {rec.reps} reps</Text>
-                </View>
-              </View>
-            ))}
-          </View>
-        )}
-
-        {/* CTA to AI Coach */}
-        <Pressable style={[styles.coachCta, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={() => router.push({ pathname: '/(tabs)/coach', params: { analysisId } })}>
-          <View style={styles.coachCtaContent}>
-            <Text style={[styles.coachCtaTitle, { color: colors.accent }]}>Want personalized tips?</Text>
-            <Text style={[styles.coachCtaSubtitle, { color: colors.muted }]}>Chat with your AI coach for drills, plans, and more</Text>
-          </View>
-          <ChevronRight size={20} color={colors.accent} strokeWidth={iconStroke} />
-        </Pressable>
-
-        <Text accessibilityLabel="analysis-disclaimer" style={[styles.disclaimer, { color: colors.muted }]}>
-          Results are based on video analysis. For best accuracy, film your full body from the side in good lighting.
-        </Text>
-      </ScrollView>
-    </SafeAreaView>
-  );
+  return <Screen style={{ gap: space.lg }}>
+    <ScreenHeader eyebrow="Movement report" title="Your stride, understood." subtitle={(result.phase ?? 'sprint').replace(/_/g, ' ')} />
+    {analysisId ? <View style={[styles.film, { backgroundColor: colors.well }]}><View style={styles.filmHeader}><Text style={[typo.label, { color: colors.accent }]}>YOUR FILM</Text><Text style={[typo.caption, { color: colors.wellMuted }]}>Real video · 2D tracking</Text></View><PoseVideoPlayer analysisId={analysisId} seekToMs={seek} /></View> : null}
+    <View style={[styles.reportRail, { borderColor: colors.border }]}><View style={{ flex: 1 }}><Text style={[typo.label, { color: colors.muted }]}>FORM SCORE</Text><Text style={[score == null ? typo.h2 : typo.numeric, { color: colors.text }]}>{score == null ? 'Not available' : score}<Text style={[typo.caption, { color: colors.muted }]}>{score == null ? '' : ' / 100'}</Text></Text></View><View><Text style={[typo.label, { color: colors.muted }]}>TRUSTED READINGS</Text><Text style={[typo.h2, { color: colors.text, fontVariant: ['tabular-nums'] }]}>{trustedCount} / {result.metrics?.length ?? 0}</Text></View></View>
+    <SegmentedControl value={lens} onChange={setLens} options={[{ value: 'overview', label: 'Overview' }, { value: 'measurements', label: 'Measurements' }, { value: 'practice', label: 'Practice' }]} />
+    <RecoveryControls recovery={recovery} />
+    {lens === 'overview' ? <>
+      <Text style={[typo.editorial, { color: colors.text }]}>{result.summary}</Text>
+      {topFlaws.length ? <><SectionTitle>Areas to improve</SectionTitle>{topFlaws.map((flaw, index) => {
+        const recommendation = result.recommendations?.find((item) => item.flawId === flaw.id);
+        const severity = severityLabel(flaw.severity);
+        return <View key={flaw.id} style={[styles.observation, { borderColor: colors.border }]}>
+          <View style={styles.observationHeader}><Text style={[typo.label, { color: colors.muted }]}>0{index + 1} / OBSERVATION</Text><Text style={[typo.label, { color: severity === 'MAJOR' ? colors.error : colors.goldInk }]}>{severity}</Text></View>
+          <Text style={[typo.h2, { color: colors.text }]}>{flaw.name.replace(/_/g, ' ')}</Text><Text style={[typo.body, { color: colors.muted }]}>{flaw.plainExplanation}</Text>
+          {flaw.evidence?.frameTimestampMs != null ? <Button label="View evidence frame" variant="quiet" onPress={() => setSeek(flaw.evidence.frameTimestampMs)} /> : null}
+          {recommendation && canPrescribe ? <><Text style={[typo.bodyMedium, { color: colors.goldInk }]}>Cue: {recommendation.cue}</Text><Button label={recommendation.drillName} variant="secondary" onPress={() => setLens('practice')} /></> : null}
+        </View>;
+      })}</> : <Notice>No confirmed form issues in this report. This is not a guarantee that every movement is ideal.</Notice>}
+      {result.focusAreas?.length ? <><SectionTitle>Refine next</SectionTitle><Text style={[typo.caption, { color: colors.muted }]}>Exploratory readings, not confirmed faults.</Text>{result.focusAreas.map((area) => <View key={area.id} style={[styles.observation, { borderColor: colors.border }]}><Text style={[typo.label, { color: colors.muted }]}>{area.kind === 'unconfirmed' ? 'UNCONFIRMED READ' : 'NEAR THE TARGET EDGE'}</Text><Text style={[typo.h2, { color: colors.text }]}>{area.name.replace(/_/g, ' ')}</Text><Text style={[typo.body, { color: colors.muted }]}>{area.plainExplanation}</Text>{area.drill && canPrescribe ? <Text style={[typo.caption, { color: colors.goldInk }]}>{area.drill.drillName} · {area.drill.sets} × {area.drill.reps}</Text> : null}</View>)}</> : null}
+      <Button label="Want personalized tips?" variant="secondary" onPress={() => router.push({ pathname: '/(tabs)/coach', params: { analysisId } })} />
+    </> : lens === 'measurements' ? <>
+      <SectionTitle>Inside the measurements</SectionTitle><Text style={[typo.caption, { color: colors.muted }]}>Open a reading for its uncertainty band and target range. Low-quality measurements are withheld, not guessed.</Text>
+      {(result.metrics ?? []).map((metric) => <MetricRow key={metric.key} metric={metric} usable={result.captureQuality?.perMetricUsable?.[metric.key]} />)}
+      {!result.metrics?.length ? <Notice>This report does not include individual measurements.</Notice> : null}
+      {result.captureQuality ? <CaptureQualityCard capture={result.captureQuality} /> : null}
+    </> : <>
+      <SectionTitle>Your next practice</SectionTitle><Text style={[typo.body, { color: colors.muted }]}>A cue you can take to the track, not another number to memorize.</Text>
+      {canPrescribe ? (result.recommendations ?? []).map((recommendation) => <DrillCard key={recommendation.drillId} rec={recommendation} analysisId={analysisId} seekMs={topFlaws.find((flaw) => flaw.id === recommendation.flawId)?.evidence?.frameTimestampMs} />) : <Notice>Sprint practice is paused. Your measured report remains available in Overview and Measurements.</Notice>}
+      {canPrescribe && !result.recommendations?.length ? <Notice>No corrective drills were prescribed in this report. Ask your coach for general training guidance.</Notice> : null}
+    </>}
+    {suggestionError ? <><Notice tone="error">{suggestionError}</Notice><Button label="Reload practice suggestions" variant="secondary" onPress={() => { if (analysisId) loadSuggestions(analysisId); }} /></> : null}
+    {canPrescribe && (pending.length || approved.length) ? <><SectionTitle>ADD TO YOUR PLAN</SectionTitle><Text style={[typo.caption, { color: colors.muted }]}>Only your approval schedules a progressive program.</Text>{scheduleError ? <Notice tone="error">{scheduleError}</Notice> : null}
+      {pending.map((suggestion) => <View key={suggestion.id} style={[styles.observation, { backgroundColor: colors.cardAlt, borderColor: colors.border, padding: 16, borderRadius: radius.md }]}><Text style={[typo.h2, { color: colors.text }]}>{suggestion.drill_name}</Text><Text style={[typo.caption, { color: colors.muted }]}>Progressive program · starts {formatDay(suggestion.suggested_date)}</Text><View style={{ flexDirection: 'row', gap: 8 }}><Button label="Skip" testID={`skip-${suggestion.drill_key}`} accessibilityLabel={`Skip ${suggestion.drill_name}`} variant="quiet" disabled={busyIds.has(suggestion.id)} onPress={() => skip(suggestion)} /><Button label="Add to plan" testID={`add-to-plan-${suggestion.drill_key}`} accessibilityLabel={`Add ${suggestion.drill_name} to plan`} loading={busyIds.has(suggestion.id)} onPress={() => approve(suggestion)} style={{ flex: 1 }} /></View></View>)}
+      {approved.map((suggestion) => <Notice key={suggestion.id}>{suggestion.drill_name}, {planSizes[suggestion.id] ? `${planSizes[suggestion.id]} sessions added` : 'program scheduled'}, starting {formatDay(suggestion.suggested_date)}</Notice>)}
+      {approved.length ? <Button label="View in Plan" variant="secondary" onPress={() => router.push('/(tabs)/calendar')} /> : null}
+    </> : null}
+    <Text testID="analysis-disclaimer" style={[typo.caption, { color: colors.muted }]}>Coaching insights, not medical advice. Measurement quality depends on the view and footage.</Text>
+  </Screen>;
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 12 },
-  loadingText: { fontSize: 14, fontWeight: '600', marginTop: 8 },
-  failTitle: { fontSize: 20, fontWeight: '800' },
-  failMsg: { fontSize: 14, textAlign: 'center' },
-  retryBtn: { borderWidth: 1, paddingVertical: 12, paddingHorizontal: 24, marginTop: 12, borderRadius: radius.sm },
-  retryText: { fontSize: 14, fontWeight: '800' },
-  scroll: { padding: space.xl, paddingBottom: 48 },
-  scoreSection: { marginBottom: space.xl },
-  scoreRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 6 },
-  scoreNumber: { fontSize: 72, fontWeight: '800', letterSpacing: -2, lineHeight: 74, fontVariant: ['tabular-nums'] },
-  scoreOutOf: { fontSize: 16, fontWeight: '700', marginBottom: 12 },
-  scoreLabel: { fontSize: 12, fontWeight: '700', letterSpacing: 1.6 },
-  summary: { fontSize: 15, lineHeight: 22, marginBottom: space.xl },
-  section: { marginBottom: space.xl },
-  sectionTitle: { fontSize: 12, fontWeight: '900', letterSpacing: 1.5, marginBottom: space.sm },
-  sectionHint: { fontSize: 12, marginBottom: space.md, lineHeight: 17 },
-  issueCard: { padding: space.lg, marginBottom: 10, borderWidth: 1, borderRadius: radius.md },
-  issueHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
-  severityDot: { width: 6, height: 6, borderRadius: 3 },
-  severityText: { fontSize: 10, fontWeight: '800', letterSpacing: 1.2 },
-  issueTitle: { fontSize: 17, fontWeight: '800', letterSpacing: -0.3, textTransform: 'capitalize', marginBottom: 5 },
-  issueDesc: { fontSize: 14, lineHeight: 20 },
-  focusKind: { fontSize: 10, fontWeight: '800', letterSpacing: 1.2, marginBottom: 6 },
-  focusDrill: { fontSize: 12, fontWeight: '600', marginTop: 6 },
-  // measurements breakdown
-  metricRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1 },
-  metricLeft: { flex: 1, gap: 2 },
-  metricLabel: { fontSize: 15, fontWeight: '700' },
-  metricTag: { fontSize: 11, fontWeight: '700', fontStyle: 'italic' },
-  metricRight: { alignItems: 'flex-end', gap: 1 },
-  metricValue: { fontSize: 18, fontWeight: '800' },
-  metricUnit: { fontSize: 12, fontWeight: '600' },
-  metricRange: { fontSize: 11 },
-  // approval gate
-  suggCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: space.lg, marginBottom: 10, borderWidth: 1, borderRadius: radius.md },
-  suggInfo: { flex: 1, paddingRight: space.md },
-  suggName: { fontSize: 15, fontWeight: '800' },
-  suggDate: { fontSize: 12, marginTop: 2 },
-  suggActions: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
-  iconBtn: { width: 40, height: 40, borderRadius: radius.sm, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  addBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 40, paddingHorizontal: space.lg, borderRadius: radius.sm },
-  addBtnText: { fontSize: 14, fontWeight: '800' },
-  approvedRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingVertical: space.sm },
-  approvedText: { fontSize: 13, fontWeight: '600' },
-  viewPlanBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderWidth: 1, borderRadius: radius.sm, paddingVertical: space.md, marginTop: space.sm },
-  viewPlanText: { fontSize: 14, fontWeight: '800' },
-  // fallback drills
-  drillItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, borderBottomWidth: 1 },
-  drillInfo: { flex: 1 },
-  drillName: { fontSize: 14, fontWeight: '700' },
-  drillVolume: { fontSize: 12, marginTop: 2 },
-  coachCta: { flexDirection: 'row', alignItems: 'center', padding: space.lg, borderRadius: radius.md, marginBottom: space.xl, borderWidth: 1 },
-  coachCtaContent: { flex: 1 },
-  coachCtaTitle: { fontSize: 15, fontWeight: '700' },
-  coachCtaSubtitle: { fontSize: 12, marginTop: 2 },
-  disclaimer: { fontSize: 11, textAlign: 'center' },
+  observatory: { borderRadius: radius.lg, overflow: 'hidden' }, observatoryCopy: { padding: space.xl, gap: space.lg },
+  film: { borderRadius: radius.md, overflow: 'hidden' }, filmHeader: { paddingHorizontal: space.lg, paddingTop: space.lg, paddingBottom: space.sm, flexDirection: 'row', justifyContent: 'space-between' },
+  reportRail: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: space.lg, paddingVertical: space.lg, borderBottomWidth: 0.5 },
+  observation: { paddingVertical: space.lg, borderBottomWidth: 0.5, gap: space.md },
+  observationHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
 });

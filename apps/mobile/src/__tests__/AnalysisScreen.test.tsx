@@ -9,10 +9,6 @@ jest.mock('expo-router', () => ({
   useRouter: () => ({ push: jest.fn() }),
 }));
 
-jest.mock('../store/useStrideStore', () => ({
-  useStrideStore: (selector: any) => selector({ token: 't', apiBaseUrl: 'http://localhost' }),
-}));
-
 jest.mock('../components/analysis/PoseVideoPlayer', () => ({
   PoseVideoPlayer: () => null,
 }));
@@ -27,6 +23,8 @@ jest.mock('../services/api', () => ({
     getSuggestions: (...args: unknown[]) => mockGetSuggestions(...args),
     approveSuggestion: (...args: unknown[]) => mockApprove(...args),
     skipSuggestion: (...args: unknown[]) => mockSkip(...args),
+    getProfile: jest.fn(async () => ({ is_injured: false })),
+    updateInjuryStatus: jest.fn(async (is_injured) => ({ is_injured })),
     videoFileUrl: async () => 'http://test/video.mp4',
   },
 }));
@@ -38,17 +36,22 @@ jest.mock('../lib/analysisApi', () => ({
 
 import { fireEvent } from '@testing-library/react-native';
 import AnalysisScreen from '../../app/(tabs)/analysis';
+import { strideApi } from '../services/api';
+import { useStrideStore } from '../store/useStrideStore';
 
 describe('AnalysisScreen', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockGetSuggestions.mockResolvedValue([]);
+    useStrideStore.setState({ isInjured: false });
   });
 
-  it('shows loading state initially', () => {
+  it('shows loading state initially', async () => {
     mockGetAnalysis.mockReturnValue(new Promise(() => {})); // never resolves
-    const { getByText } = render(<AnalysisScreen />);
+    const { getByText, unmount } = render(<AnalysisScreen />);
     expect(getByText('Loading...')).toBeTruthy();
+    await waitFor(() => expect(strideApi.getProfile).toHaveBeenCalled());
+    unmount();
   });
 
   it('shows failure state when analysis fails', async () => {
@@ -86,13 +89,23 @@ describe('AnalysisScreen', () => {
         captureQuality: { overall: 80, fps: 30, motionBlur: 'low', framing: 'full', perMetricUsable: {} },
       },
     });
-    const { getByText } = render(<AnalysisScreen />);
+    const { getByText, queryByText, getByTestId } = render(<AnalysisScreen />);
     await waitFor(() => expect(getByText('FORM SCORE')).toBeTruthy());
+    await waitFor(() => expect(getByText('A-Skips')).toBeTruthy());
     expect(getByText('Your form looks good overall.')).toBeTruthy();
-    expect(getByText('AREAS TO IMPROVE')).toBeTruthy();
+    expect(getByText('YOUR FILM')).toBeTruthy();
+    expect(queryByText('HOW IT SHOULD LOOK')).toBeNull();
+    expect(getByText('Not available')).toBeTruthy();
+    expect(getByText('Areas to improve')).toBeTruthy();
+    expect(getByText('MAJOR')).toBeTruthy();
     expect(getByText('low knee drive')).toBeTruthy();
+    expect(getByText('Cue: Drive knee high')).toBeTruthy();
     expect(getByText('A-Skips')).toBeTruthy();
     expect(getByText('Want personalized tips?')).toBeTruthy();
+    fireEvent.press(getByText('A-Skips'));
+    expect(getByText('Your next practice')).toBeTruthy();
+    fireEvent.press(getByTestId('drill-a_skips'));
+    expect(getByText(/Video demonstration is not available/)).toBeTruthy();
   });
 
   it('renders the drill suggestion approval gate and approves on tap', async () => {
@@ -113,11 +126,11 @@ describe('AnalysisScreen', () => {
     ]);
     mockApprove.mockResolvedValue({ ok: true });
 
-    const { getByText, getByLabelText } = render(<AnalysisScreen />);
+    const { getByText, getByTestId } = render(<AnalysisScreen />);
     await waitFor(() => expect(getByText('ADD TO YOUR PLAN')).toBeTruthy());
     // The approval gate is explicit, nothing is auto-scheduled.
     expect(getByText('Wicket runs')).toBeTruthy();
-    const addBtn = getByLabelText('add-to-plan-drill-wickets');
+    const addBtn = getByTestId('add-to-plan-drill-wickets');
     fireEvent.press(addBtn);
     await waitFor(() => expect(mockApprove).toHaveBeenCalledWith('s1'));
   });

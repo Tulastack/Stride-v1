@@ -1,12 +1,15 @@
 import React from 'react';
 import { Stack } from 'expo-router';
+import { useTheme } from '../../src/context/ThemeContext';
 
 export default function OnboardingLayout() {
+  const { colors, reduceMotion } = useTheme();
   return (
     <Stack
       screenOptions={{
         headerShown: false,
-        contentStyle: { backgroundColor: '#0B0D17' },
+        animation: reduceMotion ? 'none' : 'slide_from_right',
+        contentStyle: { backgroundColor: colors.bg },
       }}
     >
       <Stack.Screen name="consent" />

@@ -1,8 +1,10 @@
 import React from 'react';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
 import { Redirect } from 'expo-router';
 import { useStrideStore } from '../src/store/useStrideStore';
 import { useTheme } from '../src/context/ThemeContext';
+import { type as typo } from '../src/theme';
+import { StrideLogo } from '../src/ui/StrideLogo';
 
 export default function IndexRedirect() {
   const token = useStrideStore((state) => state.token);
@@ -14,7 +16,7 @@ export default function IndexRedirect() {
   if (!authHydrated) {
     return (
       <View style={[styles.center, { backgroundColor: colors.bg }]}>
-        <ActivityIndicator size="large" color={colors.accent} />
+        <StrideLogo height={40} /><ActivityIndicator color={colors.goldInk} /><Text accessibilityLiveRegion="polite" style={[typo.caption, { color: colors.muted }]}>Restoring your session</Text>
       </View>
     );
   }
@@ -28,5 +30,5 @@ export default function IndexRedirect() {
 }
 
 const styles = StyleSheet.create({
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 20 },
 });

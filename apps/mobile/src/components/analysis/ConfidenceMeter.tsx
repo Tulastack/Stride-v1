@@ -1,34 +1,12 @@
-// 3-bar confidence meter (PROMPT F.3-UI revised). Compact, mono-adjacent.
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
-import { semantic, spacing, typography } from '../../ui/theme';
+import { View, Text } from 'react-native';
+import { useTheme } from '../../context/ThemeContext';
+import { type as typo } from '../../theme';
 import { confidenceTier } from '../../types/analysis';
 
 export function ConfidenceMeter({ confidence, testID }: { confidence: number; testID?: string }) {
-  const tier = confidenceTier(confidence);
-  const lit = tier === 'high' ? 3 : tier === 'med' ? 2 : 1;
-  const color = tier === 'low' ? semantic.text.muted : semantic.action.primary;
-  return (
-    <View style={styles.row} testID={testID} accessibilityLabel={`confidence-${tier}`}>
-      <View style={styles.bars}>
-        {[0, 1, 2].map((i) => (
-          <View
-            key={i}
-            style={[
-              styles.bar,
-              { height: 6 + i * 4, backgroundColor: i < lit ? color : semantic.surface.sunken },
-            ]}
-          />
-        ))}
-      </View>
-      <Text style={[styles.pct, { color }]}>{Math.round(confidence * 100)}%</Text>
-    </View>
-  );
+  const { colors } = useTheme();
+  const value = Math.max(0, Math.min(1, Number.isFinite(confidence) ? confidence : 0));
+  const tier = confidenceTier(value);
+  return <View testID={testID} accessibilityLabel={`confidence-${tier}`} style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}><View style={{ width: 64, height: 3, backgroundColor: colors.border }}><View style={{ width: `${value * 100}%`, height: 3, backgroundColor: tier === 'low' ? colors.muted : colors.goldInk }} /></View><Text style={[typo.caption, { color: colors.muted, fontVariant: ['tabular-nums'] }]}>{Math.round(value * 100)}% confidence</Text></View>;
 }
-
-const styles = StyleSheet.create({
-  row: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.xs },
-  bars: { flexDirection: 'row', alignItems: 'flex-end', gap: 2 },
-  bar: { width: 4, borderRadius: 1 },
-  pct: { ...(typography.metricSmall as object), color: semantic.text.muted },
-});

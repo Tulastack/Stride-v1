@@ -1,48 +1,13 @@
-// Capture-quality card (PROMPT F.3-UI revised, task 3).
-// A single, calm line. Shows captureQuality.primaryNudge ONLY when present,
-// never nag when the capture is good.
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
-import { Camera, CheckCircle2 } from 'lucide-react-native';
-import { semantic, spacing, radius, borderWidth, typography } from '../../ui/theme';
+import { View, Text } from 'react-native';
+import { useTheme } from '../../context/ThemeContext';
+import { type as typo, space } from '../../theme';
 import type { CaptureQuality } from '../../types/analysis';
+import { Notice, SectionTitle } from '../../ui';
 
 export function CaptureQualityCard({ capture, testID }: { capture: CaptureQuality; testID?: string }) {
-  const hasNudge = typeof capture.primaryNudge === 'string' && capture.primaryNudge.length > 0;
-  return (
-    <View style={styles.card} testID={testID} accessibilityLabel="capture-quality-card">
-      <View style={styles.header}>
-        {hasNudge ? (
-          <Camera size={14} color={semantic.action.primary} />
-        ) : (
-          <CheckCircle2 size={14} color={semantic.status.improve} />
-        )}
-        <Text style={styles.title}>CAPTURE · {capture.fps}fps · {Math.round(capture.overall * 100)}%</Text>
-      </View>
-      {hasNudge ? (
-        <Text style={styles.nudge} accessibilityLabel="capture-nudge">
-          {capture.primaryNudge}
-        </Text>
-      ) : (
-        <Text style={styles.good} accessibilityLabel="capture-good">
-          Great angle, every metric on this run is trustworthy.
-        </Text>
-      )}
-    </View>
-  );
+  const { colors } = useTheme();
+  const usable = Object.values(capture.perMetricUsable ?? {}).filter(Boolean).length;
+  const total = Object.keys(capture.perMetricUsable ?? {}).length;
+  return <View testID={testID} accessibilityLabel="capture-quality-card" style={{ gap: space.md }}><SectionTitle>About this footage</SectionTitle><Text style={[typo.caption, { color: colors.muted }]}>{capture.fps} fps · {capture.framing === 'full' ? 'Full-body framing' : 'Partial framing'} · {capture.motionBlur} motion blur</Text><Notice>{capture.primaryNudge || (total ? `${usable} of ${total} readings pass the capture-quality check. Each metric still has its own confidence.` : 'Capture quality does not guarantee the reliability of every metric.')}</Notice></View>;
 }
-
-const styles = StyleSheet.create({
-  card: {
-    backgroundColor: semantic.surface.raised,
-    borderRadius: radius.sm,
-    borderWidth: borderWidth.hairline,
-    borderColor: semantic.border,
-    padding: spacing.lg,
-    gap: spacing.sm,
-  },
-  header: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  title: { ...(typography.caption as object), color: semantic.text.muted, letterSpacing: 1 },
-  nudge: { ...(typography.body as object), color: semantic.text.primary },
-  good: { ...(typography.body as object), color: semantic.text.secondary },
-});

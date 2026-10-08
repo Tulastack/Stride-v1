@@ -1,4 +1,4 @@
-appId: com.stride.mobile
+appId: com.stride.sprint
 name: "Consent Onboarding, cannot proceed without both checkboxes"
 ---
 # Fresh launch → register → consent screen
@@ -7,18 +7,22 @@ name: "Consent Onboarding, cannot proceed without both checkboxes"
 
 # Navigate to register (new user)
 - tapOn:
-    text: "Create Account"
-
-- inputText:
-    id: "email-input"
-    text: "e2e-test-user@stride.ai"
-
-- inputText:
-    id: "password-input"
-    text: "TestPassword123!"
+    id: "auth-alternate"
 
 - tapOn:
-    text: "Sign Up"
+    id: "email-input"
+
+- inputText: "e2e-test-user@stride.ai"
+
+- tapOn:
+    id: "password-input"
+
+- inputText: "TestPassword123!"
+
+- hideKeyboard
+
+- tapOn:
+    id: "auth-submit"
 
 # Consent screen should appear
 - assertVisible:
@@ -58,4 +62,4 @@ name: "Consent Onboarding, cannot proceed without both checkboxes"
 
 # Should advance to profile/welcome screen
 - assertVisible:
-    text: "Athlete Profile"
+    text: "Make it personal."

@@ -1,12 +1,13 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, Pressable, LayoutChangeEvent, PanResponder,
 } from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import Svg, { Polyline, Rect } from 'react-native-svg';
-import { Check } from 'lucide-react-native';
+import Slider from '@react-native-community/slider';
+import { Button, Notice } from '../ui';
 import { useTheme } from '../context/ThemeContext';
-import { space, radius, type as typo, iconStroke } from '../theme';
+import { space, radius, type as typo } from '../theme';
 
 type Pt = { x: number; y: number };
 
@@ -21,26 +22,45 @@ export function TargetSelect({
   videoHeight,
   onConfirm,
   onSkip,
+  onCancel,
 }: {
   uri: string;
   videoWidth?: number;
   videoHeight?: number;
   onConfirm: (target: { x0: number; y0: number; x1: number; y1: number; tMs: number }) => void;
   onSkip: () => void;
+  onCancel?: () => void;
 }) {
   const { colors } = useTheme();
   const player = useVideoPlayer(uri, (p) => { p.loop = false; p.muted = true; p.pause(); });
   const [layout, setLayout] = useState({ w: 0, h: 0 });
+  const [seekMs, setSeekMs] = useState(0);
+  const [durationMs, setDurationMs] = useState(0);
+  const [sourceSize, setSourceSize] = useState({ width: videoWidth, height: videoHeight });
+  const [previewError, setPreviewError] = useState(false);
   const [path, setPath] = useState<Pt[]>([]);
+
+  useEffect(() => {
+    const readSource = () => {
+      setDurationMs(player.duration * 1000);
+      const size = player.videoTrack?.size;
+      if (size?.width && size?.height) setSourceSize(size);
+    };
+    readSource();
+    const subscription = player.addListener?.('sourceLoad', readSource);
+    const trackSubscription = player.addListener?.('videoTrackChange', readSource);
+    const statusSubscription = player.addListener?.('statusChange', (event) => setPreviewError(event.status === 'error'));
+    return () => { subscription?.remove(); trackSubscription?.remove(); statusSubscription?.remove(); };
+  }, [player]);
 
   // Letterboxed content rect (contentFit="contain").
   const rect = useMemo(() => {
     const { w, h } = layout;
-    if (!w || !h || !videoWidth || !videoHeight) return { ox: 0, oy: 0, cw: w || 1, ch: h || 1 };
-    const va = videoWidth / videoHeight, wa = w / h;
+    if (!w || !h || !sourceSize.width || !sourceSize.height) return { ox: 0, oy: 0, cw: w || 1, ch: h || 1 };
+    const va = sourceSize.width / sourceSize.height, wa = w / h;
     if (va > wa) { const ch = w / va; return { ox: 0, oy: (h - ch) / 2, cw: w, ch }; }
     const cw = h * va; return { ox: (w - cw) / 2, oy: 0, cw, ch: h };
-  }, [layout, videoWidth, videoHeight]);
+  }, [layout, sourceSize]);
 
   const pan = useRef(
     PanResponder.create({
@@ -67,10 +87,12 @@ export function TargetSelect({
   ).current;
 
   const bbox = useMemo(() => {
-    if (path.length < 3) return null;
-    const xs = path.map((p) => p.x), ys = path.map((p) => p.y);
-    return { minx: Math.min(...xs), maxx: Math.max(...xs), miny: Math.min(...ys), maxy: Math.max(...ys) };
-  }, [path]);
+    if (path.length < 3 || !sourceSize.width || !sourceSize.height) return null;
+    const xs = path.map((point) => Math.max(rect.ox, Math.min(rect.ox + rect.cw, point.x)));
+    const ys = path.map((point) => Math.max(rect.oy, Math.min(rect.oy + rect.ch, point.y)));
+    const bounds = { minx: Math.min(...xs), maxx: Math.max(...xs), miny: Math.min(...ys), maxy: Math.max(...ys) };
+    return bounds.maxx - bounds.minx >= 8 && bounds.maxy - bounds.miny >= 8 ? bounds : null;
+  }, [path, rect, sourceSize]);
 
   const confirm = () => {
     if (!bbox) return;
@@ -80,7 +102,7 @@ export function TargetSelect({
       y0: c01((bbox.miny - rect.oy) / rect.ch),
       x1: c01((bbox.maxx - rect.ox) / rect.cw),
       y1: c01((bbox.maxy - rect.oy) / rect.ch),
-      tMs: 0,
+      tMs: seekMs,
     });
   };
 
@@ -88,10 +110,11 @@ export function TargetSelect({
 
   return (
     <View style={[styles.wrap, { backgroundColor: colors.bg }]}>
-      <Text style={[styles.title, { color: colors.text }]}>Trace the runner</Text>
+      <View style={{ gap: 4 }}><Text accessibilityRole="header" style={[typo.h2, { color: colors.text }]}>Choose your athlete.</Text><Text style={[typo.caption, { color: colors.muted }]}>Scrub to a clear frame, then trace around the runner.</Text></View>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}><Button label="Cancel" variant="quiet" onPress={onCancel} style={{ minHeight: 44, paddingVertical: 8 }} /><Button label="Clear trace" variant="quiet" disabled={!path.length} onPress={() => setPath([])} style={{ minHeight: 44, paddingVertical: 8 }} /></View>
 
       <View
-        style={[styles.frame, { backgroundColor: '#000', borderColor: colors.border }]}
+        style={[styles.frame, { backgroundColor: colors.well, borderColor: colors.border }]}
         onLayout={(e: LayoutChangeEvent) => setLayout({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}
         {...pan.panHandlers}
       >
@@ -113,32 +136,17 @@ export function TargetSelect({
         )}
       </View>
 
-      <View style={styles.actions}>
-        <Pressable onPress={onSkip} hitSlop={10} accessibilityLabel="target-skip">
-          <Text style={[styles.skip, { color: colors.muted }]}>Skip</Text>
-        </Pressable>
-        <Pressable
-          onPress={confirm}
-          disabled={!bbox}
-          style={[styles.analyze, { backgroundColor: colors.accent, opacity: bbox ? 1 : 0.35 }]}
-          accessibilityLabel="target-confirm"
-        >
-          <Check size={18} color={colors.accentText} strokeWidth={iconStroke + 0.5} />
-          <Text style={[styles.analyzeText, { color: colors.accentText }]}>Analyze</Text>
-        </Pressable>
-      </View>
+      {previewError ? <Notice tone="error">The preview could not load. Choose another clip or use automatic athlete selection.</Notice> : null}
+      <Slider accessibilityLabel="Preview frame" disabled={!durationMs} minimumValue={0} maximumValue={durationMs || 1} value={seekMs} minimumTrackTintColor={colors.goldInk} maximumTrackTintColor={colors.border} thumbTintColor={colors.goldInk} onSlidingComplete={(value: number) => { player.currentTime = value / 1000; setSeekMs(value); setPath([]); }} />
+      <View style={styles.actions}><Button label="Auto-select athlete" testID="target-skip" variant="secondary" onPress={onSkip} style={{ flex: 1 }} /><Button label="Analyze" testID="target-confirm" disabled={!bbox} onPress={confirm} style={{ flex: 1 }} /></View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  wrap: { ...StyleSheet.absoluteFill, padding: space.lg, gap: space.md, justifyContent: 'center', zIndex: 10 },
-  title: { ...typo.h2, textAlign: 'center' },
-  frame: { width: '100%', aspectRatio: 9 / 16, maxHeight: 540, alignSelf: 'center', borderRadius: radius.md, borderWidth: 1, overflow: 'hidden' },
+  wrap: { flex: 1, padding: space.lg, gap: space.sm, maxWidth: 640, width: '100%', alignSelf: 'center' },
+  frame: { flex: 1, minHeight: 100, width: '100%', borderRadius: radius.md, overflow: 'hidden' },
   hintWrap: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'flex-end', paddingBottom: space.lg },
-  hint: { ...typo.caption, paddingHorizontal: space.md, paddingVertical: space.sm, borderRadius: radius.pill, overflow: 'hidden' },
-  actions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: space.sm },
-  skip: { ...typo.body },
-  analyze: { flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingHorizontal: space.xl, paddingVertical: space.md, borderRadius: radius.pill },
-  analyzeText: { ...typo.body, fontWeight: '700' },
+  hint: { ...typo.caption, paddingHorizontal: space.md, paddingVertical: space.sm, borderRadius: radius.sm, overflow: 'hidden' },
+  actions: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
 });

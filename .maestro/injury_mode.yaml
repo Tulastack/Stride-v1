@@ -1,23 +1,33 @@
-appId: com.stride.mobile
+appId: com.stride.sprint
 name: "I am injured today, recovery-only view shown, no sprint drills"
 ---
 - launchApp
 
 # Sign in as pre-consented test user with a completed analysis
-- inputText:
+- tapOn:
     id: "email-input"
-    text: "consented-user@stride.ai"
 
-- inputText:
+- inputText: "consented-user@stride.ai"
+
+- tapOn:
     id: "password-input"
-    text: "TestPassword123!"
+
+- inputText: "TestPassword123!"
+
+- hideKeyboard
 
 - tapOn:
-    text: "Sign In"
+    id: "auth-submit"
 
-# Navigate to Analysis tab
 - tapOn:
-    id: "tab-analysis"
+    id: "tab-progress"
+
+- tapOn:
+    id: "progress-log-.*"
+    index: 0
+
+- tapOn:
+    text: "Open full analysis"
 
 # Injury toggle should be visible
 - assertVisible:
@@ -37,8 +47,14 @@ name: "I am injured today, recovery-only view shown, no sprint drills"
 
 # Verify recovery text
 - assertVisible:
-    text: "Recovery Mode"
+    text: "Recovery Mode.*"
 
 # Sprint drills should NOT be offered (no corrective drill section)
 - assertNotVisible:
-    text: "Corrective Drills Prescribed"
+    id: "add-to-plan-.*"
+
+- tapOn:
+    text: "Practice"
+
+- assertNotVisible:
+    id: "drill-.*"

@@ -1,0 +1,97 @@
+appId: com.stride.sprint
+name: Shared redesign screenshot route review
+tags:
+  - visual-review-helper
+---
+- tapOn:
+    id: tab-capture
+- takeScreenshot: ${THEME}-capture
+- scrollUntilVisible:
+    element:
+      text: How to film a useful sprint
+    direction: DOWN
+- tapOn:
+    text: How to film a useful sprint
+- takeScreenshot: ${THEME}-capture-guide
+- tapOn:
+    text: Close sheet
+- tapOn:
+    id: tab-progress
+- extendedWaitUntil:
+    notVisible: Loading your movement history…
+    timeout: 30000
+- takeScreenshot: ${THEME}-progress
+- runFlow:
+    when:
+      visible:
+        id: progress-log-.*
+    commands:
+      - tapOn:
+          id: progress-log-.*
+          index: 0
+      - takeScreenshot: ${THEME}-session-detail
+      - tapOn:
+          text: Open full analysis
+      - extendedWaitUntil:
+          visible: Your stride, understood.
+          timeout: 180000
+      - takeScreenshot: ${THEME}-analysis-overview
+      - tapOn:
+          text: Measurements
+      - takeScreenshot: ${THEME}-analysis-measurements
+      - tapOn:
+          text: Practice
+      - takeScreenshot: ${THEME}-analysis-practice
+- tapOn:
+    id: tab-coach
+- extendedWaitUntil:
+    notVisible: Loading your latest movement report…
+    timeout: 30000
+- takeScreenshot: ${THEME}-coach-home
+- scrollUntilVisible:
+    element:
+      text: Ask your coach
+    direction: DOWN
+- tapOn:
+    text: Ask your coach
+- takeScreenshot: ${THEME}-coach-conversation
+- tapOn:
+    text: Close sheet
+- tapOn:
+    id: tab-plan
+- runFlow:
+    when:
+      visible: Review later
+    commands:
+      - takeScreenshot: ${THEME}-plan-review
+      - tapOn: Review later
+- extendedWaitUntil:
+    notVisible: Loading scheduled sessions…
+    timeout: 30000
+- takeScreenshot: ${THEME}-plan-today
+- scrollUntilVisible:
+    element:
+      text: View monthly calendar
+    direction: DOWN
+- tapOn: View monthly calendar
+- takeScreenshot: ${THEME}-plan-month
+- tapOn:
+    id: tab-settings
+- takeScreenshot: ${THEME}-settings
+- tapOn: Edit athlete profile
+- takeScreenshot: ${THEME}-profile-edit
+- tapOn: Close sheet
+- scrollUntilVisible:
+    element:
+      text: Privacy Policy
+    direction: DOWN
+- tapOn: Privacy Policy
+- takeScreenshot: ${THEME}-privacy-reader
+- tapOn: Close sheet
+- scrollUntilVisible:
+    element:
+      text: Sign out
+    direction: DOWN
+- tapOn: Sign out
+- takeScreenshot: ${THEME}-sign-out-confirmation
+- tapOn: Stay signed in

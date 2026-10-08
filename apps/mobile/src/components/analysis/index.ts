@@ -1,6 +1,6 @@
-export { FlawCard } from './FlawCard';
 export { DrillCard } from './DrillCard';
 export { MetricRow } from './MetricRow';
-export { ConfidenceMeter } from './ConfidenceMeter';
-export { ComparableBadge } from './ComparableBadge';
 export { CaptureQualityCard } from './CaptureQualityCard';
+export { ConfidenceMeter } from './ConfidenceMeter';
+export { PoseVideoPlayer } from './PoseVideoPlayer';
+export { PoseSnapshot } from './PoseSnapshot';

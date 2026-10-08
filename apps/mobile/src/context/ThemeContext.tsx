@@ -1,34 +1,60 @@
-import React, { createContext, useContext, useMemo, useState } from 'react';
-import { palettes, type Mode, type Palette } from '../theme';
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { AccessibilityInfo, useColorScheme } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { palettes, type Mode, type Palette, type Appearance } from '../theme';
 
 interface ThemeContextValue {
   mode: Mode;
   colors: Palette;
-  setMode: (m: Mode) => void;
+  appearance: Appearance;
+  setMode: (mode: Mode) => void;
   toggleMode: () => void;
+  setAppearance: (appearance: Appearance) => void;
+  reduceMotion: boolean;
+  setReduceMotion: (value: boolean) => void;
 }
 
-// Safe default so a screen rendered outside the provider (e.g. in isolation
-// under a unit test, or during an early mount) falls back to the light palette
-// instead of hard-crashing. The real app always mounts <ThemeProvider>.
-const DEFAULT_THEME: ThemeContextValue = {
-  mode: 'light',
-  colors: palettes.light,
-  setMode: () => {},
-  toggleMode: () => {},
-};
-
-const ThemeContext = createContext<ThemeContextValue>(DEFAULT_THEME);
+const ThemeContext = createContext<ThemeContextValue>({
+  mode: 'light', colors: palettes.light, appearance: 'system',
+  setMode: () => {}, toggleMode: () => {}, setAppearance: () => {},
+  reduceMotion: false, setReduceMotion: () => {},
+});
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [mode, setMode] = useState<Mode>('light');
+  const systemMode = useColorScheme();
+  const [appearance, updateAppearance] = useState<Appearance>('system');
+  const [reduceMotion, updateReduceMotion] = useState(false);
+  const [systemReduceMotion, setSystemReduceMotion] = useState(false);
+  const mode: Mode = appearance === 'system' ? (systemMode === 'dark' ? 'dark' : 'light') : appearance;
 
-  const value = useMemo<ThemeContextValue>(() => ({
-    mode,
-    colors: palettes[mode],
-    setMode,
-    toggleMode: () => setMode((m) => (m === 'light' ? 'dark' : 'light')),
-  }), [mode]);
+  useEffect(() => {
+    let active = true;
+    AsyncStorage.multiGet(['stride.appearance', 'stride.reduceMotion']).then(([savedAppearance, savedMotion]) => {
+      if (!active) return;
+      if (['light', 'dark', 'system'].includes(savedAppearance[1] ?? '')) updateAppearance(savedAppearance[1] as Appearance);
+      updateReduceMotion(savedMotion[1] === 'true');
+    }).catch(() => {});
+    AccessibilityInfo.isReduceMotionEnabled().then((value) => { if (active) setSystemReduceMotion(value); }).catch(() => {});
+    const subscription = AccessibilityInfo.addEventListener('reduceMotionChanged', setSystemReduceMotion);
+    return () => { active = false; subscription.remove(); };
+  }, []);
+
+  const value = useMemo<ThemeContextValue>(() => {
+    const setAppearance = (next: Appearance) => {
+      updateAppearance(next);
+      AsyncStorage.setItem('stride.appearance', next).catch(() => {});
+    };
+    return {
+      mode, colors: palettes[mode], appearance, setAppearance,
+      setMode: setAppearance,
+      toggleMode: () => setAppearance(mode === 'light' ? 'dark' : 'light'),
+      reduceMotion: reduceMotion || systemReduceMotion,
+      setReduceMotion: (next) => {
+        updateReduceMotion(next);
+        AsyncStorage.setItem('stride.reduceMotion', String(next)).catch(() => {});
+      },
+    };
+  }, [mode, appearance, reduceMotion, systemReduceMotion]);
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }

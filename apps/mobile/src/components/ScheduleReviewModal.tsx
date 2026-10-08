@@ -1,141 +1,24 @@
-// Calendar approval gate (PROMPT F.7). Shows the PROPOSED schedule; the user can
-// remove sessions; NOTHING is written until the explicit "Add to calendar" tap.
-// No auto-sync, no write on analysis completion.
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, Modal, Pressable, ScrollView } from 'react-native';
-import { Check, Trash2 } from 'lucide-react-native';
-import { semantic, spacing, radius, borderWidth, typography } from '../ui/theme';
+import React, { useEffect, useState } from 'react';
+import { View, Text } from 'react-native';
+import { Trash2 } from 'lucide-react-native';
+import { useTheme } from '../context/ThemeContext';
+import { type as typo } from '../theme';
+import { Sheet, SheetScroll, Button, Notice, IconButton } from '../ui';
 import type { DrillRec } from '../types/analysis';
 import { generateProposal, type ProposedSession } from '../lib/proposal';
 
-export function ScheduleReviewModal({
-  visible,
-  focus,
-  startDate,
-  onApprove,
-  onClose,
-}: {
-  visible: boolean;
-  focus: DrillRec | null;
-  startDate: string;
-  /** Called ONLY on explicit approval. This is the single write path. */
-  onApprove: (sessions: ProposedSession[]) => Promise<void> | void;
-  onClose: () => void;
-}) {
+export function ScheduleReviewModal({ visible, focus, startDate, onApprove, onClose }: { visible: boolean; focus: DrillRec | null; startDate: string; onApprove: (sessions: ProposedSession[]) => Promise<void> | void; onClose: () => void }) {
+  const { colors } = useTheme();
   const [sessions, setSessions] = useState<ProposedSession[]>([]);
   const [committing, setCommitting] = useState(false);
-
-  // (Re)build the proposal when opened. Building is pure, no write.
-  React.useEffect(() => {
-    if (visible && focus) setSessions(generateProposal(focus, startDate));
-  }, [visible, focus, startDate]);
-
-  const remove = (id: string) => setSessions((s) => s.filter((x) => x.id !== id));
-
+  const [error, setError] = useState('');
+  useEffect(() => { if (visible && focus) { setSessions(generateProposal(focus, startDate)); setError(''); } }, [visible, focus, startDate]);
   const approve = async () => {
-    setCommitting(true);
-    await onApprove(sessions);
-    setCommitting(false);
-    onClose();
+    if (!sessions.length || committing) return;
+    setCommitting(true); setError('');
+    try { await onApprove(sessions); onClose(); }
+    catch { setError('Could not add these sessions. Your edits are kept here for retry.'); }
+    finally { setCommitting(false); }
   };
-
-  return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.overlay}>
-        <View style={styles.sheet} accessibilityLabel="schedule-review-modal">
-          {/* "Not now" at the foot of the sheet is the close. An X up here as
-              well just gives the same action two places to live. */}
-          <View style={styles.header}>
-            <Text style={styles.title}>Review your plan</Text>
-          </View>
-          <Text style={styles.subtitle}>
-            Nothing is added to your calendar until you tap Add. Edit or remove sessions first.
-          </Text>
-
-          <ScrollView style={styles.list}>
-            {sessions.map((s) => (
-              <View key={s.id} style={styles.row} accessibilityLabel={`proposed-${s.id}`}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.rowTitle}>{s.title}</Text>
-                  <Text style={styles.rowMeta}>
-                    {s.scheduledDate} · {s.sets}×{s.reps}
-                  </Text>
-                </View>
-                <Pressable onPress={() => remove(s.id)} testID={`remove-${s.id}`} accessibilityLabel={`remove-${s.id}`}>
-                  <Trash2 size={16} color={semantic.status.flaw} />
-                </Pressable>
-              </View>
-            ))}
-            {sessions.length === 0 ? <Text style={styles.empty}>No sessions. Nothing will be added.</Text> : null}
-          </ScrollView>
-
-          <View style={styles.actions}>
-            <Pressable style={styles.decline} onPress={onClose} testID="review-decline" accessibilityLabel="review-decline">
-              <Text style={styles.declineText}>Not now</Text>
-            </Pressable>
-            <Pressable
-              style={[styles.approve, sessions.length === 0 && styles.approveDisabled]}
-              onPress={approve}
-              disabled={sessions.length === 0 || committing}
-              testID="review-approve"
-              accessibilityLabel="review-approve"
-            >
-              <Check size={16} color={semantic.text.onSignal} />
-              <Text style={styles.approveText}>Add to calendar</Text>
-            </Pressable>
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
+  return <Sheet visible={visible} title="Review your plan" onClose={() => { if (!committing) onClose(); }}><View accessibilityLabel="schedule-review-modal" style={{ gap: 16 }}><Text style={[typo.body, { color: colors.muted }]}>Nothing is added until you approve. Remove any sessions that do not fit.</Text><SheetScroll style={{ maxHeight: 280 }}>{sessions.map((session) => <View key={session.id} accessibilityLabel={`proposed-${session.id}`} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 12, gap: 12, borderBottomWidth: 0.5, borderColor: colors.border }}><View style={{ flex: 1 }}><Text style={[typo.bodyMedium, { color: colors.text }]}>{session.title}</Text><Text style={[typo.caption, { color: colors.muted }]}>{session.scheduledDate} · {session.sets} × {session.reps}</Text></View><Button label="Remove" testID={`remove-${session.id}`} accessibilityLabel={`remove-${session.id}`} variant="quiet" disabled={committing} onPress={() => setSessions((previous) => previous.filter((item) => item.id !== session.id))} /></View>)}</SheetScroll>{!sessions.length ? <Notice>No sessions. Nothing will be added.</Notice> : null}{error ? <Notice tone="error">{error}</Notice> : null}<Button label="Add to calendar" testID="review-approve" accessibilityLabel="review-approve" disabled={!sessions.length} loading={committing} onPress={approve} /><Button label="Not now" testID="review-decline" accessibilityLabel="review-decline" disabled={committing} variant="quiet" onPress={onClose} /></View></Sheet>;
 }
-
-const styles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(14,15,18,0.82)', justifyContent: 'center', padding: spacing.xl },
-  sheet: {
-    backgroundColor: semantic.surface.overlay,
-    borderRadius: radius.md,
-    borderWidth: borderWidth.hairline,
-    borderColor: semantic.border,
-    padding: spacing.xl,
-    gap: spacing.md,
-    maxHeight: '80%',
-  },
-  header: { flexDirection: 'row', alignItems: 'center' },
-  title: { ...(typography.title as object), color: semantic.text.primary },
-  subtitle: { ...(typography.caption as object), color: semantic.text.muted },
-  list: { maxHeight: 280 },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    paddingVertical: spacing.md,
-    borderBottomWidth: borderWidth.hairline,
-    borderBottomColor: semantic.border,
-  },
-  rowTitle: { ...(typography.bodyStrong as object), color: semantic.text.primary },
-  rowMeta: { ...(typography.caption as object), color: semantic.text.muted },
-  empty: { ...(typography.body as object), color: semantic.text.muted, paddingVertical: spacing.lg },
-  actions: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.sm },
-  decline: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: spacing.md,
-    borderRadius: radius.sm,
-    borderWidth: borderWidth.hairline,
-    borderColor: semantic.border,
-  },
-  declineText: { ...(typography.bodyStrong as object), color: semantic.text.secondary },
-  approve: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.xs,
-    paddingVertical: spacing.md,
-    borderRadius: radius.sm,
-    backgroundColor: semantic.action.primary,
-  },
-  approveDisabled: { opacity: 0.4 },
-  approveText: { ...(typography.bodyStrong as object), color: semantic.text.onSignal },
-});

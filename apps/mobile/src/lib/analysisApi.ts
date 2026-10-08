@@ -40,7 +40,11 @@ export async function fetchAnalysisHistory(): Promise<AnalysisResult[]> {
   for (const row of rows) {
     if (row.status !== 'completed') continue;
     const result = parseAnalysisResult(row);
-    if (result) results.push({ ...result, id: result.id || row.id });
+    // The engine stores a short clip label inside result_json.id
+    // (`analysis-` plus 8 characters). The database id is the one every
+    // /videos/:id route expects. Preferring the label makes Postgres reject
+    // the request as an invalid identifier.
+    if (result && row.id) results.push({ ...result, id: row.id, createdAt: result.createdAt || row.created_at || '' });
   }
   results.sort((a, b) => {
     const ta = a.createdAt ?? '';
@@ -80,7 +84,7 @@ export async function waitForAnalysisResult(
       if (!result) {
         return { status: 'failed', error: 'Completed analysis missing a valid result' };
       }
-      return { status: 'completed', result };
+      return { status: 'completed', result: { ...result, id: row.id || result.id } };
     }
     await new Promise((r) => setTimeout(r, intervalMs));
   }

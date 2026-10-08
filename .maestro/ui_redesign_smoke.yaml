@@ -1,0 +1,38 @@
+appId: com.stride.sprint
+name: Stride redesign light and dark visual review
+tags:
+  - visual-review
+---
+- launchApp:
+    clearState: true
+- tapOn:
+    id: email-input
+- inputText: ${EMAIL}
+- tapOn:
+    id: password-input
+- inputText: ${PASSWORD}
+- hideKeyboard
+- tapOn:
+    id: auth-submit
+- extendedWaitUntil:
+    visible:
+      id: tab-settings
+    timeout: 30000
+- tapOn:
+    id: tab-settings
+- tapOn:
+    id: appearance-light
+- runFlow:
+    file: flows/ui_review_routes.yaml
+    env:
+      THEME: light
+- scrollUntilVisible:
+    element:
+      id: appearance-dark
+    direction: UP
+- tapOn:
+    id: appearance-dark
+- runFlow:
+    file: flows/ui_review_routes.yaml
+    env:
+      THEME: dark
