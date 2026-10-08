@@ -52,10 +52,10 @@ eas build --platform ios --profile production --auto-submit
 ```
 
 Sign in with the Apple ID that owns the developer account when asked, and let EAS
-create the certificate, provisioning profile and App Store Connect app. If it says
-the bundle ID `com.stride.sprint` is taken, change `ios.bundleIdentifier` in
-`app.json` (e.g. `com.<yourllc>.stride`) and run it again. Build numbers increase
-automatically.
+create the certificate, provisioning profile and App Store Connect app. The bundle
+ID is `com.stridebiometrics.stride`; it becomes permanent after the first upload,
+so change `ios.bundleIdentifier` in `app.json` before then if you want a different
+one. Build numbers increase automatically.
 
 ## 5. Testers
 

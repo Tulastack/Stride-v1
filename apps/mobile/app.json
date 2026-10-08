@@ -8,7 +8,7 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.stride.sprint",
+      "bundleIdentifier": "com.stridebiometrics.stride",
       "buildNumber": "1",
       "infoPlist": {
         "NSCameraUsageDescription": "Stride records sprint videos to analyze your running form.",
@@ -23,7 +23,7 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#18221F"
       },
-      "package": "com.stride.sprint"
+      "package": "com.stridebiometrics.stride"
     },
     "web": {
       "favicon": "./assets/favicon.png"

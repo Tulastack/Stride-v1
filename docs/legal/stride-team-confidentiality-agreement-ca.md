@@ -1,9 +1,9 @@
-# STRIDE BIOMECHANICS, LLC
+# STRIDE BIOMETRICS, LLC
 # CONFIDENTIALITY AND NON-DISCLOSURE AGREEMENT
 
 **California — Prospective and Current Team Members**
 
-This Confidentiality and Non-Disclosure Agreement (this **“Agreement”**) is entered into between **Stride Biomechanics, LLC** (the **“Company”**) and the individual identified as **“Recipient”** in the signature block below. This Agreement is effective on the date of the last signature below (the **“Effective Date”**).
+This Confidentiality and Non-Disclosure Agreement (this **“Agreement”**) is entered into between **Stride Biometrics, LLC** (the **“Company”**) and the individual identified as **“Recipient”** in the signature block below. This Agreement is effective on the date of the last signature below (the **“Effective Date”**).
 
 ## BACKGROUND
 
@@ -142,7 +142,7 @@ Recipient may not assign this Agreement without the Company’s prior written co
 
 Recipient acknowledges having read and understood this Agreement and having had an opportunity to consult independent legal counsel before signing.
 
-### STRIDE BIOMECHANICS, LLC
+### STRIDE BIOMETRICS, LLC
 
 By (signature): ______________________________________________
 

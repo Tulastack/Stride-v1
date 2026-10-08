@@ -18,7 +18,7 @@ const src = readFileSync(join(root, 'apps/mobile/src/content/legal.ts'), 'utf8')
 const js = ts.transpileModule(src, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
 const mod = { exports: {} };
 new Function('module', 'exports', js)(mod, mod.exports);
-const { TERMS_AND_CONDITIONS, PRIVACY_POLICY, LEGAL_CONTACT_EMAIL } = mod.exports;
+const { TERMS_AND_CONDITIONS, PRIVACY_POLICY, LEGAL_CONTACT_EMAIL, LEGAL_ENTITY } = mod.exports;
 
 const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const linkEmail = (s) => esc(s).replace(esc(LEGAL_CONTACT_EMAIL), `<a href="mailto:${LEGAL_CONTACT_EMAIL}">${LEGAL_CONTACT_EMAIL}</a>`);
@@ -39,11 +39,11 @@ footer{border-top:1px solid var(--rule);margin-top:48px;padding-top:16px;color:v
 </style></head><body><main>
 <nav><a href="../privacy/">Privacy</a><a href="../terms/">Terms</a><a href="../support/">Support</a></nav>
 ${body}
-<footer>Stride · Last updated ${updated}</footer>
+<footer>© ${new Date().getFullYear()} ${esc(LEGAL_ENTITY)} · Last updated ${updated}</footer>
 </main></body></html>
 `;
 
-const doc = (d) => page(d.title, `<h1>${esc(d.title)}</h1><p class="meta">Applies to the Stride iOS app.</p>\n` +
+const doc = (d) => page(d.title, `<h1>${esc(d.title)}</h1><p class="meta">Applies to the Stride iOS app, operated by ${esc(LEGAL_ENTITY)}.</p>\n` +
   d.sections.map((s) => `<h2>${esc(s.heading)}</h2>\n<p>${linkEmail(s.body)}</p>`).join('\n'));
 
 const support = page('Support', `<h1>Stride Support</h1>

@@ -3,6 +3,7 @@
 // public release. Keep the structure (title + sections) so the UI needs no changes.
 
 export const LEGAL_CONTACT_EMAIL = 'adhibanarul@gmail.com';
+export const LEGAL_ENTITY = 'Stride Biometrics, LLC';
 
 export interface LegalSection {
   heading: string;
@@ -20,7 +21,7 @@ export const TERMS_AND_CONDITIONS: LegalDoc = {
     {
       heading: '1. About Stride',
       body:
-        'Stride is an AI-powered sprint coaching app. You record or import short sprint videos, and Stride analyzes your running form to give coaching feedback, drill suggestions, and training plans.',
+        `Stride is an AI-powered sprint coaching app operated by ${LEGAL_ENTITY} ("we" or "us"). You record or import short sprint videos, and Stride analyzes your running form to give coaching feedback, drill suggestions, and training plans.`,
     },
     {
       heading: '2. Not Medical Advice',
@@ -55,7 +56,7 @@ export const PRIVACY_POLICY: LegalDoc = {
     {
       heading: '1. Data We Collect',
       body:
-        'We collect the sprint videos you record or import, biometric motion data derived from them (body keypoints, joint angles, stride metrics), device motion-sensor data captured during recording (gyroscope and accelerometer), and your account profile (email, display name, event specialty, experience level, personal bests).',
+        `${LEGAL_ENTITY} ("we") operates Stride. We collect the sprint videos you record or import, biometric motion data derived from them (body keypoints, joint angles, stride metrics), device motion-sensor data captured during recording (gyroscope and accelerometer), and your account profile (email, display name, event specialty, experience level, personal bests).`,
     },
     {
       heading: '2. How We Use It',
