@@ -130,6 +130,13 @@ resource "aws_lb_listener" "https" {
     type             = "forward"
     target_group_arn = aws_lb_target_group.api.arn
   }
+
+  lifecycle {
+    precondition {
+      condition     = var.api_domain != ""
+      error_message = "Set api_domain (the hostname on the certificate) whenever acm_certificate_arn is set; the ML worker calls the API by that name."
+    }
+  }
 }
 
 # ─── CloudWatch Alarm: Unhealthy Targets ───────────────────────────

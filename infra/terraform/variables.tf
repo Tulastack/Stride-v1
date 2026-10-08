@@ -38,6 +38,12 @@ variable "acm_certificate_arn" {
   default     = ""
 }
 
+variable "api_domain" {
+  description = "Public hostname the ACM certificate covers and DNS points at the ALB (e.g. api.strideforrunners.com). Required when acm_certificate_arn is set."
+  type        = string
+  default     = ""
+}
+
 variable "alert_email" {
   description = "Email address subscribed to the stride-alerts SNS topic (CloudWatch alarms). Empty = alarms fire into the void."
   type        = string

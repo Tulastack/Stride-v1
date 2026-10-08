@@ -3,19 +3,29 @@
 Everything in code is set up (`apps/mobile/app.json`, `apps/mobile/eas.json`).
 What's left needs your accounts, so only you can do it.
 
-## 1. Make the backend reachable over HTTPS (blocker)
+## 1. Put the API on https://api.strideforrunners.com (blocker)
 
-Release iOS builds refuse plain `http://`. The API is on
-`http://stride-alb-1962699315.us-east-1.elb.amazonaws.com`, so a TestFlight build
-can't talk to it.
+Release iOS builds refuse plain `http://`, and the API currently answers only on
+`http://stride-alb-1962699315.us-east-1.elb.amazonaws.com`.
 
-1. Pick a subdomain you own, e.g. `api.<your-llc-domain>`.
-2. AWS Console → Certificate Manager (us-east-1) → Request a public certificate
-   for it, validate by DNS.
-3. Set `acm_certificate_arn` in `infra/terraform/terraform.tfvars` and run
-   `terraform apply`. That adds the 443 listener and redirects HTTP to HTTPS.
-4. At your DNS provider, CNAME `api.<domain>` to the ALB hostname.
-5. Check: `curl https://api.<domain>/health`.
+1. **Request the certificate.** AWS Console, region **us-east-1** → Certificate
+   Manager → Request → Public certificate → domain `api.strideforrunners.com` →
+   DNS validation.
+2. **Validate it.** ACM shows a CNAME (name starts with `_`, value ends in
+   `.acm-validations.aws.`). Add that record wherever strideforrunners.com's DNS is
+   managed (the registrar, or Vercel → Domains if the site's DNS lives there).
+   Wait until ACM says **Issued**, usually 5–30 minutes.
+3. **Point the name at the load balancer.** Add a second record at the same DNS host:
+   `CNAME  api  →  stride-alb-1962699315.us-east-1.elb.amazonaws.com`
+4. **Attach it.** In `infra/terraform/terraform.tfvars`:
+   ```hcl
+   acm_certificate_arn = "arn:aws:acm:us-east-1:442004016139:certificate/<id from step 1>"
+   api_domain          = "api.strideforrunners.com"
+   ```
+   Then `cd infra/terraform && terraform plan` (expect a new HTTPS listener, the HTTP
+   listener switching to a redirect, and the worker's `API_SERVER_URL` changing) and
+   `terraform apply`.
+5. **Check:** `curl https://api.strideforrunners.com/health` returns 200.
 
 ## 2. Set the build's environment variables (once)
 
@@ -25,7 +35,7 @@ Run these from `apps/mobile`:
 npm install -g eas-cli
 eas login
 eas init                       # links the project, writes the projectId into app.json
-eas env:create --environment production --name EXPO_PUBLIC_API_BASE_URL --value https://api.<domain> --visibility plaintext
+eas env:create --environment production --name EXPO_PUBLIC_API_BASE_URL --value https://api.strideforrunners.com --visibility plaintext
 eas env:create --environment production --name EXPO_PUBLIC_SUPABASE_URL --value https://<project>.supabase.co --visibility plaintext
 eas env:create --environment production --name EXPO_PUBLIC_SUPABASE_ANON_KEY --value <anon/publishable key> --visibility plaintext
 ```
@@ -33,16 +43,21 @@ eas env:create --environment production --name EXPO_PUBLIC_SUPABASE_ANON_KEY --v
 Only the **anon / publishable** Supabase key goes here. Never the service_role key
 or the JWT secret: anything `EXPO_PUBLIC_*` ships inside the app.
 
-## 3. Host the privacy and support pages
+## 3. Host the app's privacy and support pages
 
-GitHub → Stride-v1 → Settings → Pages → Deploy from branch `main`, folder `/docs`.
-The URLs become:
+strideforrunners.com/privacy covers **the website's waitlist only** (it says so),
+so it can't be the app's privacy URL. Its footer also says "Stride Biomechanics";
+the registered name is Stride Biometrics, LLC.
+
+Quickest: GitHub → Stride-v1 → Settings → Pages → Deploy from branch `main`,
+folder `/docs`. Use these in App Store Connect:
 
 - Privacy: `https://tulastack.github.io/Stride-v1/privacy/`
 - Support: `https://tulastack.github.io/Stride-v1/support/`
 
-After editing `apps/mobile/src/content/legal.ts`, run
-`node scripts/build-legal-pages.mjs` so the website matches the app.
+Later you can copy `docs/privacy`, `docs/terms` and `docs/support` into the website
+(e.g. `strideforrunners.com/app/privacy`) and swap the URLs. After editing
+`apps/mobile/src/content/legal.ts`, run `node scripts/build-legal-pages.mjs`.
 
 ## 4. Build and upload (after Apple approves the developer account)
 

@@ -142,8 +142,10 @@ resource "aws_ecs_task_definition" "ml_worker" {
         { name = "NODE_ENV", value = "production" },
         { name = "S3_BUCKET", value = aws_s3_bucket.videos.id },
         { name = "SQS_QUEUE_URL", value = aws_sqs_queue.analysis.url },
-        # Uses HTTPS automatically once acm_certificate_arn is set (see alb.tf).
-        { name = "API_SERVER_URL", value = var.acm_certificate_arn != "" ? "https://${aws_lb.api.dns_name}" : "http://${aws_lb.api.dns_name}" },
+        # Once the cert is attached, call the API by the name on the certificate:
+        # the ALB's own hostname would fail TLS verification, and plain HTTP now
+        # 301s, which turns the worker's POST callbacks into GETs.
+        { name = "API_SERVER_URL", value = var.acm_certificate_arn != "" ? "https://${var.api_domain}" : "http://${aws_lb.api.dns_name}" },
         { name = "AWS_REGION", value = var.aws_region },
         { name = "SENTRY_DSN", value = var.sentry_dsn_worker },
         { name = "DSQL_ENDPOINT", value = aws_dsql_cluster.main.endpoint },
