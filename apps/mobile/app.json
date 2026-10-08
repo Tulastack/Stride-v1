@@ -7,14 +7,15 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "supportsTablet": true,
+      "supportsTablet": false,
       "bundleIdentifier": "com.stride.sprint",
       "buildNumber": "1",
       "infoPlist": {
         "NSCameraUsageDescription": "Stride records sprint videos to analyze your running form.",
         "NSMicrophoneUsageDescription": "Audio is captured with your sprint videos.",
         "NSPhotoLibraryUsageDescription": "Choose an existing sprint video from your library to analyze.",
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSMotionUsageDescription": "Stride reads your phone's motion sensors while recording so it can measure your angles against true vertical."
       }
     },
     "android": {
@@ -29,6 +30,12 @@
     },
     "plugins": [
       "expo-router",
+      [
+        "expo-sensors",
+        {
+          "motionPermission": "Stride reads your phone's motion sensors while recording so it can measure your angles against true vertical."
+        }
+      ],
       [
         "expo-camera",
         {

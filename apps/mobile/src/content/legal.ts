@@ -63,17 +63,22 @@ export const PRIVACY_POLICY: LegalDoc = {
         'Your videos and motion data are used solely to analyze your running form, generate coaching feedback and drill suggestions, and track your progress over time. We do not sell your data or use it for advertising.',
     },
     {
-      heading: '3. Retention',
+      heading: '3. Service Providers',
+      body:
+        'We use a small number of service providers to run Stride: Supabase (sign-in and account data), Amazon Web Services (video storage and processing), and third-party AI model providers (currently Google Gemini and Groq) that generate coaching text from your measured metrics. These providers process data only to provide their service to us. We send the AI providers your metrics and training context, not your videos.',
+    },
+    {
+      heading: '4. Retention',
       body:
         'Videos and analysis results are retained while your account is active so you can review your history. Deleting your account permanently removes your videos, analyses, and coaching history from our systems.',
     },
     {
-      heading: '4. Your Choices',
+      heading: '5. Your Choices',
       body:
         'You can delete individual analyses or your entire account at any time from the app. You may also withdraw consent by deleting your account.',
     },
     {
-      heading: '5. Contact',
+      heading: '6. Contact',
       body: `For privacy questions or data requests, contact ${LEGAL_CONTACT_EMAIL}.`,
     },
   ],
