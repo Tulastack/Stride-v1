@@ -49,3 +49,10 @@ variable "alert_email" {
   type        = string
   default     = ""
 }
+
+variable "supabase_service_role_key" {
+  description = "Supabase service_role key. Lets DELETE /users/me also remove the Supabase auth user (App Store account-deletion requirement). Empty = app data is deleted but the login remains."
+  type        = string
+  default     = ""
+  sensitive   = true
+}

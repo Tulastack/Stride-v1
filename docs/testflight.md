@@ -1,83 +1,170 @@
-# Shipping Stride to TestFlight
+# Stride: TestFlight + backend runbook
 
-Everything in code is set up (`apps/mobile/app.json`, `apps/mobile/eas.json`).
-What's left needs your accounts, so only you can do it.
+## Where things stand
 
-## 1. Put the API on https://api.strideforrunners.com (blocker)
+| Piece | State |
+|---|---|
+| iOS build | Built and submitted with EAS (`eas build --platform ios --profile production --auto-submit`) |
+| EAS project | `@thebigt/stride-sprint`; env vars set in the EAS `production` environment |
+| Bundle ID | `com.stridebiometrics.stride` (App Store Connect name is a placeholder "Stride (2470c6)", rename before public launch) |
+| Backend infra | Rebuilt with Terraform on 2026-10-08 after a July `terraform destroy`; state in `s3://stride-terraform-state-442004016139` |
+| Load balancer | `stride-api-alb-production-1828400343.us-east-1.elb.amazonaws.com` (HTTP only until the certificate is attached) |
+| Database | Aurora DSQL, deletion-protected. Terraform currently points at `sztwxa4q2knxrbnfldh5x3fita`; a second cluster `gft3jhbw2zbldbhnokioha5epm` also exists (step 2 decides which is real) |
+| HTTPS cert | Requested for `api.strideforrunners.com`: `arn:aws:acm:us-east-1:442004016139:certificate/51bab60e-38be-4c0c-be9e-e7d8ed0843b9`, waiting on DNS |
+| DNS | Namecheap (whoever owns the account adds records) |
 
-Release iOS builds refuse plain `http://`, and the API currently answers only on
-`http://stride-alb-1962699315.us-east-1.elb.amazonaws.com`.
+All commands run from the repo root on the Mac (`~/Desktop/stride-build`) unless stated.
+Get the latest code first: `git pull`.
 
-1. **Request the certificate.** AWS Console, region **us-east-1** → Certificate
-   Manager → Request → Public certificate → domain `api.strideforrunners.com` →
-   DNS validation.
-2. **Validate it.** ACM shows a CNAME (name starts with `_`, value ends in
-   `.acm-validations.aws.`). Add that record wherever strideforrunners.com's DNS is
-   managed (the registrar, or Vercel → Domains if the site's DNS lives there).
-   Wait until ACM says **Issued**, usually 5–30 minutes.
-3. **Point the name at the load balancer.** Add a second record at the same DNS host:
-   `CNAME  api  →  stride-alb-1962699315.us-east-1.elb.amazonaws.com`
-4. **Attach it.** In `infra/terraform/terraform.tfvars`:
-   ```hcl
-   acm_certificate_arn = "arn:aws:acm:us-east-1:442004016139:certificate/<id from step 1>"
-   api_domain          = "api.strideforrunners.com"
-   ```
-   Then `cd infra/terraform && terraform plan` (expect a new HTTPS listener, the HTTP
-   listener switching to a redirect, and the worker's `API_SERVER_URL` changing) and
-   `terraform apply`.
-5. **Check:** `curl https://api.strideforrunners.com/health` returns 200.
-
-## 2. Set the build's environment variables (once)
-
-Run these from `apps/mobile`:
+## 1. Check the deploy finished
 
 ```sh
-npm install -g eas-cli
-eas login
-eas init                       # links the project, writes the projectId into app.json
-eas env:create --environment production --name EXPO_PUBLIC_API_BASE_URL --value https://api.strideforrunners.com --visibility plaintext
-eas env:create --environment production --name EXPO_PUBLIC_SUPABASE_URL --value https://<project>.supabase.co --visibility plaintext
-eas env:create --environment production --name EXPO_PUBLIC_SUPABASE_ANON_KEY --value <anon/publishable key> --visibility plaintext
+aws ecs describe-services --region us-east-1 --cluster stride-cluster-production \
+  --services stride-api-production stride-ml-worker-production \
+  --query "services[].{name:serviceName,running:runningCount,desired:desiredCount}" --output table
+curl -s http://stride-api-alb-production-1828400343.us-east-1.elb.amazonaws.com/health
 ```
 
-Only the **anon / publishable** Supabase key goes here. Never the service_role key
-or the JWT secret: anything `EXPO_PUBLIC_*` ships inside the app.
+`running` should equal `desired` (API 2, worker 1). `/health` may report `db: error`
+until step 3 is done; that is expected.
 
-## 3. Host the app's privacy and support pages
+## 2. Find the database that holds the real data (read-only)
 
-strideforrunners.com/privacy covers **the website's waitlist only** (it says so),
-so it can't be the app's privacy URL. Its footer also says "Stride Biomechanics";
-the registered name is Stride Biometrics, LLC.
+```sh
+node apps/api/scripts/dsql/inspect.mjs
+```
 
-Quickest: GitHub → Stride-v1 → Settings → Pages → Deploy from branch `main`,
-folder `/docs`. Use these in App Store Connect:
+It connects to both DSQL clusters and prints the row counts per table plus the latest
+activity date. The first connection to an INACTIVE cluster wakes it and can take a
+minute. The one with real users/analyses is production.
 
-- Privacy: `https://tulastack.github.io/Stride-v1/privacy/`
-- Support: `https://tulastack.github.io/Stride-v1/support/`
+If that is `gft3jhbw2zbldbhnokioha5epm` (not the one Terraform uses now), repoint
+Terraform. This only changes which cluster Terraform tracks; neither cluster is
+touched or deleted:
 
-Later you can copy `docs/privacy`, `docs/terms` and `docs/support` into the website
-(e.g. `strideforrunners.com/app/privacy`) and swap the URLs. After editing
-`apps/mobile/src/content/legal.ts`, run `node scripts/build-legal-pages.mjs`.
+```sh
+cd infra/terraform
+terraform state rm aws_dsql_cluster.main
+terraform import aws_dsql_cluster.main gft3jhbw2zbldbhnokioha5epm
+terraform plan -out=db.tfplan     # expect: task definitions + DSQL IAM policies change, 0 destroy
+terraform apply db.tfplan
+cd ../..
+```
 
-## 4. Build and upload (after Apple approves the developer account)
+## 3. Bring that database up to date
+
+Dry run first. It lists what is missing and changes nothing:
+
+```sh
+node apps/api/scripts/dsql/migrate.mjs --cluster <real-cluster-id>
+```
+
+Then apply:
+
+```sh
+node apps/api/scripts/dsql/migrate.mjs --cluster <real-cluster-id> --apply
+```
+
+Adds the columns/tables the current app needs (calendar `source`, `revealed_at`,
+`completed_on`; drill `recovery_phases`; the `metric_biomechanics` table; the
+`uploading` analysis status; widened event types), builds missing indexes, and loads
+the drill programs and research content from `apps/api/src/db/seeds`. It never drops
+or deletes anything and is safe to re-run. Rehearsed against copies of the June and
+July schemas and an empty database.
+
+## 4. HTTPS
+
+### 4a. Normal path: certificate on the load balancer
+
+Two CNAME records in Namecheap (Domain List → Manage → Advanced DNS → Add New Record).
+Do not change existing records.
+
+| Host | Value |
+|---|---|
+| `_afcab4cff6f09ee2da9bc1c6f2966955.api` | `_1c992f47ab792aef292d6dc6fe483fb4.wzccmgtwzk.acm-validations.aws.` |
+| `api` | `stride-api-alb-production-1828400343.us-east-1.elb.amazonaws.com` |
+
+Wait for the certificate:
+
+```sh
+aws acm describe-certificate --region us-east-1 \
+  --certificate-arn arn:aws:acm:us-east-1:442004016139:certificate/51bab60e-38be-4c0c-be9e-e7d8ed0843b9 \
+  --query Certificate.Status --output text      # ISSUED when ready
+```
+
+Then in `infra/terraform/terraform.tfvars` add:
+
+```hcl
+acm_certificate_arn = "arn:aws:acm:us-east-1:442004016139:certificate/51bab60e-38be-4c0c-be9e-e7d8ed0843b9"
+api_domain          = "api.strideforrunners.com"
+# Optional, recommended: lets Delete Account also remove the Supabase login.
+# Supabase → Project Settings → API keys → the service_role / secret key.
+# terraform.tfvars is gitignored; the value goes to AWS Secrets Manager.
+# supabase_service_role_key = "..."
+```
+
+```sh
+cd infra/terraform && terraform plan -out=https.tfplan
+# expect: HTTPS listener added, HTTP listener -> redirect, task definitions updated, 0 destroy
+terraform apply https.tfplan && cd ../..
+curl -s https://api.strideforrunners.com/health
+```
+
+The app was built with `https://api.strideforrunners.com`, so no app rebuild is needed.
+
+### 4b. Fallback if DNS can't be changed: CloudFront
+
+```hcl
+# terraform.tfvars
+enable_cloudfront_https = true
+```
+
+`terraform apply`, then `terraform output api_https_url` prints
+`https://<id>.cloudfront.net`. Point the app at it and rebuild:
 
 ```sh
 cd apps/mobile
+eas env:create --environment production --name EXPO_PUBLIC_API_BASE_URL --value https://<id>.cloudfront.net --visibility plaintext --force
 eas build --platform ios --profile production --auto-submit
 ```
 
-Sign in with the Apple ID that owns the developer account when asked, and let EAS
-create the certificate, provisioning profile and App Store Connect app. The bundle
-ID is `com.stridebiometrics.stride`; it becomes permanent after the first upload,
-so change `ios.bundleIdentifier` in `app.json` before then if you want a different
-one. Build numbers increase automatically.
+Once DNS is sorted, do 4a, set `enable_cloudfront_https = false`, switch the env var
+back to `https://api.strideforrunners.com`, and rebuild.
 
-## 5. Testers
+## 5. Ship the latest API fixes
 
-App Store Connect → your app → TestFlight:
+```sh
+caffeinate -i ./scripts/deploy.sh api      # ~5-10 min; ./scripts/deploy.sh does both services
+```
+
+Needed after any API code change (e.g. the DSQL account-deletion fix). Docker images
+pile up: if disk runs low, `docker system prune -a` reclaims it.
+
+## 6. Test end to end
+
+1. `curl https://api.strideforrunners.com/health` returns `"status":"ok"`.
+2. Install from TestFlight, sign in, film/import a sprint, and check the analysis,
+   coach, and calendar.
+3. Logs if something fails: CloudWatch → Log groups → `/ecs/stride-api-production`
+   and `/ecs/stride-ml-worker-production`.
+
+## Testers
+
+App Store Connect → the app → TestFlight:
 
 - **Internal** (no review, same day): Users and Access → add people with an App
-  Store Connect role, then add them to an internal group.
-- **External** (up to 10,000, public link): create a group, fill in Test
-  Information (beta description, feedback email, privacy URL from step 3) and a
-  **demo login** for the reviewer, then submit for Beta App Review (~1 day).
+  Store Connect role, then add them to the internal group.
+- **External** (up to 10,000, public link): create a group, fill in Test Information
+  (beta description, feedback email, privacy URL, and a demo login for the reviewer),
+  then submit for Beta App Review (~1 day).
+
+Privacy/support pages: GitHub → Settings → Pages → Deploy from branch `main`, `/docs`:
+`https://tulastack.github.io/Stride-v1/privacy/` and `.../support/`.
+`strideforrunners.com/privacy` covers only the website waitlist.
+
+## Guardrails
+
+- Never run `terraform destroy` (it took production down in July). Don't let coding
+  agents run Terraform or AWS commands unattended.
+- Both DSQL clusters have deletion protection on; leave it on.
+- Set an AWS budget alert: Billing → Budgets → monthly cost budget with an email alert.

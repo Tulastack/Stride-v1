@@ -26,3 +26,15 @@ resource "aws_secretsmanager_secret_version" "groq_api_key" {
   secret_id     = aws_secretsmanager_secret.groq_api_key.id
   secret_string = var.groq_api_key
 }
+
+resource "aws_secretsmanager_secret" "supabase_service_role_key" {
+  count       = var.supabase_service_role_key != "" ? 1 : 0
+  name        = "stride/${var.environment}/supabase-service-role-key"
+  description = "Supabase service_role key, used only by DELETE /users/me to remove the auth user"
+}
+
+resource "aws_secretsmanager_secret_version" "supabase_service_role_key" {
+  count         = var.supabase_service_role_key != "" ? 1 : 0
+  secret_id     = aws_secretsmanager_secret.supabase_service_role_key[0].id
+  secret_string = var.supabase_service_role_key
+}

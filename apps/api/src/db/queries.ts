@@ -1028,14 +1028,44 @@ export async function sweepStuckAnalyses(): Promise<number> {
 }
 
 // ─── Account deletion (App Store 5.1.1(v)) ────────────────────────
-// Deleting the users row cascades through analyses, calendar_events,
-// coach_sessions, drill_suggestions, suggestion_audit and metrics_timeline
-// (all FK ON DELETE CASCADE).
+// Production runs on Aurora DSQL, which has no ON DELETE CASCADE (the DSQL
+// schema in db/schema.sql has no foreign keys at all), so every table holding
+// the user's data is cleared explicitly. Child rows go first and the users row
+// last: if anything fails part-way, the account still exists and a retry
+// finishes the job. Deletes are batched because a DSQL transaction may modify
+// at most 3,000 rows. On plain Postgres the FK cascades make the child deletes
+// redundant but harmless.
+const USER_OWNED_TABLES = [
+  'suggestion_audit',
+  'drill_suggestions',
+  'metrics_timeline',
+  'calendar_events',
+  'coach_sessions',
+  'analyses',
+] as const;
+
+const DELETE_BATCH = 1000;
 
 export async function deleteUserAccount(userId: string): Promise<string | null> {
+  const { rows: existing } = await pool.query<{ supabase_uid: string }>(
+    'SELECT supabase_uid FROM users WHERE id = $1',
+    [userId],
+  );
+  if (existing.length === 0) return null;
+
+  for (const table of USER_OWNED_TABLES) {
+    for (;;) {
+      const { rowCount } = await pool.query(
+        `DELETE FROM ${table} WHERE id IN (SELECT id FROM ${table} WHERE user_id = $1 LIMIT ${DELETE_BATCH})`,
+        [userId],
+      );
+      if (!rowCount) break;
+    }
+  }
+
   const { rows } = await pool.query<{ supabase_uid: string }>(
     'DELETE FROM users WHERE id = $1 RETURNING supabase_uid',
     [userId],
   );
-  return rows[0]?.supabase_uid ?? null;
+  return rows[0]?.supabase_uid ?? existing[0].supabase_uid;
 }

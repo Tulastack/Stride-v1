@@ -147,7 +147,7 @@ CREATE TABLE suggestion_audit (
 --     mechanism TEXT NOT NULL,
 --     injury_risks JSONB NOT NULL DEFAULT '[]',
 --     confidence VARCHAR(20) NOT NULL CHECK (confidence IN ('established','emerging','preliminary')),
---     correlation_or_causal VARCHAR(20) NOT NULL CHECK (correlation_or_causal IN ('causal_mechanism','correlational','biomechanically_plausible')),
+--     correlation_or_causal VARCHAR(30) NOT NULL CHECK (correlation_or_causal IN ('causal_mechanism','correlational','biomechanically_plausible')),
 --     hedge_note TEXT,
 --     citations JSONB NOT NULL DEFAULT '[]',
 --     checker_a_verdict VARCHAR(20) NOT NULL CHECK (checker_a_verdict IN ('confirmed','partial','contradicted','no_lit_found')),
@@ -205,7 +205,7 @@ CREATE TABLE metric_biomechanics (
     injury_risks JSONB NOT NULL DEFAULT '[]', -- [{name, mechanism_note}]
     confidence VARCHAR(20) NOT NULL
         CHECK (confidence IN ('established','emerging','preliminary')),
-    correlation_or_causal VARCHAR(20) NOT NULL
+    correlation_or_causal VARCHAR(30) NOT NULL
         CHECK (correlation_or_causal IN ('causal_mechanism','correlational','biomechanically_plausible')),
     hedge_note TEXT,
     citations JSONB NOT NULL DEFAULT '[]',    -- [{citation, url_or_doi, what_it_shows}]
