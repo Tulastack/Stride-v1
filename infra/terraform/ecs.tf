@@ -103,14 +103,18 @@ resource "aws_ecs_task_definition" "api" {
         { name = "SQS_QUEUE_URL", value = aws_sqs_queue.analysis.url },
         { name = "AWS_REGION", value = var.aws_region },
         { name = "SUPABASE_URL", value = var.supabase_url },
+        { name = "TRUST_PROXY_HOPS", value = var.enable_cloudfront_https ? "2" : "1" },
         { name = "DSQL_ENDPOINT", value = local.dsql_endpoint },
         { name = "SENTRY_DSN", value = var.sentry_dsn_api },
       ]
       # Injected at launch from Secrets Manager, never plaintext in the task def.
-      secrets = [
-        { name = "INTERNAL_API_SECRET", valueFrom = aws_secretsmanager_secret.internal_api_secret.arn },
-        { name = "GROQ_API_KEY", valueFrom = aws_secretsmanager_secret.groq_api_key.arn },
-      ]
+      secrets = concat(
+        [
+          { name = "INTERNAL_API_SECRET", valueFrom = aws_secretsmanager_secret.internal_api_secret.arn },
+          { name = "GROQ_API_KEY", valueFrom = aws_secretsmanager_secret.groq_api_key.arn },
+        ],
+        [for s in aws_secretsmanager_secret.supabase_service_role_key : { name = "SUPABASE_SERVICE_ROLE_KEY", valueFrom = s.arn }],
+      )
     }
   ])
 }

@@ -203,10 +203,13 @@ resource "aws_iam_role_policy" "ecs_execution_secrets" {
       {
         Effect = "Allow"
         Action = ["secretsmanager:GetSecretValue"]
-        Resource = [
-          aws_secretsmanager_secret.internal_api_secret.arn,
-          aws_secretsmanager_secret.groq_api_key.arn,
-        ]
+        Resource = concat(
+          [
+            aws_secretsmanager_secret.internal_api_secret.arn,
+            aws_secretsmanager_secret.groq_api_key.arn,
+          ],
+          aws_secretsmanager_secret.supabase_service_role_key[*].arn,
+        )
       }
     ]
   })

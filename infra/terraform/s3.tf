@@ -38,6 +38,8 @@ resource "aws_s3_bucket_lifecycle_configuration" "videos" {
     id     = "abort-incomplete-multipart"
     status = "Enabled"
 
+    filter {}
+
     abort_incomplete_multipart_upload {
       days_after_initiation = 1
     }
@@ -46,6 +48,8 @@ resource "aws_s3_bucket_lifecycle_configuration" "videos" {
   rule {
     id     = "transition-to-ia"
     status = "Enabled"
+
+    filter {}
 
     transition {
       days          = 90

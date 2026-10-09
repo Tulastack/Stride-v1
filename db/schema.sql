@@ -6,8 +6,11 @@
 -- DSQL-specific rules applied throughout (these are DSQL limitations, not design choices):
 --   • No `CREATE EXTENSION`, `gen_random_uuid()` is built in, so none is needed.
 --   • No FOREIGN KEY constraints, referential integrity is enforced in app code.
---   • Secondary indexes use `CREATE INDEX ASYNC`.
---   • No partial indexes (WHERE …), those are written as full indexes.
+--   • Secondary indexes use `CREATE INDEX ASYNC` (partial WHERE indexes are supported).
+--   • One DDL statement per transaction; DDL and DML never share a transaction.
+--   • ALTER TABLE ADD COLUMN takes only name + type: set defaults with a separate
+--     ALTER COLUMN SET DEFAULT and add CHECKs as ADD CONSTRAINT ... NOT VALID.
+-- Existing databases are brought up to date with apps/api/scripts/dsql/migrate.mjs.
 -- Column types, CHECK constraints, defaults, and PRIMARY KEYs mirror the
 -- Postgres schema in apps/api/src/db/schema.sql exactly.
 
@@ -76,9 +79,16 @@ CREATE TABLE IF NOT EXISTS calendar_events (
     -- NULL until completed (and on rows that predate the column). The streak
     -- counts a day only when its completions were logged on that day.
     completed_on DATE,
+    -- Who scheduled it; only coach/analysis events get the card reveal.
+    source VARCHAR(10) NOT NULL DEFAULT 'manual'
+        CHECK (source IN ('manual','coach','analysis')),
+    -- NULL = the athlete has not yet been shown the card for this event.
+    revealed_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT now()
 );
 CREATE INDEX ASYNC IF NOT EXISTS idx_calendar_user_date ON calendar_events(user_id, scheduled_date);
+CREATE INDEX ASYNC IF NOT EXISTS idx_calendar_unrevealed ON calendar_events(user_id, scheduled_date)
+    WHERE revealed_at IS NULL AND source <> 'manual';
 
 -- ─── Coach Sessions ───────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS coach_sessions (
@@ -125,6 +135,29 @@ CREATE TABLE IF NOT EXISTS reference_drills (
     cues JSONB NOT NULL DEFAULT '[]',
     contraindications JSONB NOT NULL DEFAULT '[]',
     target_metrics JSONB NOT NULL DEFAULT '[]',
+    -- Ordered 4-phase corrective program; '[]' = no reviewed content yet.
+    recovery_phases JSONB NOT NULL DEFAULT '[]',
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- ─── Metric Biomechanics (offline research pipeline output) ──────
+CREATE TABLE IF NOT EXISTS metric_biomechanics (
+    metric_key VARCHAR(100) PRIMARY KEY,
+    body_region VARCHAR(100) NOT NULL,
+    primary_structure VARCHAR(200) NOT NULL,
+    mechanism TEXT NOT NULL,
+    injury_risks JSONB NOT NULL DEFAULT '[]',
+    confidence VARCHAR(20) NOT NULL
+        CHECK (confidence IN ('established','emerging','preliminary')),
+    correlation_or_causal VARCHAR(30) NOT NULL
+        CHECK (correlation_or_causal IN ('causal_mechanism','correlational','biomechanically_plausible')),
+    hedge_note TEXT,
+    citations JSONB NOT NULL DEFAULT '[]',
+    checker_a_verdict VARCHAR(20) NOT NULL CHECK (checker_a_verdict IN ('confirmed','partial','contradicted','no_lit_found')),
+    checker_b_verdict VARCHAR(20) NOT NULL CHECK (checker_b_verdict IN ('confirmed','partial','contradicted','no_lit_found')),
+    reviewed_by VARCHAR(255),
+    reviewed_at TIMESTAMPTZ,
+    pipeline_run_id VARCHAR(100) NOT NULL,
     created_at TIMESTAMPTZ DEFAULT now()
 );
 

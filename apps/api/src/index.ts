@@ -57,7 +57,11 @@ const app = express();
 const port = process.env.PORT || 3000;
 
 // Behind the ALB: trust one proxy hop so req.ip (rate limiting) is the client.
-app.set('trust proxy', 1);
+// With CloudFront in front of the ALB there are two hops; Terraform sets
+// TRUST_PROXY_HOPS=2 then, otherwise every user behind one edge would share a
+// single rate-limit bucket.
+const trustHops = Number.parseInt(process.env.TRUST_PROXY_HOPS ?? '1', 10);
+app.set('trust proxy', Number.isFinite(trustHops) && trustHops >= 0 ? trustHops : 1);
 
 // Security and utility middlewares
 app.use(helmet());
