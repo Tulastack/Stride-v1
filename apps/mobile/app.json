@@ -23,7 +23,11 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#18221F"
       },
-      "package": "com.stridebiometrics.stride"
+      "package": "com.stridebiometrics.stride",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -59,6 +63,13 @@
         }
       ]
     ],
-    "scheme": "stride"
+    "scheme": "stride",
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "d02a083d-b738-4722-8414-e820f8db5cc4"
+      }
+    },
+    "owner": "thebigt"
   }
 }
