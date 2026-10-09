@@ -22,5 +22,7 @@ sentry_dsn_worker = ""
 # ─── TLS + alerting (REQUIRED before real launch) ─────────────────
 # ACM cert for the ALB HTTPS listener; empty keeps HTTP-only dev mode.
 acm_certificate_arn = ""
+# Hostname on that certificate, CNAMEd to the ALB.
+api_domain = "api.strideforrunners.com"
 # Email that receives CloudWatch alarm pages (confirm the SNS subscription).
 alert_email = ""

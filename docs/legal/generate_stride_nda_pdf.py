@@ -28,7 +28,7 @@ from reportlab.platypus import (
 
 HERE = Path(__file__).resolve().parent
 SOURCE = HERE / "stride-team-confidentiality-agreement-ca.md"
-OUTPUT = HERE / "Stride_Biomechanics_Team_NDA_California.pdf"
+OUTPUT = HERE / "Stride_Biometrics_Team_NDA_California.pdf"
 
 
 def register_fonts() -> tuple[str, str, str, str]:
@@ -179,11 +179,11 @@ def flush_bullets(items: list[str], story: list, style_map: dict[str, ParagraphS
         ListFlowable(
             flowables,
             bulletType="bullet",
-            start="circle",
+            start="\u2022",
             leftIndent=18,
             bulletFontName=REGULAR,
-            bulletFontSize=7,
-            bulletOffsetY=1,
+            bulletFontSize=11,
+            bulletOffsetY=0,
             spaceAfter=7,
         )
     )
@@ -268,7 +268,7 @@ def page_decoration(canvas, doc) -> None:
     canvas.drawString(
         doc.leftMargin,
         height - 0.47 * inch,
-        "STRIDE BIOMECHANICS, LLC  |  CONFIDENTIALITY AND NON-DISCLOSURE AGREEMENT",
+        "STRIDE BIOMETRICS, LLC  |  CONFIDENTIALITY AND NON-DISCLOSURE AGREEMENT",
     )
     canvas.drawString(doc.leftMargin, 0.39 * inch, "California form  |  September 2026")
     canvas.drawRightString(
@@ -290,10 +290,10 @@ def main() -> None:
         leftMargin=0.82 * inch,
         topMargin=0.78 * inch,
         bottomMargin=0.75 * inch,
-        title="Stride Biomechanics, LLC — Confidentiality and Non-Disclosure Agreement",
-        author="Stride Biomechanics, LLC",
+        title="Stride Biometrics, LLC — Confidentiality and Non-Disclosure Agreement",
+        author="Stride Biometrics, LLC",
         subject="California confidentiality and non-disclosure agreement for prospective and current team members",
-        creator="Stride Biomechanics, LLC",
+        creator="Stride Biometrics, LLC",
         pageCompression=1,
     )
     document.build(

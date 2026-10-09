@@ -1,4 +1,4 @@
-appId: com.stride.sprint
+appId: com.stridebiometrics.stride
 name: "Consent Onboarding, cannot proceed without both checkboxes"
 ---
 # Fresh launch → register → consent screen

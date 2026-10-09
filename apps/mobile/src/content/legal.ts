@@ -3,6 +3,7 @@
 // public release. Keep the structure (title + sections) so the UI needs no changes.
 
 export const LEGAL_CONTACT_EMAIL = 'adhibanarul@gmail.com';
+export const LEGAL_ENTITY = 'Stride Biometrics, LLC';
 
 export interface LegalSection {
   heading: string;
@@ -20,7 +21,7 @@ export const TERMS_AND_CONDITIONS: LegalDoc = {
     {
       heading: '1. About Stride',
       body:
-        'Stride is an AI-powered sprint coaching app. You record or import short sprint videos, and Stride analyzes your running form to give coaching feedback, drill suggestions, and training plans.',
+        `Stride is an AI-powered sprint coaching app operated by ${LEGAL_ENTITY} ("we" or "us"). You record or import short sprint videos, and Stride analyzes your running form to give coaching feedback, drill suggestions, and training plans.`,
     },
     {
       heading: '2. Not Medical Advice',
@@ -55,7 +56,7 @@ export const PRIVACY_POLICY: LegalDoc = {
     {
       heading: '1. Data We Collect',
       body:
-        'We collect the sprint videos you record or import, biometric motion data derived from them (body keypoints, joint angles, stride metrics), device motion-sensor data captured during recording (gyroscope and accelerometer), and your account profile (email, display name, event specialty, experience level, personal bests).',
+        `${LEGAL_ENTITY} ("we") operates Stride. We collect the sprint videos you record or import, biometric motion data derived from them (body keypoints, joint angles, stride metrics), device motion-sensor data captured during recording (gyroscope and accelerometer), and your account profile (email, display name, event specialty, experience level, personal bests).`,
     },
     {
       heading: '2. How We Use It',
@@ -63,17 +64,22 @@ export const PRIVACY_POLICY: LegalDoc = {
         'Your videos and motion data are used solely to analyze your running form, generate coaching feedback and drill suggestions, and track your progress over time. We do not sell your data or use it for advertising.',
     },
     {
-      heading: '3. Retention',
+      heading: '3. Service Providers',
+      body:
+        'We use a small number of service providers to run Stride: Supabase (sign-in and account data), Amazon Web Services (video storage and processing), and third-party AI model providers (currently Google Gemini and Groq) that generate coaching text from your measured metrics. These providers process data only to provide their service to us. We send the AI providers your metrics and training context, not your videos.',
+    },
+    {
+      heading: '4. Retention',
       body:
         'Videos and analysis results are retained while your account is active so you can review your history. Deleting your account permanently removes your videos, analyses, and coaching history from our systems.',
     },
     {
-      heading: '4. Your Choices',
+      heading: '5. Your Choices',
       body:
         'You can delete individual analyses or your entire account at any time from the app. You may also withdraw consent by deleting your account.',
     },
     {
-      heading: '5. Contact',
+      heading: '6. Contact',
       body: `For privacy questions or data requests, contact ${LEGAL_CONTACT_EMAIL}.`,
     },
   ],
