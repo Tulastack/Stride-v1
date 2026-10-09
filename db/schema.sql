@@ -6,7 +6,8 @@
 -- DSQL-specific rules applied throughout (these are DSQL limitations, not design choices):
 --   • No `CREATE EXTENSION`, `gen_random_uuid()` is built in, so none is needed.
 --   • No FOREIGN KEY constraints, referential integrity is enforced in app code.
---   • Secondary indexes use `CREATE INDEX ASYNC` (partial WHERE indexes are supported).
+--   • Secondary indexes use `CREATE INDEX ASYNC` (partial WHERE indexes are supported;
+--     ASC/DESC sort order on index keys is not, the planner scans either direction).
 --   • One DDL statement per transaction; DDL and DML never share a transaction.
 --   • ALTER TABLE ADD COLUMN takes only name + type: set defaults with a separate
 --     ALTER COLUMN SET DEFAULT and add CHECKs as ADD CONSTRAINT ... NOT VALID.
@@ -173,7 +174,7 @@ CREATE TABLE IF NOT EXISTS metrics_timeline (
     optimal_max NUMERIC(8,2),
     measured_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX ASYNC IF NOT EXISTS idx_metrics_user_key ON metrics_timeline(user_id, metric_key, measured_at DESC);
+CREATE INDEX ASYNC IF NOT EXISTS idx_metrics_user_key ON metrics_timeline(user_id, metric_key, measured_at);
 CREATE INDEX ASYNC IF NOT EXISTS idx_metrics_analysis ON metrics_timeline(analysis_id);
 -- Idempotent reprocessing: one row per metric per analysis.
 CREATE UNIQUE INDEX ASYNC IF NOT EXISTS idx_metrics_analysis_metric ON metrics_timeline(analysis_id, metric_key);
