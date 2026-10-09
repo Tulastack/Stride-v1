@@ -158,8 +158,11 @@ App Store Connect → the app → TestFlight:
   (beta description, feedback email, privacy URL, and a demo login for the reviewer),
   then submit for Beta App Review (~1 day).
 
-Privacy/support pages: GitHub → Settings → Pages → Deploy from branch `main`, `/docs`:
-`https://tulastack.github.io/Stride-v1/privacy/` and `.../support/`.
+Privacy/support pages live in `site/` and are published by `.github/workflows/pages.yml`
+(only that folder is served). One-time setup: GitHub → Settings → Pages → Source:
+**GitHub Actions**, then Actions → Pages → Run workflow. URLs:
+`https://tulastack.github.io/Stride-v1/privacy/`, `.../terms/`, `.../support/`.
+Regenerate after editing `apps/mobile/src/content/legal.ts`: `node scripts/build-legal-pages.mjs`.
 `strideforrunners.com/privacy` covers only the website waitlist.
 
 ## Guardrails

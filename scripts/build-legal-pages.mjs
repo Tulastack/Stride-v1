@@ -3,8 +3,8 @@
 // Store Connect never drifts from what users read in-app.
 //
 // Usage: node scripts/build-legal-pages.mjs
-// Output: docs/privacy/index.html, docs/terms/index.html, docs/support/index.html
-// Host with GitHub Pages (Settings -> Pages -> Deploy from branch: main, /docs).
+// Output: site/privacy/index.html, site/terms/index.html, site/support/index.html
+// Published by .github/workflows/pages.yml (Settings -> Pages -> Source: GitHub Actions).
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
@@ -55,7 +55,7 @@ const support = page('Support', `<h1>Stride Support</h1>
 <h2>Not medical advice</h2><p>Stride offers coaching insights only. Stop training and see a professional if you feel pain.</p>`);
 
 for (const [dir, html] of [['privacy', doc(PRIVACY_POLICY)], ['terms', doc(TERMS_AND_CONDITIONS)], ['support', support]]) {
-  mkdirSync(join(root, 'docs', dir), { recursive: true });
-  writeFileSync(join(root, 'docs', dir, 'index.html'), html);
+  mkdirSync(join(root, 'site', dir), { recursive: true });
+  writeFileSync(join(root, 'site', dir, 'index.html'), html);
 }
-console.log('Wrote docs/privacy, docs/terms, docs/support');
+console.log('Wrote site/privacy, site/terms, site/support');
