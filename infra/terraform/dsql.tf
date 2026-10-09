@@ -11,7 +11,13 @@ resource "aws_dsql_cluster" "main" {
   }
 }
 
+# The AWS provider 5.x resource exports no endpoint attribute, but DSQL
+# endpoints are always <identifier>.dsql.<region>.on.aws.
+locals {
+  dsql_endpoint = "${aws_dsql_cluster.main.identifier}.dsql.${var.aws_region}.on.aws"
+}
+
 output "dsql_endpoint" {
   description = "Aurora DSQL cluster endpoint"
-  value       = aws_dsql_cluster.main.endpoint
+  value       = local.dsql_endpoint
 }

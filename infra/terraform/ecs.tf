@@ -103,7 +103,7 @@ resource "aws_ecs_task_definition" "api" {
         { name = "SQS_QUEUE_URL", value = aws_sqs_queue.analysis.url },
         { name = "AWS_REGION", value = var.aws_region },
         { name = "SUPABASE_URL", value = var.supabase_url },
-        { name = "DSQL_ENDPOINT", value = aws_dsql_cluster.main.endpoint },
+        { name = "DSQL_ENDPOINT", value = local.dsql_endpoint },
         { name = "SENTRY_DSN", value = var.sentry_dsn_api },
       ]
       # Injected at launch from Secrets Manager, never plaintext in the task def.
@@ -148,7 +148,7 @@ resource "aws_ecs_task_definition" "ml_worker" {
         { name = "API_SERVER_URL", value = var.acm_certificate_arn != "" ? "https://${var.api_domain}" : "http://${aws_lb.api.dns_name}" },
         { name = "AWS_REGION", value = var.aws_region },
         { name = "SENTRY_DSN", value = var.sentry_dsn_worker },
-        { name = "DSQL_ENDPOINT", value = aws_dsql_cluster.main.endpoint },
+        { name = "DSQL_ENDPOINT", value = local.dsql_endpoint },
       ]
       secrets = [
         { name = "INTERNAL_API_SECRET", valueFrom = aws_secretsmanager_secret.internal_api_secret.arn },
