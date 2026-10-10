@@ -32,6 +32,7 @@ resource "aws_iam_role_policy" "api_s3_access" {
         Action = [
           "s3:GetObject",
           "s3:PutObject",
+          "s3:DeleteObject", # DELETE /users/me removes the user's videos (lib/s3.ts deletePrefix)
           "s3:CreateMultipartUpload",
           "s3:CompleteMultipartUpload",
           "s3:AbortMultipartUpload",
@@ -57,8 +58,11 @@ resource "aws_iam_role_policy" "api_sqs_access" {
     Version = "2012-10-17"
     Statement = [
       {
-        Effect   = "Allow"
-        Action   = ["sqs:SendMessage"]
+        Effect = "Allow"
+        # GetQueueAttributes: GET /health checks the queue (lib/sqs.ts
+        # checkSQSHealth); without it every new API task fails its ALB health
+        # check and is replaced in a loop.
+        Action   = ["sqs:SendMessage", "sqs:GetQueueAttributes"]
         Resource = aws_sqs_queue.analysis.arn
       }
     ]
@@ -141,7 +145,9 @@ resource "aws_iam_role_policy" "ml_worker_s3_access" {
     Statement = [
       {
         Effect   = "Allow"
-        Action   = ["s3:GetObject"]
+        # PutObject: the worker writes the pose overlay (.overlay.json, drawn on
+        # the video during playback) and frames3d sidecars next to each upload.
+        Action   = ["s3:GetObject", "s3:PutObject"]
         Resource = "${aws_s3_bucket.videos.arn}/*"
       }
     ]
