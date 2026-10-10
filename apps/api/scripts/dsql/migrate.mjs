@@ -9,8 +9,8 @@
 //
 // DRY RUN by default: prints what it would do and changes nothing.
 //
-//   node apps/api/scripts/dsql/migrate.mjs --cluster sztwxa4q2knxrbnfldh5x3fita
-//   node apps/api/scripts/dsql/migrate.mjs --cluster sztwxa4q2knxrbnfldh5x3fita --apply
+//   node apps/api/scripts/dsql/migrate.mjs --cluster gft3jhbw2zbldbhnokioha5epm
+//   node apps/api/scripts/dsql/migrate.mjs --cluster gft3jhbw2zbldbhnokioha5epm --apply
 //   node apps/api/scripts/dsql/migrate.mjs --local postgres://... --apply   (rehearsal)
 //   add --skip-seeds to leave reference_drills / metric_biomechanics content alone
 //

@@ -215,6 +215,8 @@ resource "aws_iam_role_policy" "ecs_execution_secrets" {
             aws_secretsmanager_secret.groq_api_key.arn,
           ],
           aws_secretsmanager_secret.supabase_service_role_key[*].arn,
+          aws_secretsmanager_secret.google_api_key[*].arn,
+          aws_secretsmanager_secret.inception_api_key[*].arn,
         )
       }
     ]

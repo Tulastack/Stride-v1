@@ -38,3 +38,30 @@ resource "aws_secretsmanager_secret_version" "supabase_service_role_key" {
   secret_id     = aws_secretsmanager_secret.supabase_service_role_key[0].id
   secret_string = var.supabase_service_role_key
 }
+
+# Coach LLM. resolveCoachProvider() (apps/api/src/lib/coach/provider.ts) picks
+# Google automatically when GOOGLE_API_KEY is set; without it the coach falls
+# back to Groq, whose free-tier token budget can't fit an agent turn.
+resource "aws_secretsmanager_secret" "google_api_key" {
+  count       = var.google_api_key != "" ? 1 : 0
+  name        = "stride/${var.environment}/google-api-key"
+  description = "Google AI Studio key for the coach LLM (Gemini)"
+}
+
+resource "aws_secretsmanager_secret_version" "google_api_key" {
+  count         = var.google_api_key != "" ? 1 : 0
+  secret_id     = aws_secretsmanager_secret.google_api_key[0].id
+  secret_string = var.google_api_key
+}
+
+resource "aws_secretsmanager_secret" "inception_api_key" {
+  count       = var.inception_api_key != "" ? 1 : 0
+  name        = "stride/${var.environment}/inception-api-key"
+  description = "Inception (Mercury) key for the coach LLM"
+}
+
+resource "aws_secretsmanager_secret_version" "inception_api_key" {
+  count         = var.inception_api_key != "" ? 1 : 0
+  secret_id     = aws_secretsmanager_secret.inception_api_key[0].id
+  secret_string = var.inception_api_key
+}
