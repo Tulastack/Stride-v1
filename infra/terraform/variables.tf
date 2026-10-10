@@ -56,3 +56,10 @@ variable "supabase_service_role_key" {
   default     = ""
   sensitive   = true
 }
+
+variable "inception_api_key" {
+  description = "Inception (Mercury) key for the coach LLM. When set, the coach uses Mercury 2.5, the model it is tuned for; otherwise Google (google_api_key), then Groq."
+  type        = string
+  default     = ""
+  sensitive   = true
+}

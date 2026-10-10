@@ -304,11 +304,19 @@ router.get('/:analysisId/overlay', authenticate, async (req: any, res: Response,
       res.status(404).json({ error: 'Analysis not found' });
       return;
     }
+    const overlayKey = analysis.s3_key.replace(/\.[^.]+$/, '') + '.overlay.json';
     if (!isLocalStorage) {
-      res.status(501).json({ error: 'overlay serving is local-mode only for now' });
+      // Production: the ML worker writes the overlay next to the video in S3.
+      const { getObjectText } = await import('../lib/s3.js');
+      const body = await getObjectText(overlayKey);
+      if (body === null) {
+        res.status(404).json({ error: 'overlay not ready' });
+        return;
+      }
+      res.type('application/json').send(body);
       return;
     }
-    const p = localKeyPath(analysis.s3_key.replace(/\.[^.]+$/, '') + '.overlay.json');
+    const p = localKeyPath(overlayKey);
     if (!fs.existsSync(p)) {
       res.status(404).json({ error: 'overlay not ready' });
       return;
@@ -325,15 +333,19 @@ router.get('/:analysisId/overlay', authenticate, async (req: any, res: Response,
  */
 router.get('/:analysisId/file', authenticateSSE, async (req: any, res: Response, next: NextFunction) => {
   try {
-    if (!isLocalStorage) {
-      res.status(501).json({ error: 'file serving is local-mode only for now' });
-      return;
-    }
     const analysisId = requireUuid(req.params.analysisId, res);
     if (!analysisId) return;
     const analysis = await getAnalysis(analysisId, req.userId);
     if (!analysis) {
       res.status(404).json({ error: 'Analysis not found' });
+      return;
+    }
+    if (!isLocalStorage) {
+      // Production: hand the player a short-lived presigned S3 URL. Ownership
+      // was checked above; the URL only grants this one object for an hour.
+      const { presignedGetUrl } = await import('../lib/s3.js');
+      res.set('Cache-Control', 'no-store');
+      res.redirect(302, await presignedGetUrl(analysis.s3_key));
       return;
     }
     const p = localKeyPath(analysis.s3_key);
