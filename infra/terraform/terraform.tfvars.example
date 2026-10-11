@@ -12,16 +12,20 @@ public_subnet_ids = [
 ]
 
 # ─── Secrets (get from respective services) ───────────────────────
-supabase_url    = "https://your-project.supabase.co"
+supabase_url    = "https://rcmllqdxcxauebtowimy.supabase.co"
 internal_secret = "generate-a-random-string-here"
-google_api_key  = "your-google-api-key"
+google_api_key  = "your-google-api-key"   # coach fallback (GOOGLE_API_KEY)
+# Coach primary: Mercury 2.5. Leave empty to use Google, then Groq.
+inception_api_key = ""
+# Lets Delete Account also remove the Supabase login (service_role / secret key).
+supabase_service_role_key = ""
 groq_api_key    = "your-groq-api-key"
 sentry_dsn_api  = ""
 sentry_dsn_worker = ""
 
 # ─── TLS + alerting (REQUIRED before real launch) ─────────────────
 # ACM cert for the ALB HTTPS listener; empty keeps HTTP-only dev mode.
-acm_certificate_arn = ""
+acm_certificate_arn = "arn:aws:acm:us-east-1:442004016139:certificate/51bab60e-38be-4c0c-be9e-e7d8ed0843b9"
 # Hostname on that certificate, CNAMEd to the ALB.
 api_domain = "api.strideforrunners.com"
 # Email that receives CloudWatch alarm pages (confirm the SNS subscription).

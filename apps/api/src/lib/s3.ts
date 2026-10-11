@@ -7,6 +7,7 @@ import {
   PutObjectCommand,
   ListObjectsV2Command,
   DeleteObjectsCommand,
+  GetObjectCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
@@ -140,5 +141,30 @@ export async function checkS3Health(): Promise<boolean> {
     return true;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Short-lived presigned GET URL for playback. The app's video player is sent
+ * here by a 302 from GET /videos/:id/file; S3 serves HTTP Range requests
+ * itself, so scrubbing works exactly as it does with the local-mode sendFile.
+ */
+export async function presignedGetUrl(key: string, expiresIn = 3600): Promise<string> {
+  return getSignedUrl(s3Client, new GetObjectCommand({ Bucket: BUCKET, Key: key }), { expiresIn });
+}
+
+/**
+ * Read a small text object (e.g. the .overlay.json sidecar). Returns null when
+ * it does not exist yet, so callers can answer 404 "not ready".
+ */
+export async function getObjectText(key: string): Promise<string | null> {
+  try {
+    const res = await s3Client.send(new GetObjectCommand({ Bucket: BUCKET, Key: key }));
+    return (await res.Body?.transformToString('utf-8')) ?? null;
+  } catch (err) {
+    const name = (err as { name?: string })?.name;
+    const status = (err as { $metadata?: { httpStatusCode?: number } })?.$metadata?.httpStatusCode;
+    if (name === 'NoSuchKey' || name === 'NotFound' || status === 404) return null;
+    throw err;
   }
 }

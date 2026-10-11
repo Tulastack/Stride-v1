@@ -3,7 +3,7 @@
 // rows each has, and when the latest activity was. Use it to tell which DSQL
 // cluster holds the real production data before migrating anything.
 //
-//   node apps/api/scripts/dsql/inspect.mjs --cluster sztwxa4q2knxrbnfldh5x3fita
+//   node apps/api/scripts/dsql/inspect.mjs --cluster gft3jhbw2zbldbhnokioha5epm   (production)
 //   node apps/api/scripts/dsql/inspect.mjs --cluster A --cluster2 B
 //   node apps/api/scripts/dsql/inspect.mjs --local postgres://...
 //
@@ -54,7 +54,7 @@ const targets = [];
 if (args.local) targets.push({ local: args.local });
 for (const k of ['cluster', 'cluster2']) if (args[k]) targets.push({ cluster: args[k], region: args.region });
 if (!targets.length) {
-  targets.push({ cluster: 'sztwxa4q2knxrbnfldh5x3fita' }, { cluster: 'gft3jhbw2zbldbhnokioha5epm' });
+  targets.push({ cluster: 'gft3jhbw2zbldbhnokioha5epm' }); // production
 }
 for (const t of targets) await inspect(t);
 console.log('\nRead-only: nothing was changed.');

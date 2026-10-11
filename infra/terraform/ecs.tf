@@ -114,6 +114,8 @@ resource "aws_ecs_task_definition" "api" {
           { name = "GROQ_API_KEY", valueFrom = aws_secretsmanager_secret.groq_api_key.arn },
         ],
         [for s in aws_secretsmanager_secret.supabase_service_role_key : { name = "SUPABASE_SERVICE_ROLE_KEY", valueFrom = s.arn }],
+        [for s in aws_secretsmanager_secret.google_api_key : { name = "GOOGLE_API_KEY", valueFrom = s.arn }],
+        [for s in aws_secretsmanager_secret.inception_api_key : { name = "INCEPTION_API_KEY", valueFrom = s.arn }],
       )
     }
   ])

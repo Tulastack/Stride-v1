@@ -1,20 +1,25 @@
 # Stride: TestFlight + backend runbook
 
-## Where things stand
+## Where things stand (2026-10-09)
 
-| Piece | State |
+| Piece | Value / state |
 |---|---|
-| iOS build | Built and submitted with EAS (`eas build --platform ios --profile production --auto-submit`) |
-| EAS project | `@thebigt/stride-sprint`; env vars set in the EAS `production` environment |
-| Bundle ID | `com.stridebiometrics.stride` (App Store Connect name is a placeholder "Stride (2470c6)", rename before public launch) |
-| Backend infra | Rebuilt with Terraform on 2026-10-08 after a July `terraform destroy`; state in `s3://stride-terraform-state-442004016139` |
-| Load balancer | `stride-api-alb-production-1828400343.us-east-1.elb.amazonaws.com` (HTTP only until the certificate is attached) |
-| Database | Aurora DSQL, deletion-protected. Terraform currently points at `sztwxa4q2knxrbnfldh5x3fita`; a second cluster `gft3jhbw2zbldbhnokioha5epm` also exists (step 2 decides which is real) |
-| HTTPS cert | Requested for `api.strideforrunners.com`: `arn:aws:acm:us-east-1:442004016139:certificate/51bab60e-38be-4c0c-be9e-e7d8ed0843b9`, waiting on DNS |
-| DNS | Namecheap (whoever owns the account adds records) |
+| API | `https://api.strideforrunners.com` (HTTP redirects to HTTPS) |
+| Load balancer | `stride-api-alb-production-1828400343.us-east-1.elb.amazonaws.com` |
+| HTTPS cert | `arn:aws:acm:us-east-1:442004016139:certificate/51bab60e-38be-4c0c-be9e-e7d8ed0843b9` (issued) |
+| DNS | Namecheap: `api` CNAME to the ALB, plus the ACM validation CNAME |
+| Database | Aurora DSQL `gft3jhbw2zbldbhnokioha5epm.dsql.us-east-1.on.aws`, deletion-protected, schema + seed content applied. `sztwxa4q2knxrbnfldh5x3fita` is an unused prototype |
+| Supabase | `https://rcmllqdxcxauebtowimy.supabase.co` (app uses the publishable key) |
+| S3 / SQS | `stride-videos-production` / `stride-analysis-production` |
+| ECS | cluster `stride-cluster-production`, services `stride-api-production` (2) and `stride-ml-worker-production` (1) |
+| Terraform state | `s3://stride-terraform-state-442004016139`; settings in `infra/terraform/terraform.tfvars` (gitignored) |
+| iOS build | EAS project `@thebigt/stride-sprint`, env vars in the EAS `production` environment |
+| Bundle ID | `com.stridebiometrics.stride` (App Store Connect name is the placeholder "Stride (2470c6)") |
+| Legal pages | `https://tulastack.github.io/Stride-v1/{privacy,terms,support}/` from `site/` |
 
-All commands run from the repo root on the Mac (`~/Desktop/stride-build`) unless stated.
-Get the latest code first: `git pull`.
+Steps 1-4 below were completed on 2026-10-08/09; they stay here for rebuilding
+from scratch. All commands run from the repo root on the Mac (`~/Desktop/stride-build`)
+unless stated. Get the latest code first: `git pull`.
 
 ## 1. Check the deploy finished
 
