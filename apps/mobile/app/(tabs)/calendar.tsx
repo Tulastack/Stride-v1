@@ -79,7 +79,7 @@ export default function CalendarScreen() {
   const completed = dayEvents.filter((event) => event.status === 'completed').length;
   const outstanding = dayEvents.filter((event) => event.status !== 'completed' && event.status !== 'skipped');
   return <Screen>
-    <ScreenHeader logo title="Your plan." />
+    <ScreenHeader title="Your plan." />
     {error ? <><Notice tone="error">{error}</Notice><Button label="Refresh plan" variant="secondary" onPress={() => setAttempt(attempt + 1)} /></> : null}
     <View testID="plan-calendar-surface" style={{ padding: 12, borderRadius: radius.lg, backgroundColor: colors.card }}>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ flexGrow: 1 }}>

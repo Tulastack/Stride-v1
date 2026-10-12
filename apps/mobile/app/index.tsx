@@ -4,8 +4,6 @@ import { Redirect } from 'expo-router';
 import { useStrideStore } from '../src/store/useStrideStore';
 import { useTheme } from '../src/context/ThemeContext';
 import { type as typo } from '../src/theme';
-import { StrideLogo } from '../src/ui/StrideLogo';
-
 export default function IndexRedirect() {
   const token = useStrideStore((state) => state.token);
   const authHydrated = useStrideStore((state) => state.authHydrated);
@@ -16,7 +14,7 @@ export default function IndexRedirect() {
   if (!authHydrated) {
     return (
       <View style={[styles.center, { backgroundColor: colors.bg }]}>
-        <StrideLogo height={40} /><ActivityIndicator color={colors.goldInk} /><Text accessibilityLiveRegion="polite" style={[typo.caption, { color: colors.muted }]}>Restoring your session</Text>
+        <ActivityIndicator color={colors.goldInk} /><Text accessibilityLiveRegion="polite" style={[typo.caption, { color: colors.muted }]}>Restoring your session</Text>
       </View>
     );
   }

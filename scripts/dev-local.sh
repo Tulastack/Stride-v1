@@ -37,7 +37,7 @@ start() {
       nohup env PYTHONPATH=. STORAGE_DRIVER=local LOCAL_STORAGE_DIR=/tmp/stride-local-storage \
         DATABASE_URL="postgres://stride:stride_dev@localhost:5432/stride_test" \
         API_SERVER_URL=http://localhost:3000 INTERNAL_API_SECRET=dev-internal-secret-change-in-prod \
-        STRIDE_PIPELINE=2d POSE2D_BACKEND=rtmpose RTMPOSE_MODE=lightweight POSE_FPS=15 \
+        STRIDE_PIPELINE="${STRIDE_PIPELINE:-2d}" POSE2D_BACKEND=rtmpose RTMPOSE_MODE=lightweight POSE_FPS=15 \
         python -u src/worker.py > "$LOG_DIR/worker.log" 2>&1 & )
     echo "started worker-> $LOG_DIR/worker.log"
   else echo "worker already running (pid $(worker_pid))"; fi

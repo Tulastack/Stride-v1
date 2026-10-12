@@ -1,0 +1,104 @@
+{
+  "learned_3d": [
+    {
+      "clip": "IMG_8267.MOV",
+      "seconds": 45.02,
+      "method": "3d-mono",
+      "trusted": 2,
+      "metrics": 11,
+      "flaws": 2,
+      "focusAreas": 0,
+      "score": 90,
+      "poseFrames": 89,
+      "nudge": "This clip was filmed close to head-on, so the running-plane angles rest on depth the camera could not see. Film from nearer the side for trustworthy joint angles."
+    },
+    {
+      "clip": "IMG_8266.MOV",
+      "seconds": 36.06,
+      "method": "3d-mono",
+      "trusted": 0,
+      "metrics": 11,
+      "flaws": 0,
+      "focusAreas": 5,
+      "score": 90,
+      "poseFrames": 75,
+      "nudge": "Record at 120fps+ for accurate ground-contact and cadence."
+    },
+    {
+      "clip": "IMG_0271.MOV",
+      "seconds": 92.19,
+      "method": "3d-mono",
+      "trusted": 5,
+      "metrics": 11,
+      "flaws": 3,
+      "focusAreas": 2,
+      "score": 68,
+      "poseFrames": 180,
+      "nudge": "Record at 120fps+ for accurate ground-contact and cadence."
+    }
+  ],
+  "geometric_far_clips": [
+    {
+      "clip": "IMG_8267.MOV",
+      "seconds": 6.31,
+      "method": "2d-sagittal-fallback",
+      "trusted": 2,
+      "metrics": 11,
+      "flaws": 1,
+      "focusAreas": 4,
+      "score": 90,
+      "poseFrames": 0,
+      "nudge": "Film from the side (perpendicular to running direction) for trustworthy joint angles."
+    },
+    {
+      "clip": "IMG_8266.MOV",
+      "seconds": 9.82,
+      "method": "2d-sagittal-fallback",
+      "trusted": 0,
+      "metrics": 11,
+      "flaws": 0,
+      "focusAreas": 5,
+      "score": 85,
+      "poseFrames": 0,
+      "nudge": "Record at 120fps+ for accurate ground-contact and cadence."
+    }
+  ],
+  "motion_regression_after_fix": [
+    {
+      "clip": "IMG_0271.MOV",
+      "seconds": 17.16,
+      "method": "2d-sagittal-fallback",
+      "trusted": 3,
+      "metrics": 11,
+      "flaws": 1,
+      "focusAreas": 4,
+      "score": 83,
+      "poseFrames": 0,
+      "nudge": "Record at 120fps+ for accurate ground-contact and cadence."
+    }
+  ],
+  "coach_smoke": {
+    "moved": true,
+    "deleted": true,
+    "actions": [
+      {
+        "kind": "update_event",
+        "eventId": "11111111-1111-4111-8111-111111111111",
+        "changes": {
+          "scheduledDate": "2026-10-15"
+        }
+      },
+      {
+        "kind": "delete_event",
+        "eventId": "22222222-2222-4222-8222-222222222222"
+      }
+    ],
+    "reply": "PLAN:\n\u2022 Proposed change to Tempo run: scheduledDate: 2026-10-15.\n\u2022 Proposed deletion: Wall switches on 2026-10-14.\n\nTIP:\nReview the exact changes below. Nothing has changed yet.",
+    "note": "No database writes. Synthetic records only."
+  },
+  "limits": [
+    "No motion-capture ground truth; these are process and gating checks, not an accuracy study.",
+    "No installed phone or native UI validation.",
+    "No production deployment or production migration."
+  ]
+}

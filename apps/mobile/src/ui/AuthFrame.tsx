@@ -3,8 +3,6 @@ import { View, Text, KeyboardAvoidingView, Platform, StyleSheet } from 'react-na
 import { useTheme } from '../context/ThemeContext';
 import { space, radius, type as typo } from '../theme';
 import { Screen, TrackScene, Field, Button, Notice } from './primitives';
-import { StrideLogo } from './StrideLogo';
-
 export function AuthFrame({ register, email, password, setEmail, setPassword, loading, error, onSubmit, onAlternate }: {
   register?: boolean; email: string; password: string;
   setEmail: (value: string) => void; setPassword: (value: string) => void;
@@ -12,7 +10,6 @@ export function AuthFrame({ register, email, password, setEmail, setPassword, lo
 }) {
   const { colors } = useTheme();
   return <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}><Screen>
-    <View style={styles.brand}><StrideLogo height={32} /></View>
     <View style={[styles.stage, { backgroundColor: colors.well }]}><View style={styles.stageCopy}><Text style={[typo.label, { color: colors.accent }]}>BUILT AROUND YOU</Text><Text style={[typo.display, { color: colors.wellText, marginTop: 12 }]}>A better stride.{'\n'}Starts here.</Text></View><TrackScene /></View>
     <View style={{ gap: space.lg }}><Text accessibilityRole="header" style={[typo.h2, { color: colors.text }]}>{register ? 'Join your coaching staff' : 'Welcome back'}</Text>
       {error ? <Notice tone="error">{error}</Notice> : null}
@@ -24,4 +21,4 @@ export function AuthFrame({ register, email, password, setEmail, setPassword, lo
   </Screen></KeyboardAvoidingView>;
 }
 
-const styles = StyleSheet.create({ brand: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, stage: { borderRadius: radius.lg, overflow: 'hidden' }, stageCopy: { padding: space.xl, paddingBottom: 0 } });
+const styles = StyleSheet.create({ stage: { borderRadius: radius.lg, overflow: 'hidden' }, stageCopy: { padding: space.xl, paddingBottom: 0 } });

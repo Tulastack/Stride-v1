@@ -14,7 +14,8 @@ export const METRIC_TRUST: Record<string, MetricTrustStatus> = {
 
 export function metricTrustStatus(key: string, fromResult?: MetricTrustStatus): MetricTrustStatus {
   if (fromResult) return fromResult;
-  return METRIC_TRUST[key] ?? 'experimental';
+  // Validation of a metric family does not validate this particular capture.
+  return 'experimental';
 }
 
 export function isExperimentalMetric(key: string, fromResult?: MetricTrustStatus): boolean {

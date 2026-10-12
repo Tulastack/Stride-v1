@@ -11,7 +11,7 @@ import { Screen, ScreenHeader, TrackScene, Button, Notice, SectionTitle, Segment
 import { useTheme } from '../../src/context/ThemeContext';
 import { space, radius, type as typo } from '../../src/theme';
 import type { AnalysisResult } from '../../src/types/analysis';
-import { trustedReading } from '../../src/lib/measurementTrust';
+import { trustedReading, hasUsableScore, measurableCount } from '../../src/lib/measurementTrust';
 import { useRecoveryStatus } from '../../src/hooks/useRecoveryStatus';
 import { RecoveryControls } from '../../src/components/RecoveryControls';
 
@@ -38,6 +38,9 @@ function friendlyError(err?: string | null): string {
   if (!err) return 'Something went wrong analyzing your run.';
   if (err.includes('low_confidence_video')) {
     return "We couldn't track your body clearly. Film your full body from the side, in good lighting, then try again.";
+  }
+  if (err.includes('target_identity_lost')) {
+    return 'This clip switched between runners, so it was set aside to keep your report accurate. Circle just your athlete on a clear frame, or film with only you in the lane, then try again.';
   }
   if (err.includes('video not found')) {
     return "Your video didn't finish uploading. Check your connection and re-upload.";
@@ -170,7 +173,7 @@ export default function AnalysisScreen() {
   const approved = suggestions.filter((s) => s.status === 'approved');
 
   if (status === 'pending' || status === 'processing') return <Screen>
-    <ScreenHeader logo title="Reading your movement." />
+    <ScreenHeader title="Reading your movement." />
     <View style={[styles.observatory, { backgroundColor: colors.well }]}><TrackScene /><View style={styles.observatoryCopy}><Text style={[typo.label, { color: colors.accent }]}>REPORT / {status === 'processing' ? 'PROCESSING' : 'REQUESTED'}</Text><Text accessibilityLiveRegion="polite" style={[typo.h2, { color: colors.wellText }]}>{status === 'processing' ? 'Analyzing your sprint...' : 'Loading...'}</Text><ActivityIndicator color={colors.accent} /></View></View>
     <Text style={[typo.body, { color: colors.muted }]}>Your report appears when the analysis is complete. Measurements are checked for confidence before they become coaching cues.</Text>
     <Button label="Back to capture" variant="secondary" onPress={() => router.push('/(tabs)/')} />
@@ -182,13 +185,25 @@ export default function AnalysisScreen() {
     <Button label="Try Again" onPress={() => load(analysisId)} /><Button label="Record another sprint" variant="secondary" onPress={() => router.push('/(tabs)/')} />
   </Screen>;
 
-  const trustedCount = (result.metrics ?? []).filter((metric) => trustedReading(result, metric, 0.5)).length;
-  const score = Number.isFinite(result.economyScore) ? result.economyScore : null;
+  const trustedCount = (result.metrics ?? []).filter((metric) => trustedReading(result, metric)).length;
+  const measurable = measurableCount(result);
+  const outOfView = (result.metrics?.length ?? 0) - measurable;
+  const score = hasUsableScore(result) ? result.economyScore : null;
 
   return <Screen style={{ gap: space.lg }}>
     <ScreenHeader eyebrow="Movement report" title="Your stride, understood." subtitle={(result.phase ?? 'sprint').replace(/_/g, ' ')} />
-    {analysisId ? <View style={[styles.film, { backgroundColor: colors.well }]}><View style={styles.filmHeader}><Text style={[typo.label, { color: colors.accent }]}>YOUR FILM</Text><Text style={[typo.caption, { color: colors.wellMuted }]}>Real video · 2D tracking</Text></View><PoseVideoPlayer analysisId={analysisId} seekToMs={seek} /></View> : null}
-    <View style={[styles.reportRail, { borderColor: colors.border }]}><View style={{ flex: 1 }}><Text style={[typo.label, { color: colors.muted }]}>FORM SCORE</Text><Text style={[score == null ? typo.h2 : typo.numeric, { color: colors.text }]}>{score == null ? 'Not available' : score}<Text style={[typo.caption, { color: colors.muted }]}>{score == null ? '' : ' / 100'}</Text></Text></View><View><Text style={[typo.label, { color: colors.muted }]}>TRUSTED READINGS</Text><Text style={[typo.h2, { color: colors.text, fontVariant: ['tabular-nums'] }]}>{trustedCount} / {result.metrics?.length ?? 0}</Text></View></View>
+    {analysisId ? <View style={[styles.film, { backgroundColor: colors.well }]}><View style={styles.filmHeader}><Text style={[typo.label, { color: colors.accent }]}>YOUR FILM</Text><Text style={[typo.caption, { color: colors.wellMuted }]}>Original video · tracked joints</Text></View><PoseVideoPlayer analysisId={analysisId} seekToMs={seek} /></View> : null}
+    <View style={[styles.reportRail, { borderColor: colors.border }]}>
+      <View style={styles.scoreCol}>
+        <Text style={[typo.label, { color: colors.muted }]} numberOfLines={1}>FORM SCORE</Text>
+        <Text style={[score == null ? typo.h2 : typo.numeric, { color: colors.text }]} numberOfLines={1}>{score == null ? 'Not available' : score}<Text style={[typo.caption, { color: colors.muted }]}>{score == null ? '' : ' / 100'}</Text></Text>
+      </View>
+      <View style={styles.trustedCol}>
+        <Text style={[typo.label, { color: colors.muted }]} numberOfLines={1}>TRUSTED READINGS</Text>
+        <Text style={[typo.h2, { color: colors.text, fontVariant: ['tabular-nums'] }]}>{trustedCount} / {measurable}</Text>
+        {outOfView > 0 ? <Text testID="trusted-view-note" style={[typo.caption, { color: colors.muted }]}>{outOfView} more need another angle or higher fps</Text> : null}
+      </View>
+    </View>
     <SegmentedControl value={lens} onChange={setLens} options={[{ value: 'overview', label: 'Overview' }, { value: 'measurements', label: 'Measurements' }, { value: 'practice', label: 'Practice' }]} />
     <RecoveryControls recovery={recovery} />
     {lens === 'overview' ? <>
@@ -204,7 +219,6 @@ export default function AnalysisScreen() {
         </View>;
       })}</> : <Notice>No confirmed form issues in this report. This is not a guarantee that every movement is ideal.</Notice>}
       {result.focusAreas?.length ? <><SectionTitle>Refine next</SectionTitle><Text style={[typo.caption, { color: colors.muted }]}>Exploratory readings, not confirmed faults.</Text>{result.focusAreas.map((area) => <View key={area.id} style={[styles.observation, { borderColor: colors.border }]}><Text style={[typo.label, { color: colors.muted }]}>{area.kind === 'unconfirmed' ? 'UNCONFIRMED READ' : 'NEAR THE TARGET EDGE'}</Text><Text style={[typo.h2, { color: colors.text }]}>{area.name.replace(/_/g, ' ')}</Text><Text style={[typo.body, { color: colors.muted }]}>{area.plainExplanation}</Text>{area.drill && canPrescribe ? <Text style={[typo.caption, { color: colors.goldInk }]}>{area.drill.drillName} · {area.drill.sets} × {area.drill.reps}</Text> : null}</View>)}</> : null}
-      <Button label="Want personalized tips?" variant="secondary" onPress={() => router.push({ pathname: '/(tabs)/coach', params: { analysisId } })} />
     </> : lens === 'measurements' ? <>
       <SectionTitle>Inside the measurements</SectionTitle><Text style={[typo.caption, { color: colors.muted }]}>Open a reading for its uncertainty band and target range. Low-quality measurements are withheld, not guessed.</Text>
       {(result.metrics ?? []).map((metric) => <MetricRow key={metric.key} metric={metric} usable={result.captureQuality?.perMetricUsable?.[metric.key]} />)}
@@ -222,13 +236,22 @@ export default function AnalysisScreen() {
       {approved.length ? <Button label="View in Plan" variant="secondary" onPress={() => router.push('/(tabs)/calendar')} /> : null}
     </> : null}
     <Text testID="analysis-disclaimer" style={[typo.caption, { color: colors.muted }]}>Coaching insights, not medical advice. Measurement quality depends on the view and footage.</Text>
+    <View style={[styles.nextStep, { borderColor: colors.border, backgroundColor: colors.card }]}>
+      <Text style={[typo.label, { color: colors.goldInk }]}>NEXT</Text>
+      <Text style={[typo.h2, { color: colors.text }]}>Check this with your coach</Text>
+      <Text style={[typo.body, { color: colors.muted }]}>Your coach reads this report and can place the work on your plan. The report, coach, and plan stay open, so you can move between them any time.</Text>
+      <Button label="Check with your coach" onPress={() => router.push({ pathname: '/(tabs)/coach', params: { analysisId, workflow: 'report' } })} />
+    </View>
   </Screen>;
 }
 
 const styles = StyleSheet.create({
   observatory: { borderRadius: radius.lg, overflow: 'hidden' }, observatoryCopy: { padding: space.xl, gap: space.lg },
   film: { borderRadius: radius.md, overflow: 'hidden' }, filmHeader: { paddingHorizontal: space.lg, paddingTop: space.lg, paddingBottom: space.sm, flexDirection: 'row', justifyContent: 'space-between' },
-  reportRail: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: space.lg, paddingVertical: space.lg, borderBottomWidth: 0.5 },
+  reportRail: { flexDirection: 'row', alignItems: 'flex-start', gap: space.lg, paddingVertical: space.lg, borderBottomWidth: 0.5 },
+  scoreCol: { flexShrink: 0, gap: 2 },
+  trustedCol: { flex: 1, minWidth: 0, gap: 2 },
   observation: { paddingVertical: space.lg, borderBottomWidth: 0.5, gap: space.md },
   observationHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  nextStep: { gap: space.md, padding: space.lg, borderRadius: radius.sm, borderWidth: 1 },
 });

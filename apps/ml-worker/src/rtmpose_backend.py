@@ -20,7 +20,7 @@ from typing import Any
 import cv2
 import numpy as np
 
-from src.crop_tracker import CropTracker
+from src.crop_tracker import CropTracker, _iou, _kp_bbox_px
 from src.movenet import CORE_JOINTS, KEYPOINT_INDEX, KEYPOINT_NAMES
 
 logger = logging.getLogger(__name__)
@@ -119,12 +119,104 @@ def _select_person(kpts, scores, w, h, target, core_idx):
 
 def _seed_bbox(target) -> tuple[float, float, float, float]:
     """Seed a normalized bbox from a point (x,y) OR an explicit brush bbox
-    (x0,y0,x1,y1)."""
-    if len(target) == 4:
-        x0, y0, x1, y1 = target
+    (x0,y0,x1,y1[,tMs])."""
+    if len(target) >= 4:
+        x0, y0, x1, y1 = target[:4]
         return (min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1))
     cx, cy = target
     return (cx - 0.12, cy - 0.30, cx + 0.12, cy + 0.30)  # rough standing-person box
+
+
+# The forward track must be on the circled person at the circled frame: its box
+# there has to overlap the one found by the backtrack at least this much.
+_BRUSH_IDENTITY_IOU = 0.5
+
+
+def _crop_step(body, tracker: CropTracker, frame: np.ndarray, core_idx):
+    """One tracked pose step. Returns (kp (17,3) [y,x,conf] normalized, excluded)."""
+    h, w = frame.shape[:2]
+    kp = np.zeros((17, 3), dtype=float)
+    tracker.predict()
+    if tracker.gone:
+        return kp, True
+    sx0, sy0, sx1, sy1 = tracker.search_box()
+    cx0 = max(0, int(sx0 * w)); cy0 = max(0, int(sy0 * h))
+    cx1 = min(w, int(sx1 * w)); cy1 = min(h, int(sy1 * h))
+    # Recovery: once the position lock is stale (long miss run / exit latch) or
+    # the predicted box has drifted degenerate, search the FULL frame; the
+    # tracker's continuity gate still decides whether a candidate is the athlete.
+    if tracker.needs_global_search() or cx1 - cx0 < 24 or cy1 - cy0 < 24:
+        cx0, cy0, cx1, cy1 = 0, 0, w, h
+    crop = frame[cy0:cy1, cx0:cx1]
+    cw, ch = cx1 - cx0, cy1 - cy0
+    crop_inf, crop_scale = _maybe_downscale(crop)
+    kpts_c, scores_c = body(crop_inf)
+    if crop_scale != 1.0 and len(kpts_c) > 0:
+        kpts_c = [xy / crop_scale for xy in kpts_c]
+    idx = tracker.select(kpts_c, scores_c, crop, (cx0, cy0), (cw, ch)) if len(scores_c) > 0 else None
+    if idx is None:
+        tracker.miss += 1
+        return kp, True
+    xy, sc = kpts_c[idx], scores_c[idx]
+    kp[:, 0] = np.clip((cy0 + xy[:, 1]) / h, 0, 1)
+    kp[:, 1] = np.clip((cx0 + xy[:, 0]) / w, 0, 1)
+    kp[:, 2] = sc
+    tracker.update(xy, sc, crop, (cx0, cy0), (cw, ch))
+    return kp, float(np.mean(kp[core_idx, 2])) < _CONF_THRESHOLD
+
+
+def _check_brush_identity(tracker: CropTracker, brush_box) -> None:
+    """The forward track must be on the circled person at the circled frame;
+    anyone else means the identity hopped somewhere, and the clip is invalid."""
+    if tracker.miss != 0 or tracker.box is None:
+        logger.warning("Target lock: athlete not detected on the circled frame, identity check skipped")
+        return
+    overlap = _iou(tracker.box, brush_box)
+    if overlap < _BRUSH_IDENTITY_IOU:
+        logger.warning("Target lock: forward track is on someone else at the circled frame (IoU %.2f)", overlap)
+        raise ValueError("target_identity_lost")
+
+
+def _backtrack(video_path: str, body, seed, brush_frame: int, interval: float, dt: float, core_idx):
+    """Lock the circled person on the frame they were circled on, then follow
+    them BACKWARD to the start of the clip.
+
+    Returns (start_frame, start_box, brush_box): where the forward pass should
+    pick the athlete up, and their box on the circled frame. None when the
+    circled frame holds nobody mostly inside the circle."""
+    cap = cv2.VideoCapture(video_path)
+    tracker: CropTracker | None = None
+    brush_box = None
+    earliest = None
+    try:
+        k = 0
+        while True:
+            pos = int(round(brush_frame - k * interval))
+            if pos < 0:
+                break
+            cap.set(cv2.CAP_PROP_POS_FRAMES, pos)
+            ret, frame = cap.read()
+            if not ret:
+                break
+            if tracker is None:
+                tracker = CropTracker(seed, frame.shape[1], frame.shape[0], dt)
+            _crop_step(body, tracker, frame, core_idx)
+            if tracker.miss == 0 and tracker.box is not None:
+                if brush_box is None:
+                    if k > 2:
+                        return None  # not on the circled frame: nothing to anchor to
+                    brush_box = tracker.box
+                earliest = (pos, tracker.box)
+            elif brush_box is None and k > 2:
+                return None
+            if tracker.gone:
+                break
+            k += 1
+    finally:
+        cap.release()
+    if brush_box is None or earliest is None:
+        return None
+    return earliest[0], earliest[1], brush_box
 
 
 def iter_frames(video_path: str, target_fps: int = 30, target=None, timing_out=None):
@@ -157,10 +249,23 @@ def iter_frames(video_path: str, target_fps: int = 30, target=None, timing_out=N
     interval = source_fps / effective_fps
     core_idx = [KEYPOINT_INDEX[j] for j in CORE_JOINTS]
     seed = _seed_bbox(target) if target is not None else None  # normalized seed box
+    dt = interval / source_fps
+    # The circle was drawn on the frame at tMs, not on frame 0: find the person
+    # there, follow them back to the start, and begin the forward track on them.
+    brush_frame, brush_box, start_frame = None, None, 0
+    if seed is not None and len(target) >= 5 and float(target[4] or 0) > 0:
+        brush_frame = min(int(round(float(target[4]) / 1000.0 * source_fps)), total - 1)
+        if brush_frame >= interval:
+            found = _backtrack(video_path, body, seed, brush_frame, interval, dt, core_idx)
+            if found is not None:
+                start_frame, seed, brush_box = found
+                logger.info("Target lock: circled at frame %d, tracked back to frame %d", brush_frame, start_frame)
+            else:
+                logger.info("Target lock: nobody mostly inside the circle at frame %d", brush_frame)
     tracker: CropTracker | None = None  # created on the first sampled frame (needs w,h)
     tgt = None  # centroid for the no-target lock-and-follow path
     frame_idx = 0
-    next_sample = 0.0
+    next_sample = float(start_frame)  # first forward sample lands on the backtracked frame
     la, ra = KEYPOINT_INDEX["left_ankle"], KEYPOINT_INDEX["right_ankle"]
     prev_gray = None            # previous frame (grayscale) for LK, timing path only
     ankle_pts = None            # float32 [[Lx,Ly],[Rx,Ry]] full-frame px, LK state
@@ -171,43 +276,29 @@ def iter_frames(video_path: str, target_fps: int = 30, target=None, timing_out=N
                 break
             h, w = frame.shape[:2]
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) if timing_out is not None else None
-            if frame_idx >= next_sample:
+            is_sample = frame_idx >= next_sample
+            if (brush_box is not None and frame_idx == brush_frame and not is_sample
+                    and tracker is not None):
+                # identity check on the exact circled frame, not yielded
+                _crop_step(body, tracker, frame, core_idx)
+                _check_brush_identity(tracker, brush_box)
+                brush_box = None
+            if is_sample:
                 kp = np.zeros((17, 3), dtype=float)
                 excluded = True
 
-                if seed is not None:
-                    # ── crop-to-target: a Kalman + appearance tracker OWNS the
-                    #    athlete's identity; pose runs only on the predicted crop ──
+                if seed is not None and frame_idx < start_frame:
+                    pass  # before the circled athlete is first visible
+                elif seed is not None:
+                    # ── crop-to-target: a Kalman + appearance + continuity
+                    #    tracker OWNS the athlete's identity; pose runs only on
+                    #    the predicted crop ──
                     if tracker is None:
-                        tracker = CropTracker(seed, w, h)
-                    tracker.predict()
-                    sx0, sy0, sx1, sy1 = tracker.search_box()
-                    cx0 = max(0, int(sx0 * w)); cy0 = max(0, int(sy0 * h))
-                    cx1 = min(w, int(sx1 * w)); cy1 = min(h, int(sy1 * h))
-                    # Recovery: once the position lock is stale (long miss run /
-                    # exit latch) or the predicted box has drifted degenerate,
-                    # search the FULL frame instead of a blind crop, a lost
-                    # target must be re-findable anywhere, or every remaining
-                    # frame gets excluded and the whole analysis dies.
-                    if tracker.needs_global_search() or cx1 - cx0 < 24 or cy1 - cy0 < 24:
-                        cx0, cy0, cx1, cy1 = 0, 0, w, h
-                    crop = frame[cy0:cy1, cx0:cx1]
-                    cw, ch = cx1 - cx0, cy1 - cy0
-                    # Downscale crop before inference; coords rescaled back below.
-                    crop_inf, crop_scale = _maybe_downscale(crop)
-                    kpts_c, scores_c = body(crop_inf)
-                    if crop_scale != 1.0 and len(kpts_c) > 0:
-                        kpts_c = [xy / crop_scale for xy in kpts_c]
-                    idx = tracker.select(kpts_c, scores_c, crop, (cx0, cy0), (cw, ch)) if len(scores_c) > 0 else None
-                    if idx is not None:
-                        xy, sc = kpts_c[idx], scores_c[idx]
-                        kp[:, 0] = np.clip((cy0 + xy[:, 1]) / h, 0, 1)  # y (full-frame)
-                        kp[:, 1] = np.clip((cx0 + xy[:, 0]) / w, 0, 1)  # x
-                        kp[:, 2] = sc
-                        tracker.update(xy, sc, crop, (cx0, cy0), (cw, ch))
-                        excluded = float(np.mean(kp[core_idx, 2])) < _CONF_THRESHOLD
-                    else:
-                        tracker.miss += 1
+                        tracker = CropTracker(seed, w, h, dt)
+                    kp, excluded = _crop_step(body, tracker, frame, core_idx)
+                    if brush_box is not None and frame_idx >= brush_frame:
+                        _check_brush_identity(tracker, brush_box)
+                        brush_box = None
                 else:
                     # ── no target: full-frame lock-and-follow (auto) ──
                     frame_inf, frame_scale = _maybe_downscale(frame)
@@ -222,6 +313,14 @@ def iter_frames(video_path: str, target_fps: int = 30, target=None, timing_out=N
                         kp[:, 1] = np.clip(xy[:, 0] / w, 0, 1)
                         kp[:, 2] = sc
                         excluded = float(np.mean(kp[core_idx, 2])) < _CONF_THRESHOLD
+                        if not excluded:
+                            # From here on the auto-picked runner is tracked with
+                            # the same continuity guarantee as a circled one.
+                            bx0, by0, bx1, by1 = _kp_bbox_px(xy, sc, w, h)
+                            seed = (bx0 / w, by0 / h, bx1 / w, by1 / h)
+                            tracker = CropTracker(seed, w, h, dt)
+                            tracker.predict()
+                            tracker.update(xy, sc, frame, (0, 0), (w, h))
 
                 if timing_out is not None and not excluded:
                     # (re-)anchor the LK ankle points from this fresh pose keyframe

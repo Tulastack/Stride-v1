@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import math
 import sys
 import tempfile
 import threading
@@ -110,6 +111,9 @@ LOCAL_STORAGE_DIR = os.environ.get("LOCAL_STORAGE_DIR", "/tmp/stride-local-stora
 #   STRIDE_PIPELINE=2d      (default), RTMPose + 2D sagittal biomechanics. The
 #                           production path: accurate sagittal angles from a good
 #                           2D backbone, no fragile monocular 3D lift. CPU-friendly.
+#                           Measured on the local report set: RTMW3D returned
+#                           trunk lean 92 deg, valgus 245 deg and 0/11 trusted on
+#                           a clip the 2D path reads with 3 trusted readings.
 #   STRIDE_PIPELINE=wham, MoveNet/RTMPose + WHAM 3D lift (needs GPU + STRIDE_WHAM_REPO)
 #   STRIDE_PIPELINE=legacy, old 2D + Gemini LLM report
 PIPELINE = os.environ.get("STRIDE_PIPELINE", "2d").lower()
@@ -130,8 +134,8 @@ def lift_left_a_score(result: dict) -> bool:
     """
     usable = (result.get("captureQuality") or {}).get("perMetricUsable") or {}
     for metric in result.get("metrics") or []:
-        value = ((metric.get("measured") or {}).get("value")) or 0
-        if usable.get(metric.get("key")) and value > 0:
+        value = (metric.get("measured") or {}).get("value")
+        if usable.get(metric.get("key")) and isinstance(value, (int, float)) and math.isfinite(value):
             return True
     return False
 # Minimum median torso height, as a fraction of frame height, for the geometric
@@ -297,7 +301,8 @@ def _run_2d(analysis_id: str, video_path: str, capture: dict, s3_key: str | None
     target_xy = None
     if isinstance(tgt, dict):
         if all(tgt.get(k) is not None for k in ("x0", "y0", "x1", "y1")):
-            target_xy = (float(tgt["x0"]), float(tgt["y0"]), float(tgt["x1"]), float(tgt["y1"]))
+            target_xy = (float(tgt["x0"]), float(tgt["y0"]), float(tgt["x1"]), float(tgt["y1"]),
+                         float(tgt.get("tMs") or 0))
             logger.info("Target lock: brush bbox %s", target_xy)
         elif tgt.get("xNorm") is not None and tgt.get("yNorm") is not None:
             target_xy = (float(tgt["xNorm"]), float(tgt["yNorm"]))
@@ -390,9 +395,16 @@ def _run_3d(analysis_id: str, video_path: str, capture: dict, s3_key: str | None
 
     notify_progress(analysis_id, "pose_extraction", 30, "RTMW3D 3D keypoints")
     tgt = capture.get("target")
-    poses, conf, meta = extract_3d_sequence(
-        video_path, target=tgt, target_fps=pose_fps,
-        max_frames=_max_frames(pose_fps))
+    try:
+        poses, conf, meta = extract_3d_sequence(
+            video_path, target=tgt, target_fps=pose_fps,
+            max_frames=_max_frames(pose_fps))
+    except (FileNotFoundError, ValueError) as exc:
+        if isinstance(exc, ValueError) and str(exc) != "rtmw3d_model_missing":
+            raise
+        logger.warning("RTMW3D weights unavailable, using geometric reconstruction")
+        _run_3d_geo(analysis_id, video_path, capture, s3_key)
+        return
 
     # Gravity from the phone IMU makes the canonical frame invariant to camera
     # pitch and roll, not just yaw. Absent, Stage 4 falls back to assuming +Y up.
@@ -402,7 +414,10 @@ def _run_3d(analysis_id: str, video_path: str, capture: dict, s3_key: str | None
     result = analyze_3d_multisegment(
         poses, conf, fps=meta["poseFps"], up_world=up,
         source_fps=meta["sourceFps"], capture_fps=capture_fps,
-        clip_id=analysis_id[:8])
+        timing_signal=meta.get("timingSignal"), timing_fps=meta["sourceFps"],
+        frame_indices=meta["frameIndices"], clip_id=analysis_id[:8])
+    if meta.get("overlay"):
+        _write_overlay(video_path, s3_key, meta["overlay"])
 
     cq = result["captureQuality"]
     if capture.get("motionBlur"):
@@ -495,7 +510,8 @@ def _run_3d_geo(analysis_id: str, video_path: str, capture: dict, s3_key: str | 
     target_xy = None
     if isinstance(tgt, dict):
         if all(tgt.get(k) is not None for k in ("x0", "y0", "x1", "y1")):
-            target_xy = (float(tgt["x0"]), float(tgt["y0"]), float(tgt["x1"]), float(tgt["y1"]))
+            target_xy = (float(tgt["x0"]), float(tgt["y0"]), float(tgt["x1"]), float(tgt["y1"]),
+                         float(tgt.get("tMs") or 0))
             logger.info("Target lock: brush bbox %s", target_xy)
         elif tgt.get("xNorm") is not None and tgt.get("yNorm") is not None:
             target_xy = (float(tgt["xNorm"]), float(tgt["yNorm"]))
@@ -584,11 +600,7 @@ def _run_3d_geo(analysis_id: str, video_path: str, capture: dict, s3_key: str | 
         # leaves the single biggest cause of 3D failure uncorrected.
         # Existing advice wins: a nudge already set by the 2D analysis is about
         # this clip's metrics, which is more specific than framing.
-        cq.setdefault(
-            "primaryNudge",
-            "Film the runner larger in frame, move closer or zoom in. "
-            "They were too small here for 3D, so this used the 2D analysis.",
-        )
+        cq["primaryNudge"] = "Move closer or zoom in so the runner fills more of the frame. They were too small for 3D; this report uses 2D measurements."
         _finish_3d_geo(analysis_id, result, capture, pose_fps, lift_quality=None)
         return
 
@@ -646,9 +658,18 @@ def _run_3d_geo(analysis_id: str, video_path: str, capture: dict, s3_key: str | 
             source_fps=source_fps, capture_fps=capture_fps,
             timing_signal=timing_signal, timing_fps=source_fps,
             recon_conf=lift_quality["reconConf"],
-            clip_id=analysis_id[:8])
+            frame_indices=[f["frame_index"] for f in included], clip_id=analysis_id[:8])
         result["reconstructionMethod"] = "3d-mono-geometric"
-        if not lift_left_a_score(result):
+        # Assess target motion in the original footage, not just through a
+        # virtual camera. A self-consistent lift can flatten the gait enough to
+        # misclassify a real running subject as static and erase every target.
+        source_result = None
+        motion_inconsistent = False
+        if not result.get("captureQuality", {}).get("movingSubject", True):
+            source_result = _analyze_2d_fallback(analysis_id, included, eff_fps, capture,
+                                               source_fps, capture_fps)
+            motion_inconsistent = source_result.get("captureQuality", {}).get("movingSubject", False)
+        if not lift_left_a_score(result) or motion_inconsistent:
             logger.warning(
                 "3D lift kept (closure %.3f, reconConf %.3f) but no metric was usable, "
                 "falling back to the 2D sagittal path",
@@ -659,9 +680,10 @@ def _run_3d_geo(analysis_id: str, video_path: str, capture: dict, s3_key: str | 
                 "closingRelTorso": lift_quality["closingRelTorso"],
                 "reconConf": lift_quality["reconConf"],
             }
-            result = _analyze_2d_fallback(analysis_id, included, eff_fps, capture,
+            result = source_result or _analyze_2d_fallback(analysis_id, included, eff_fps, capture,
                                           source_fps, capture_fps)
             cq_u = result.setdefault("captureQuality", {})
+            kept["motionInconsistent"] = motion_inconsistent
             cq_u["liftUnscorable"] = kept
             cq_u.setdefault(
                 "primaryNudge",
@@ -705,9 +727,10 @@ def _finish_3d_geo(analysis_id, result, capture, pose_fps, lift_quality):
         cq["liftQuality"] = lift_quality
 
     result["model_meta"] = {
-        "backend": "geometric-bone-lift", "model_version": "lift3d-v1",
+        "backend": "rtmpose-2d" if result["reconstructionMethod"].startswith("2d") else "geometric-bone-lift",
+        "model_version": "rtmpose-2d" if result["reconstructionMethod"].startswith("2d") else "lift3d-v1",
         "detector": "rtmpose", "device": "cpu", "poseFps": pose_fps,
-        "pipeline": "3d-geometric-multisegment", "keypointFormat": "coco17",
+        "pipeline": "2d-sagittal-fallback" if result["reconstructionMethod"].startswith("2d") else "3d-geometric-multisegment", "keypointFormat": "coco17",
     }
 
     overall_score = int(result.get("economyScore") or 0)
@@ -718,7 +741,7 @@ def _finish_3d_geo(analysis_id, result, capture, pose_fps, lift_quality):
             with conn.cursor() as cursor:
                 cursor.execute(
                     "UPDATE analyses SET status='completed', overall_score=%s, result_json=%s, movenet_version=%s, completed_at=now() WHERE id=%s",
-                    (overall_score, json.dumps(result), "lift3d-v1", analysis_id),
+                    (overall_score, json.dumps(result), result["model_meta"]["model_version"], analysis_id),
                 )
 
 

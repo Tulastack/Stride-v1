@@ -4,7 +4,7 @@ import { uploadOne, uploadTwo } from '../fixtures/history';
 describe('Measurement trust and comparison context', () => {
   it('does not trust an unvalidated legacy angular measurement', () => {
     expect(trustedReading(uploadOne, uploadOne.metrics[0])).toBe(false);
-    expect(trustedReading(uploadOne, uploadOne.metrics[2])).toBe(true);
+    expect(trustedReading(uploadOne, uploadOne.metrics[2])).toBe(false);
   });
   it('respects explicit trust, confidence, capture usability, and finite values', () => {
     const metric = { ...uploadOne.metrics[0], trustStatus: 'trusted' as const };

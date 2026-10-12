@@ -111,3 +111,20 @@ def test_truly_empty_clips_still_fail():
         assert False, "expected low_confidence_video"
     except ValueError as e:
         assert "low_confidence_video" in str(e)
+
+
+def test_passing_detector_and_reconstruction_scores_are_not_multiplied_into_failure():
+    result = _run(_series(), recon_conf=.9, capture_fps=120)
+    arm = next(m for m in result['metrics'] if m['key']=='arm_swing')
+    assert arm['measured']['confidence'] > .85 * .9
+    assert arm['trustStatus'] == 'trusted'
+
+
+def test_metric_quality_does_not_depend_on_an_unrelated_low_confidence_limb():
+    S = _series()
+    S['quality_trunk_lean']=[.8]*90
+    S['quality_arm_swing']=[.4]*90
+    result=_run(S)
+    metrics={m['key']:m for m in result['metrics']}
+    assert metrics['trunk_lean']['trustStatus']=='trusted'
+    assert metrics['arm_swing']['trustStatus']=='experimental'

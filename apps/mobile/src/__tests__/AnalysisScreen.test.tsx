@@ -101,7 +101,7 @@ describe('AnalysisScreen', () => {
     expect(getByText('low knee drive')).toBeTruthy();
     expect(getByText('Cue: Drive knee high')).toBeTruthy();
     expect(getByText('A-Skips')).toBeTruthy();
-    expect(getByText('Want personalized tips?')).toBeTruthy();
+    expect(getByText('Check with your coach')).toBeTruthy();
     fireEvent.press(getByText('A-Skips'));
     expect(getByText('Your next practice')).toBeTruthy();
     fireEvent.press(getByTestId('drill-a_skips'));

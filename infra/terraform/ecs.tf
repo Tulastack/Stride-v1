@@ -146,6 +146,10 @@ resource "aws_ecs_task_definition" "ml_worker" {
       }
       environment = [
         { name = "NODE_ENV", value = "production" },
+        { name = "STRIDE_PIPELINE", value = "2d" },
+        { name = "POSE2D_BACKEND", value = "rtmpose" },
+        { name = "RTMPOSE_MODE", value = "lightweight" },
+        { name = "POSE_FPS", value = "15" },
         { name = "S3_BUCKET", value = aws_s3_bucket.videos.id },
         { name = "SQS_QUEUE_URL", value = aws_sqs_queue.analysis.url },
         # Once the cert is attached, call the API by the name on the certificate:

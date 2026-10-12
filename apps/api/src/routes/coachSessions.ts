@@ -20,18 +20,42 @@ const createSessionSchema = z.object({
 
 import { generateCoachReply, buildAnalysisContext, runTrackCoach, buildCoachTools } from '../lib/coach.js';
 import { isCalendarRelevant } from '../lib/coach/calendarRelevance.js';
+import { routeMessage } from '../lib/coach/router.js';
+import { gatherEvidence } from '../lib/coach/workflow.js';
+import { finalizeReply } from '../lib/coach/reply.js';
 import { CoachRateLimitError } from '../lib/coach/errors.js';
+import { permissionsSchema, NO_ACCESS, appActionSchema, actionScope, signProposal, verifyProposal, dateSchema, proposalReply } from '../lib/coach/appActions.js';
+import { groundedResult } from '../lib/measurementTrust.js';
 
 const messageSchema = z.object({
   content: z.string().min(1).max(5000),
+  permissions: permissionsSchema.optional(),
+  today: dateSchema.optional(),
   history: z.array(z.object({
     role: z.enum(['user', 'assistant']),
-    content: z.string(),
-  })).optional(),
+    content: z.string().max(5000),
+  })).max(50).optional(),
   action_chip: z
     .enum(['why_is_this_an_issue', 'mark_understood', 'show_drill', 'ask_coach', 'view_timeline'])
     .optional()
     .nullable(),
+  // Settings that live only on the device, so the coach can read them.
+  client: z.object({
+    appearance: z.enum(['light', 'dark', 'system']).optional(),
+    reduceMotion: z.boolean().optional(),
+  }).strict().optional(),
+});
+
+/**
+ * GET /coach-sessions/usage, the athlete's coach message allowance
+ */
+router.get('/usage', authenticate, async (req: any, res: Response, next: NextFunction) => {
+  try {
+    const { getCoachUsage } = await import('../db/queries.js');
+    res.json(await getCoachUsage(req.userId));
+  } catch (err) {
+    next(err);
+  }
 });
 
 /**
@@ -97,7 +121,8 @@ router.post('/:id/message', authenticate, async (req: any, res: Response, next: 
   try {
     const { id } = req.params;
     const userId = req.userId as string;
-    const { content, history, action_chip } = messageSchema.parse(req.body);
+    const { content, history, action_chip, permissions: granted, today, client } = messageSchema.parse(req.body);
+    const permissions = granted ?? NO_ACCESS;
 
     const session = await getCoachSession(id, userId);
     if (!session) {
@@ -112,6 +137,9 @@ router.post('/:id/message', authenticate, async (req: any, res: Response, next: 
 
     // ── analysis_workflow: handle built-in action chips (no LLM) ──
     if (session.session_type === 'analysis_workflow' && action_chip) {
+      if (['why_is_this_an_issue', 'show_drill', 'ask_coach'].includes(action_chip) && !permissions.analysis) {
+        res.status(403).json({ error: 'Enable analysis access for your coach first.' }); return;
+      }
       switch (action_chip) {
         case 'mark_understood': {
           await sealCoachSession(id);
@@ -197,21 +225,115 @@ router.post('/:id/message', authenticate, async (req: any, res: Response, next: 
       getMetricsTrend,
       getReferenceDrill,
       getCalendarEvents,
+      getAllReferencedrills,
+      reserveCoachMessage,
+      refundCoachMessage,
+      recordCoachTokens,
     } = await import('../db/queries.js');
-    const analyses = await getAnalysesByUser(req.userId);
+
+    // Claim one message from the athlete's allowance before spending tokens.
+    const usage = await reserveCoachMessage(userId);
+    if (!usage) {
+      const { getCoachUsage } = await import('../db/queries.js');
+      res.status(429).json({ code: 'COACH_CAP_REACHED', error: 'Coach message limit reached', usage: await getCoachUsage(userId) });
+      return;
+    }
+    let delivered = false;
+    let intentLabel = 'unrouted';
+    const tokens = { prompt: 0, completion: 0 };
+    try {
+    const analyses = permissions.analysis ? await getAnalysesByUser(req.userId) : [];
     const grounding = session.analysis_id
       ? analyses.find((a: any) => a.id === session.analysis_id)
       : analyses.find((a: any) => a.status === 'completed' && a.result_json);
     // The agent has get_athlete_metrics, so its grounding block stays short and
     // the numbers arrive once, through the tool. The single-shot fallback below
     // has no tools, so it gets the full block.
-    const agentContext = buildAnalysisContext((grounding?.result_json as any) ?? null, req.user, { brief: true });
-    const analysisContext = buildAnalysisContext((grounding?.result_json as any) ?? null, req.user);
+    const agentContext = `TODAY: ${today ?? new Date().toISOString().slice(0, 10)}. Access: ${JSON.stringify(permissions)}. ${permissions.profile && req.user?.is_injured ? 'Athlete is injured. Training is paused.' : ''}\n` + buildAnalysisContext((grounding?.result_json as any) ?? null, permissions.profile ? req.user : null, { brief: true });
+    const analysisContext = buildAnalysisContext((grounding?.result_json as any) ?? null, permissions.profile ? req.user : null);
 
     const toolset = buildCoachTools({
       userId: req.userId,
-      profile: req.user ?? null,
-      deps: { getAnalysesByUser, getMetricsTrend, getReferenceDrill, getCalendarEvents },
+      profile: permissions.profile ? req.user ?? null : null,
+      permissions, analysisId: session.analysis_id,
+      now: today ? () => new Date(`${today}T12:00:00Z`) : undefined,
+      readAppData: async (resource, args) => {
+        const db = await import('../db/queries.js');
+        if (resource === 'profile') {
+          const u = req.user;
+          return { display_name: u.display_name, event_specialty: u.event_specialty, experience_level: u.experience_level, personal_best_seconds: u.personal_best_seconds, is_injured: u.is_injured, drill_intensity_cap: u.drill_intensity_cap };
+        }
+        if (resource === 'coach_sessions') return (await db.getCoachSessionsByUser(userId)).slice(0, 30);
+        if (resource === 'settings') return { appearance: client?.appearance ?? 'unknown', reduceMotion: client?.reduceMotion ?? 'unknown', coachAccess: permissions };
+        if (resource === 'analysis') {
+          const target = z.string().uuid().parse(args.analysisId ?? session.analysis_id ?? analyses[0]?.id);
+          const a: any = analyses.find((x: any) => x.id === target);
+          if (!a) throw new Error('Analysis not found');
+          const r: any = groundedResult(a.result_json);
+          return { id: a.id, status: a.status, created_at: a.created_at, error: a.error_message ?? undefined,
+            result: r ? { ...r, pose3d: undefined, model_meta: undefined, overlay: undefined } : null };
+        }
+        if (resource === 'analyses') return analyses.slice(z.number().int().min(0).parse(args.offset ?? 0), z.number().int().min(0).parse(args.offset ?? 0) + z.number().int().min(1).max(20).parse(args.limit ?? 10)).map((a: any) => ({ id: a.id, status: a.status, created_at: a.created_at, result: groundedResult(a.result_json) ? { ...groundedResult(a.result_json), pose3d: undefined, model_meta: undefined } : null }));
+        if (resource === 'suggestions') {
+          const target = z.string().uuid().parse(args.analysisId ?? session.analysis_id ?? analyses[0]?.id);
+          return db.getSuggestionsByAnalysis(target, userId);
+        }
+        if (resource === 'calendar') {
+          const from = dateSchema.parse(args.from ?? today ?? new Date().toISOString().slice(0, 10));
+          const to = dateSchema.parse(args.to ?? new Date(new Date(`${from}T12:00:00Z`).getTime() + 30 * 86400000).toISOString().slice(0, 10));
+          if (to < from || new Date(to).getTime() - new Date(from).getTime() > 366 * 86400000) throw new Error('Choose a calendar range of at most one year');
+          return db.getCalendarEvents(userId, from, to);
+        }
+        throw new Error('Unknown resource');
+      },
+      proposeAction: async (raw) => {
+        const action = appActionSchema.parse(raw);
+        const db = await import('../db/queries.js');
+        let before: any;
+        if (action.kind === 'update_event' || action.kind === 'delete_event') {
+          before = await db.getCalendarEventById(action.eventId, userId);
+          if (!before) throw new Error('Calendar event not found');
+          if (before.status === 'completed') throw new Error('Completed training cannot be moved or deleted');
+        }
+        if (action.kind === 'set_event_status') {
+          before = await db.getCalendarEventById(action.eventId, userId);
+          if (!before) throw new Error('Calendar event not found');
+          // The athlete's own date decides whether a session can be completed yet.
+          (action as any).today = today ?? new Date().toISOString().slice(0, 10);
+        }
+        if (action.kind === 'approve_suggestion' || action.kind === 'skip_suggestion') {
+          before = await db.getDrillSuggestion(action.suggestionId, userId);
+          if (!before) throw new Error('Suggestion not found');
+          if (before.status !== 'pending') throw new Error(`That suggestion is already ${before.status}`);
+        }
+        if (action.kind === 'update_profile') before = Object.fromEntries(Object.keys(action.changes).map((k) => [k, req.user[k]]));
+        if (action.kind === 'navigate' && action.analysisId && !await db.getAnalysis(action.analysisId, userId)) throw new Error('Analysis not found');
+        if (req.user?.is_injured && ((action.kind === 'create_events' && action.events.some((e) => e.eventType === 'workout' || e.eventType === 'drill')) || (action.kind === 'update_event' && action.changes.eventType && ['workout', 'drill'].includes(action.changes.eventType)) || action.kind === 'approve_suggestion')) throw new Error('Training is paused while injured. Use recovery guidance.');
+        return signProposal(userId, id, action, before);
+      },
+      deps: { getAnalysesByUser, getMetricsTrend, getReferenceDrill, getCalendarEvents, listReferenceDrills: getAllReferencedrills },
+    });
+
+    // Route the message, then gather its evidence in parallel before the first
+    // model call (see lib/coach/router.ts and workflow.ts).
+    const previousUser = [...(history ?? [])].reverse().find((m) => m.role === 'user')?.content ?? null;
+    const route = routeMessage(content, previousUser);
+    intentLabel = [...route.intents].join('+');
+    const latestResult: any = groundedResult((grounding?.result_json as any) ?? null);
+    const metrics: any[] = latestResult?.metrics ?? [];
+    const flaws: any[] = (latestResult?.flaws ?? []).slice().sort((a: any, b: any) => (b.severity ?? 0) - (a.severity ?? 0)).slice(0, 2);
+    // Flaws carry no metric key; the metric reporting the same measurement is theirs.
+    const outOfRange = (m: any) => m.normalRange && (m.measured?.value < m.normalRange[0] || m.measured?.value > m.normalRange[1]);
+    const flawMetricKeys = [...new Set([
+      ...flaws.map((f: any) => metrics.find((m) => m.measured?.value === f.evidence?.measured?.value)?.key),
+      ...(latestResult?.focusAreas ?? []).map((f: any) => f.key),
+      ...metrics.filter((m) => m.trustStatus === 'trusted' && outOfRange(m)).map((m) => m.key),
+    ].filter(Boolean))].slice(0, 2) as string[];
+    const plan = await gatherEvidence(route, toolset, {
+      message: content,
+      flawNames: flaws.map((f: any) => f.name),
+      flawMetricKeys,
+      metricKeys: [...metrics.filter((m) => m.trustStatus === 'trusted'), ...metrics.filter((m) => m.trustStatus !== 'trusted')].map((m) => m.key),
     });
 
     let assistantText: string;
@@ -222,7 +344,11 @@ router.post('/:id/message', authenticate, async (req: any, res: Response, next: 
         analysisContext: agentContext,
         history: history ?? [],
         toolset,
+        evidence: plan.block,
+        toolNames: plan.toolNames,
+        command: route.command,
         onProgress: (ev) => { progress.push(ev.label); },
+        onUsage: (u) => { tokens.prompt += u.prompt; tokens.completion += u.completion; },
       });
     } catch (agentErr) {
       const rateLimited = agentErr instanceof CoachRateLimitError;
@@ -241,6 +367,7 @@ router.post('/:id/message', authenticate, async (req: any, res: Response, next: 
       } else {
         console.error('Coach agent failed, falling back to single-shot reply:', agentErr);
       }
+      // Preserve real proposals if a later model round fails; never imply they ran.
       progress.push('Drafting your coaching plan');
       try {
         assistantText = await generateCoachReply({
@@ -256,12 +383,49 @@ router.post('/:id/message', authenticate, async (req: any, res: Response, next: 
       }
     }
 
+    const final = finalizeReply(assistantText, {
+      measuredKeys: new Set(metrics.map((m) => String(m.key))),
+      evidence: toolset.evidence,
+    });
+    assistantText = toolset.proposals.length ? proposalReply(toolset.proposals) : final.text;
     await touchCoachSession(id);
-    const calendarRelevant = await isCalendarRelevant(assistantText);
-    res.json({ role: 'assistant', content: assistantText, progress, calendarRelevant });
+    const calendarRelevant = permissions.calendar && toolset.proposals.length === 0 && await isCalendarRelevant(assistantText);
+    delivered = true;
+    res.json({ role: 'assistant', content: assistantText, progress, calendarRelevant, actions: toolset.proposals,
+      sources: final.sources, usage });
+    } finally {
+      if (!delivered) await refundCoachMessage(userId, usage.period).catch(() => {});
+      if (tokens.prompt || tokens.completion) {
+        await recordCoachTokens(userId, usage.period, tokens.prompt, tokens.completion).catch(() => {});
+        console.info(`coach turn user=${userId.slice(0, 8)} intents=${intentLabel} prompt=${tokens.prompt} completion=${tokens.completion}`);
+      }
+    }
   } catch (err) {
     next(err);
   }
+});
+
+/** Explicit approval applies only the server-signed action that was reviewed. */
+router.post('/:id/actions/apply', authenticate, async (req: any, res: Response, next: NextFunction) => {
+  try {
+    const { token, permissions } = z.object({ token: z.string().max(50000), permissions: permissionsSchema }).parse(req.body);
+    const session = await getCoachSession(req.params.id, req.userId);
+    if (!session) { res.status(404).json({ error: 'Session not found' }); return; }
+    if (session.status === 'closed') { res.status(409).json({ error: 'Session closed' }); return; }
+    let proposal;
+    try { proposal = verifyProposal(token, req.userId, session.id); }
+    catch { res.status(400).json({ error: 'Invalid or expired approval. Ask the coach to review again.' }); return; }
+    if (!permissions[actionScope(proposal.action)]) { res.status(403).json({ error: 'Coach access was revoked for this action' }); return; }
+    if (req.user?.is_injured && ((proposal.action.kind === 'create_events' && proposal.action.events.some((e) => ['workout', 'drill'].includes(e.eventType))) || (proposal.action.kind === 'update_event' && proposal.action.changes.eventType && ['workout', 'drill'].includes(proposal.action.changes.eventType)))) {
+      res.status(409).json({ error: 'Training is paused while injured' }); return;
+    }
+    const { applyCoachAction } = await import('../db/coachActions.js');
+    try { res.json(await applyCoachAction(req.userId, session.id, proposal)); }
+    catch (err) {
+      if (err instanceof Error && /changed|Completed training/.test(err.message)) { res.status(409).json({ error: err.message }); return; }
+      throw err;
+    }
+  } catch (err) { next(err); }
 });
 
 /**
@@ -273,12 +437,17 @@ router.post('/:id/add-to-calendar', authenticate, async (req: any, res: Response
     const userId = req.userId as string;
     const { id } = req.params;
     // Validate the free-form body: a non-array history would crash .map below.
-    const { history } = z.object({
+    const { history, permissions = NO_ACCESS } = z.object({
+      permissions: permissionsSchema.optional(),
       history: z.array(z.object({ role: z.enum(['user', 'assistant']), content: z.string() })).max(50).optional(),
     }).parse(req.body ?? {});
 
     const session = await getCoachSession(id, userId);
     if (!session) { res.status(404).json({ error: 'Session not found' }); return; }
+    if (session.status === 'closed') { res.status(409).json({ error: 'Session closed' }); return; }
+
+    if (!permissions.calendar) { res.status(403).json({ error: 'Enable calendar access first.' }); return; }
+    if (req.user?.is_injured) { res.status(409).json({ error: 'Training is paused while injured' }); return; }
 
     // Build context from the conversation history
     const conversationSummary = (history ?? [])
@@ -303,9 +472,9 @@ Rules:
 Output ONLY the raw JSON array. No markdown. No explanation. Just [ ... ]`;
 
     const { getAnalysesByUser } = await import('../db/queries.js');
-    const analyses = await getAnalysesByUser(userId);
+    const analyses = permissions.analysis ? await getAnalysesByUser(userId) : [];
     const latest = analyses.find((a: any) => a.status === 'completed' && a.result_json);
-    const analysisContext = buildAnalysisContext((latest?.result_json as any) ?? null, req.user);
+    const analysisContext = buildAnalysisContext((latest?.result_json as any) ?? null, permissions.profile ? req.user : null);
 
     const planJson = await generateCoachReply({
       analysisContext,
@@ -328,7 +497,6 @@ Output ONLY the raw JSON array. No markdown. No explanation. Just [ ... ]`;
     // Validate the LLM's output before it reaches SQL: bad event types or
     // malformed dates must 422 with a readable message, not 500 on a pg error.
     const VALID_EVENT_TYPES = new Set(['workout', 'rest', 'competition', 'drill', 'hydration', 'recovery', 'cross_training']);
-    const { createCalendarEvents } = await import('../db/queries.js');
     const dbEvents = events
       .filter((e: any) => typeof e?.scheduledDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(e.scheduledDate))
       .map((e: any) => ({
@@ -344,8 +512,8 @@ Output ONLY the raw JSON array. No markdown. No explanation. Just [ ... ]`;
 
     // 'coach', the athlete did not pick these dates by hand, so the plan is
     // handed to the Plan tab's card reveal rather than appearing silently.
-    const created = await createCalendarEvents(userId, dbEvents, 'coach');
-    res.json({ created: created.length, events: created });
+    const action = appActionSchema.parse({ kind: 'create_events', events: dbEvents.map((e) => ({ title: e.title, eventType: e.event_type, scheduledDate: e.scheduled_date, details: e.details })) });
+    res.json({ created: 0, events: [], actions: [signProposal(userId, id, action)] });
   } catch (err) {
     next(err);
   }

@@ -1,3 +1,4 @@
+import type { CoachPermissions, CoachProposal, CoachUsage } from '../lib/coachAccess';
 import { useStrideStore } from '../store/useStrideStore';
 import { getAccessToken } from '../lib/supabase';
 import type { CaptureManifest } from './capture';
@@ -306,20 +307,30 @@ export const strideApi = {
   },
 
   // Free-form question to the grounded Groq coach (free_coach sessions).
-  askCoach: async (sessionId: string, content: string, history?: { role: string; content: string }[]) => {
-    return request<{ role: string; content: string; progress?: string[]; calendarRelevant?: boolean }>(`/coach-sessions/${sessionId}/message`, {
+  askCoach: async (sessionId: string, content: string, history?: { role: string; content: string }[], permissions?: CoachPermissions,
+    client?: { appearance?: 'light' | 'dark' | 'system'; reduceMotion?: boolean }) => {
+    return request<{ role: string; content: string; progress?: string[]; calendarRelevant?: boolean; actions?: CoachProposal[];
+      sources?: { id: string; title: string }[]; usage?: CoachUsage }>(`/coach-sessions/${sessionId}/message`, {
       method: 'POST',
-      body: JSON.stringify({ content, history: history?.slice(-10) }),
+      body: JSON.stringify({ content, history: history?.slice(-10), permissions, today: localToday(), client }),
       timeoutMs: COACH_TIMEOUT_MS,
     });
   },
 
+  getCoachUsage: async () => request<CoachUsage>('/coach-sessions/usage'),
+
   // Add coach's suggested plan to the user's calendar
-  addCoachPlanToCalendar: async (sessionId: string, history?: { role: string; content: string }[]) => {
-    return request<{ created: number; events: any[] }>(`/coach-sessions/${sessionId}/add-to-calendar`, {
+  addCoachPlanToCalendar: async (sessionId: string, history?: { role: string; content: string }[], permissions?: CoachPermissions) => {
+    return request<{ created: number; events: any[]; actions?: CoachProposal[] }>(`/coach-sessions/${sessionId}/add-to-calendar`, {
       method: 'POST',
-      body: JSON.stringify({ history: history?.slice(-50) }),
+      body: JSON.stringify({ history: history?.slice(-50), permissions }),
       timeoutMs: COACH_TIMEOUT_MS,
+    });
+  },
+
+  applyCoachAction: async (sessionId: string, token: string, permissions: CoachPermissions) => {
+    return request<any>(`/coach-sessions/${sessionId}/actions/apply`, {
+      method: 'POST', body: JSON.stringify({ token, permissions }),
     });
   },
 
@@ -354,3 +365,8 @@ export const strideApi = {
     return request<any>(`/suggestions/${id}/skip`, { method: 'POST' });
   },
 };
+
+function localToday(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}

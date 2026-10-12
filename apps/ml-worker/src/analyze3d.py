@@ -285,6 +285,7 @@ def analyze_3d_angle_agnostic(
     S = dict(S_side)
     for key in FRONTAL_SCALARS:
         S[key] = S_front[key]
+        if f"quality_{key}" in S_front: S[f"quality_{key}"] = S_front[f"quality_{key}"]
 
     result = _assemble(
         S, idxs, pose_fps, _metric_mean_conf(poses, confidences), 0.0, clip_id,
@@ -385,6 +386,7 @@ def analyze_3d_multisegment(
     timing_signal: list | None = None,
     timing_fps: float | None = None,
     seconds: float = SEGMENT_SECONDS,
+    frame_indices: Iterable[int] | None = None,
 ) -> dict[str, Any]:
     """Route every metric to the segment of the clip that actually observed it.
 
@@ -399,6 +401,9 @@ def analyze_3d_multisegment(
     """
     poses = np.asarray(poses, dtype=float)
     confidences = np.asarray(confidences, dtype=float)
+    indices = list(frame_indices) if frame_indices is not None else list(range(len(poses)))
+    if len(indices) != len(poses):
+        raise ValueError("frame_indices must match reconstructed poses")
     segs = segment_observability(poses, fps, up_world, view_axis, seconds)
     # Fall back on whether the viewpoint actually CHANGES, not on how many
     # segments a clip happens to divide into. A three-second side-on capture
@@ -409,7 +414,7 @@ def analyze_3d_multisegment(
         return analyze_3d_angle_agnostic(
             poses, confidences, fps, up_world=up_world, recon_conf=recon_conf,
             clip_id=clip_id, source_fps=source_fps, capture_fps=capture_fps,
-            timing_signal=timing_signal, timing_fps=timing_fps, view_axis=view_axis)
+            timing_signal=timing_signal, timing_fps=timing_fps, view_axis=view_axis, frame_indices=indices)
 
     best_sag = max(segs, key=lambda s: s["sagittal"])
     best_fro = max(segs, key=lambda s: s["frontal"])
@@ -423,11 +428,11 @@ def analyze_3d_multisegment(
 
     def scalars(seg, view, azimuth):
         sl = slice(seg["start"], seg["stop"])
-        frames = reproject(poses[sl], confidences[sl], view, rotation=seg["rotation"])
+        frames = reproject(poses[sl], confidences[sl], view, rotation=seg["rotation"], frame_indices=indices[sl])
         return _collect_scalars(iter(frames), azimuth, **common)
 
     S_sag, idxs, _, _, dropped, _t1 = scalars(best_sag, "side", 0.0)
-    S_fro, _, _, _, _, _t2 = scalars(best_fro, "front", 90.0)
+    S_fro, front_idxs, _, _, _, _t2 = scalars(best_fro, "front", 90.0)
 
     S = dict(S_sag)
     n = len(idxs)
@@ -437,15 +442,37 @@ def analyze_3d_multisegment(
         # series onto the sagittal frame count so one _assemble sees a coherent
         # table. Frontal metrics are per-frame percentiles, so resampling
         # changes which frames contribute, never what is being measured.
+        if f"quality_{key}" in S_fro:
+            S[f"quality_{key}"] = S_fro[f"quality_{key}"]
         S[key] = list(np.interp(np.linspace(0, 1, n),
                                 np.linspace(0, 1, len(src)), src)) if src else S_sag[key]
 
+    solver = None if recon_conf is None else float(recon_conf)
+    sag_conf = recon_conf_for(best_sag["sagittal"])
+    if solver is not None:
+        sag_conf = min(solver, sag_conf)
+    front_conf = recon_conf_for(best_fro["frontal"])
+    if best_sag["sagittal"] < OBSERVABILITY_FLOOR:
+        sag_conf = min(sag_conf, TRUST_CONF_MIN - 0.01)
+    if best_fro["frontal"] < OBSERVABILITY_FLOOR:
+        front_conf = min(front_conf, TRUST_CONF_MIN - 0.01)
+    family_conf = {k: front_conf for k in FRONTAL_EXEMPT}
+    family_conf["_default"] = sag_conf
     result = _assemble(
         S, idxs, pose_fps, _metric_mean_conf(poses, confidences), 0.0, clip_id,
         capture_fps=cap_fps, source_fps=src_fps,
         timing_signal=timing_signal, timing_fps=timing_fps,
-        dropped_pct=dropped, vp_override=0.0, recon_conf=recon_conf,
+        dropped_pct=dropped, vp_override=0.0, recon_conf=family_conf,
     )
+
+    for item in result["flaws"] + result.get("focusAreas", []):
+        key = item.get("key") or item["id"].removeprefix("flaw-").replace("-", "_")
+        if key in FRONTAL_EXEMPT and front_idxs and idxs:
+            evidence = item["evidence"]
+            source_index = evidence["frameTimestampMs"] / 1000 * src_fps
+            pos = min(range(len(idxs)), key=lambda i: abs(idxs[i] - source_index))
+            front_pos = round(pos / max(len(idxs) - 1, 1) * (len(front_idxs) - 1))
+            evidence["frameTimestampMs"] = round(front_idxs[front_pos] / src_fps * 1000)
 
     cq = result["captureQuality"]
     cq["segments"] = len(segs)

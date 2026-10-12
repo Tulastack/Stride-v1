@@ -4,6 +4,9 @@ The failure chain these lock down: tracker misses → search stays glued to a
 stale position (or a false exit latch blinds it permanently) → every remaining
 frame excluded → the whole analysis dies with low_confidence_video. A lost
 target must be re-findable; an entering runner must not read as a leaving one.
+
+And the identity contract: the tracker never hops to another person. A re-find
+has to be physically reachable and the same body size, or it is refused.
 """
 import numpy as np
 
@@ -79,24 +82,62 @@ def test_position_lock_goes_global_after_reset_misses():
     assert tr.needs_global_search()
 
 
-def test_global_search_relocks_far_away_target_by_appearance():
-    # After a long miss the athlete may be ANYWHERE, a strong appearance match
-    # far from the stale prediction must be accepted, a mismatch refused.
+def _miss(tr: CropTracker, n: int) -> None:
+    for _ in range(n):
+        tr.predict()
+        tr.miss += 1
+
+
+def test_global_search_relocks_only_within_sprint_reach():
+    # After a run of misses the athlete is re-found by appearance, but only
+    # where they could have run to in that time. A same-kit person further
+    # away is a different athlete.
     tr = CropTracker((0.4, 0.3, 0.6, 0.7), 1000, 1000)
     _tracked_step(tr, 500, 500, RED)
-    tr.miss = _RESET_MISS
-    xy_far, sc_far = _person_kpts(880, 500)   # 0.38 normalized away (>> motion gate)
-    assert tr.select([xy_far], [sc_far], _crop(RED), FULL, WH) == 0
+    _miss(tr, _RESET_MISS)
+    near, sc = _person_kpts(780, 500)          # ~6 body lengths in 5 samples (1/3 s)
+    assert tr.select([near], [sc], _crop(RED), FULL, WH) == 0
+    far, sc = _person_kpts(980, 900)           # ~13 body lengths: not reachable
+    assert tr.select([far], [sc], _crop(RED), FULL, WH) is None
+    assert tr.select([near], [sc], _crop(BLUE), FULL, WH) is None
 
-    tr.miss = _RESET_MISS
-    assert tr.select([xy_far], [sc_far], _crop(BLUE), FULL, WH) is None
+
+def test_a_different_sized_person_nearby_is_a_hop():
+    tr = CropTracker((0.4, 0.3, 0.6, 0.7), 1000, 1000)
+    _tracked_step(tr, 500, 500, RED)
+    tr.predict()
+    small, sc = _person_kpts(530, 480, w_px=25.0, h_px=50.0)   # a figure far down the track
+    assert tr.select([small], [sc], _crop(RED), FULL, WH) is None
+    assert tr.hops_refused == 1
 
 
-def test_first_lock_seed_box_inflates_with_misses():
-    # An imprecise brush (athlete just outside it) must eventually lock instead
-    # of leaving the whole clip unanalyzable.
-    tr = CropTracker((0.10, 0.10, 0.20, 0.20), 1000, 1000)
-    xy, sc = _person_kpts(270, 200)           # box ≈ (0.24–0.30, 0.14–0.26): outside the brush
+def test_athlete_lost_for_over_a_second_is_gone():
+    tr = CropTracker((0.4, 0.3, 0.6, 0.7), 1000, 1000, dt=1 / 15)
+    _tracked_step(tr, 500, 500, RED)
+    _miss(tr, 16)
+    assert tr.gone
+    xy, sc = _person_kpts(500, 500)
     assert tr.select([xy], [sc], _crop(RED), FULL, WH) is None
-    tr.miss = 8                                # inflation ≈ 2.2x → tolerance reaches the athlete
-    assert tr.select([xy], [sc], _crop(RED), FULL, WH) == 0
+
+
+def test_first_lock_needs_the_person_mostly_inside_the_circle():
+    # The circle is the user's choice: someone mostly outside it is never
+    # locked, however long the tracker waits.
+    tr = CropTracker((0.10, 0.10, 0.20, 0.20), 1000, 1000)
+    xy, sc = _person_kpts(270, 200)           # box ≈ (0.24–0.30, 0.14–0.26): outside the circle
+    assert tr.select([xy], [sc], _crop(RED), FULL, WH) is None
+    tr.miss = 20
+    assert tr.select([xy], [sc], _crop(RED), FULL, WH) is None
+    inside, sc_in = _person_kpts(160, 150, w_px=60.0, h_px=90.0)
+    assert tr.select([xy, inside], [sc, sc_in], _crop(RED), FULL, WH) == 1
+
+
+def test_forward_track_on_someone_else_at_the_circled_frame_invalidates():
+    import pytest
+    from src.rtmpose_backend import _check_brush_identity
+
+    tr = CropTracker((0.4, 0.3, 0.6, 0.7), 1000, 1000)
+    _tracked_step(tr, 500, 500, RED)
+    _check_brush_identity(tr, tr.box)          # same person: fine
+    with pytest.raises(ValueError, match="target_identity_lost"):
+        _check_brush_identity(tr, (0.75, 0.40, 0.85, 0.60))

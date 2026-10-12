@@ -130,7 +130,7 @@ export function Sheet({ visible, onClose, title, children, testID }: { visible: 
 
 export function SegmentedControl<Value extends string>({ value, onChange, options, label }: { value: Value; onChange: (value: Value) => void; options: { value: Value; label: string; accessibilityLabel?: string; testID?: string }[]; label?: string }) {
   const { colors } = useTheme();
-  return <View accessibilityLabel={label} style={[styles.segments, { backgroundColor: colors.cardAlt }]}>{options.map((option) => <Pressable key={option.value} testID={option.testID} accessibilityRole="button" accessibilityLabel={option.accessibilityLabel ?? option.label} accessibilityState={{ selected: value === option.value }} onPress={() => onChange(option.value)} style={[styles.segment, { backgroundColor: value === option.value ? colors.card : colors.transparent }]}><Text style={[typo.caption, { fontWeight: '500', color: value === option.value ? colors.text : colors.muted }]}>{option.label}</Text></Pressable>)}</View>;
+  return <View accessibilityLabel={label} style={[styles.segments, { backgroundColor: colors.cardAlt }]}>{options.map((option) => <Pressable key={option.value} testID={option.testID} accessibilityRole="button" accessibilityLabel={option.accessibilityLabel ?? option.label} accessibilityState={{ selected: value === option.value }} onPress={() => onChange(option.value)} style={[styles.segment, { backgroundColor: value === option.value ? colors.card : colors.transparent }]}><Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={[typo.caption, styles.segmentLabel, { fontWeight: '500', color: value === option.value ? colors.text : colors.muted }]}>{option.label}</Text></Pressable>)}</View>;
 }
 
 export function Notice({ children, tone = 'neutral' }: { children: React.ReactNode; tone?: 'neutral' | 'error' }) {
@@ -184,6 +184,6 @@ const styles = StyleSheet.create({
   scrim: { flex: 1, justifyContent: 'flex-end' }, sheet: { borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg, padding: space.xl, paddingBottom: space.xxxl, gap: space.lg, maxHeight: '90%', width: '100%', maxWidth: 640, alignSelf: 'center' },
   grabber: { alignItems: 'center', justifyContent: 'center', minHeight: 28, paddingTop: 8 },
   handle: { width: 36, height: 4, borderRadius: radius.pill },
-  segments: { flexDirection: 'row', borderRadius: radius.sm, padding: 4 }, segment: { flex: 1, minHeight: 44, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center', padding: 6 },
+  segments: { flexDirection: 'row', borderRadius: radius.sm, padding: 4 }, segment: { flex: 1, minWidth: 0, minHeight: 44, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4, paddingVertical: 6 }, segmentLabel: { width: '100%', textAlign: 'center' },
   notice: { padding: space.lg, borderRadius: radius.sm },
 });

@@ -1,3 +1,4 @@
+import { applyReportTrust } from '../lib/measurementTrust.js';
 import { Router } from 'express';
 import express from 'express';
 import { z } from 'zod';
@@ -385,7 +386,7 @@ router.get('/', authenticate, async (req: any, res: Response, next: NextFunction
   try {
     const userId = req.userId;
     const analyses = await getAnalysesByUser(userId);
-    res.json(analyses);
+    res.json(analyses.map((a) => ({ ...a, result_json: applyReportTrust(a.result_json) })));
   } catch (err) {
     next(err);
   }
@@ -406,7 +407,7 @@ router.get('/:analysisId', authenticate, async (req: any, res: Response, next: N
       return;
     }
 
-    res.json(analysis);
+    res.json({ ...analysis, result_json: applyReportTrust(analysis.result_json) });
   } catch (err) {
     next(err);
   }

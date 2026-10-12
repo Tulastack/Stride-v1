@@ -1,12 +1,21 @@
 import type { AnalysisResult, Metric } from '../types/analysis';
 import { isExperimentalMetric } from './validationStatus';
 
-export function trustedReading(analysis: AnalysisResult, metric: Metric, threshold = 0.6): boolean {
+/** The worker certifies trust against each metric's error budget; the app does
+ * not re-gate on a second, stricter confidence line of its own. */
+export function trustedReading(analysis: AnalysisResult, metric: Metric, threshold = 0.5): boolean {
   return !isExperimentalMetric(metric.key, metric.trustStatus)
     && Number.isFinite(metric.measured.value)
     && Number.isFinite(metric.measured.confidence)
     && metric.measured.confidence >= threshold
     && analysis.captureQuality?.perMetricUsable?.[metric.key] !== false;
+}
+
+/** Readings this view can certify; older reports fall back to every metric. */
+export function measurableCount(analysis: AnalysisResult): number {
+  const metrics = analysis.metrics ?? [];
+  const view = analysis.captureQuality?.viewMeasurable;
+  return view ? metrics.filter((m) => view.includes(m.key)).length : metrics.length;
 }
 
 export function sameMeasurementContext(first: AnalysisResult, second: AnalysisResult): boolean {
@@ -29,4 +38,11 @@ export function sharesTrustedMeasurement(first: AnalysisResult, second: Analysis
     const other = (second.metrics ?? []).find((item) => item.key === metric.key && item.unit === metric.unit);
     return !!other && trustedReading(first, metric) && trustedReading(second, other);
   });
+}
+
+/** A withheld metric cannot turn a placeholder zero into a grade. */
+export function hasUsableScore(analysis: AnalysisResult): boolean {
+  return Number.isFinite(analysis.economyScore) && (analysis.metrics ?? []).some((m) =>
+    Number.isFinite(m.measured?.value) && Number.isFinite(m.measured?.confidence)
+    && m.measured.confidence >= 0.35 && analysis.captureQuality?.perMetricUsable?.[m.key] !== false);
 }

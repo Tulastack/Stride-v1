@@ -211,6 +211,7 @@ export function generateRecoveryProgram(
   phases: RecoveryPhase[],
   suggestionId: string,
   startDate: string,
+  displayName: string = metricKey,
 ): RecoverySession[] {
   const sessions: RecoverySession[] = [];
   let dayCursor = 0;
@@ -220,7 +221,7 @@ export function generateRecoveryProgram(
     for (let week = 0; week < phase.durationWeeksMin; week++) {
       for (const offset of offsets) {
         sessions.push({
-          title: `${phase.name}, ${metricKey}`,
+          title: `${displayName} · ${phase.name}`,
           eventType: 'drill',
           scheduledDate: addDays(startDate, dayCursor + offset),
           details: {

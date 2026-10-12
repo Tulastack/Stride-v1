@@ -4,7 +4,7 @@
 
 // 'static' = the locked target wasn't running (standing bystander guard).
 export type Phase = 'acceleration' | 'max_velocity' | 'general' | 'static';
-export type ReconstructionMethod = '2d' | '3d-mono' | '3d-multi';
+export type ReconstructionMethod = '2d' | '2d-sagittal' | '2d-sagittal-fallback' | '3d-mono' | '3d-mono-geometric' | '3d-multi';
 export type Severity = 1 | 2 | 3;
 
 export interface ConfidenceBand {
@@ -60,6 +60,8 @@ export interface CaptureQuality {
   framing: 'full' | 'partial';
   perMetricUsable: Record<string, boolean>;
   primaryNudge?: string;
+  viewMeasurable?: string[];
+  runningWindowMs?: [number, number];
 }
 
 /**
@@ -82,7 +84,15 @@ export interface FocusArea {
   drill?: Omit<DrillRec, 'flawId'>;
 }
 
+export interface ReconstructedPose {
+  format: 'coco17';
+  coordinates: 'canonical-torso-units';
+  frames: { tMs: number; joints: ([number, number, number, number] | null)[] }[];
+}
+
 export interface AnalysisResult {
+  /** Actual reconstructed joints, absent when reconstruction was rejected. */
+  pose3d?: ReconstructedPose | null;
   id: string;
   phase: Phase;
   summary: string;

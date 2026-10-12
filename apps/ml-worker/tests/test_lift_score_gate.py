@@ -23,3 +23,8 @@ def test_usable_lift_keeps_the_3d_score():
         "captureQuality": {"perMetricUsable": {"knee_drive": True}},
     }
     assert lift_left_a_score(result) is True
+
+
+def test_a_zero_angle_is_a_valid_usable_reading():
+    assert lift_left_a_score({'metrics': [{'key': 'trunk_lean', 'measured': {'value': 0}}],
+                             'captureQuality': {'perMetricUsable': {'trunk_lean': True}}})

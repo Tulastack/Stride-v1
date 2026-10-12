@@ -1,4 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { RecoveryExerciseDemo } from './RecoveryExerciseDemo';
+import { EXERCISES, type Exercise } from '../lib/recovery/motions';
 import { View, Text, Switch } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import { type as typo } from '../theme';
@@ -7,6 +9,7 @@ import type { useRecoveryStatus } from '../hooks/useRecoveryStatus';
 
 export function RecoveryControls({ recovery }: { recovery: ReturnType<typeof useRecoveryStatus> }) {
   const { colors } = useTheme();
+  const [exercise,setExercise]=useState<Exercise | null>(null);
   return (
     <View style={{ gap: 12 }}>
       <View style={{ flexDirection: 'row', gap: 16, alignItems: 'center', minHeight: 64 }}>
@@ -21,6 +24,7 @@ export function RecoveryControls({ recovery }: { recovery: ReturnType<typeof use
       {recovery.isInjured ? (
         <View testID="recovery-mode-notice">
           <Notice>Recovery Mode. Sprint drills are paused. Do not train through pain; follow guidance from a qualified health professional.</Notice>
+          <View style={{gap:8,marginTop:12}}><Text style={[typo.label,{color:colors.muted}]}>MOVEMENT REFERENCES</Text>{EXERCISES.map(e=><Button key={e.key} label={e.name} variant="quiet" onPress={()=>setExercise(exercise===e.key?null:e.key)}/>)}{exercise ? <RecoveryExerciseDemo exercise={exercise}/> : null}</View>
         </View>
       ) : !recovery.ready && !recovery.error ? <Notice>Checking your recovery preference before offering sprint practice…</Notice> : null}
       {recovery.error ? <><Notice tone="error">{recovery.error}</Notice><Button label="Refresh recovery preference" variant="secondary" onPress={recovery.refresh} /></> : null}

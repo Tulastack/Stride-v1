@@ -1,4 +1,5 @@
 import pg from 'pg';
+import { trustedReading } from '../lib/measurementTrust.js';
 import type { User, Analysis, CalendarEvent, CalendarEventSource, CoachSession, DrillSuggestion, ReferenceDrill, MetricsTimelineRow } from '../types.js';
 import { dbConnectionConfig } from './dsql.js';
 import { generateDrillProgram, generateRecoveryProgram, type RecoveryPhase } from '../calendar/trainingPlan.js';
@@ -451,6 +452,61 @@ export async function getTrainingDays(
   }));
 }
 
+// ─── Coach Usage (message cap) ────────────────────────────────────
+
+/** remaining is null when the cap is off. */
+export interface CoachUsage { used: number; cap: number; remaining: number | null; period: string }
+
+/** Allowance per athlete per period. COACH_MESSAGE_CAP=0 turns the cap off. */
+export function coachCapConfig(now: Date = new Date()): { cap: number; period: string } {
+  const raw = Number(process.env.COACH_MESSAGE_CAP ?? 20);
+  const cap = Number.isFinite(raw) && raw >= 0 ? Math.floor(raw) : 20;
+  const period = (process.env.COACH_CAP_PERIOD ?? 'beta') === 'month'
+    ? `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}` : 'beta';
+  return { cap, period };
+}
+
+const usageOf = (used: number, cap: number, period: string): CoachUsage =>
+  ({ used, cap, remaining: cap === 0 ? null : Math.max(cap - used, 0), period });
+
+export async function getCoachUsage(userId: string): Promise<CoachUsage> {
+  const { cap, period } = coachCapConfig();
+  const { rows } = await pool.query<{ messages: number }>(
+    'SELECT messages FROM coach_usage WHERE user_id = $1 AND period = $2', [userId, period]);
+  return usageOf(rows[0]?.messages ?? 0, cap, period);
+}
+
+/**
+ * Atomically claim one message. The conditional upsert means two messages
+ * sent at once can never both take the last slot. Returns null when the
+ * allowance is used up.
+ */
+export async function reserveCoachMessage(userId: string): Promise<CoachUsage | null> {
+  const { cap, period } = coachCapConfig();
+  const { rows } = await pool.query<{ messages: number }>(
+    `INSERT INTO coach_usage (user_id, period, messages) VALUES ($1, $2, 1)
+     ON CONFLICT (user_id, period) DO UPDATE SET messages = coach_usage.messages + 1, updated_at = now()
+     WHERE $3::int = 0 OR coach_usage.messages < $3::int
+     RETURNING messages`,
+    [userId, period, cap]);
+  if (cap > 0 && !rows.length) return null;
+  return usageOf(rows[0]?.messages ?? 0, cap, period);
+}
+
+/** Give a claimed message back when no answer was delivered. */
+export async function refundCoachMessage(userId: string, period: string): Promise<void> {
+  await pool.query(
+    'UPDATE coach_usage SET messages = GREATEST(messages - 1, 0), updated_at = now() WHERE user_id = $1 AND period = $2',
+    [userId, period]);
+}
+
+export async function recordCoachTokens(userId: string, period: string, prompt: number, completion: number): Promise<void> {
+  await pool.query(
+    `UPDATE coach_usage SET prompt_tokens = prompt_tokens + $3, completion_tokens = completion_tokens + $4, updated_at = now()
+     WHERE user_id = $1 AND period = $2`,
+    [userId, period, Math.round(prompt), Math.round(completion)]);
+}
+
 // ─── Coach Sessions ───────────────────────────────────────────────
 
 export async function createCoachSession(
@@ -682,6 +738,7 @@ export async function approveSuggestion(
             refDrill.recovery_phases,
             updatedSuggestion.id,
             updatedSuggestion.suggested_date,
+            updatedSuggestion.drill_name,
           )
         : generateDrillProgram(
             {
@@ -889,6 +946,7 @@ export async function createMetricsFromAnalysis(
   if (Array.isArray(v2Metrics)) {
     for (const m of v2Metrics) {
       if (typeof m !== 'object' || m === null) continue;
+      if (!trustedReading(resultJson, m)) continue;
       const key = (m as Record<string, unknown>).key as string;
       const mapped = v2KeyMap[key] ?? key;
       if (!TRACKED_METRIC_KEYS.has(mapped)) continue;
@@ -916,7 +974,7 @@ export async function createMetricsFromAnalysis(
     'overstriding': 'ground_contact_time',
   };
 
-  if (Array.isArray(primaryIssues)) {
+  if (!Array.isArray(v2Metrics) && Array.isArray(primaryIssues)) {
     for (const issue of primaryIssues) {
     if (typeof issue !== 'object' || issue === null) continue;
     const issueType = (issue as Record<string, unknown>).type as string;
@@ -974,10 +1032,10 @@ export async function getMetricsTimeline(
   days: number,
 ): Promise<MetricsTimelineRow[]> {
   const { rows } = await pool.query<MetricsTimelineRow>(
-    `SELECT * FROM metrics_timeline
-     WHERE user_id = $1
-       AND measured_at >= now() - ($2 || ' days')::INTERVAL
-     ORDER BY metric_key ASC, measured_at DESC`,
+    `SELECT mt.* FROM metrics_timeline mt JOIN analyses a ON a.id=mt.analysis_id AND a.user_id=mt.user_id
+     WHERE mt.user_id = $1 AND a.status='completed' AND ${TRUSTED_TIMELINE_SQL}
+       AND mt.measured_at >= now() - ($2 || ' days')::INTERVAL
+     ORDER BY mt.metric_key ASC, mt.measured_at DESC`,
     [userId, days],
   );
   return rows;
@@ -990,18 +1048,34 @@ export async function getMetricsTrend(
 ): Promise<{ week: string; avg_value: number }[]> {
   const { rows } = await pool.query<{ week: string; avg_value: number }>(
     `SELECT
-       to_char(date_trunc('week', measured_at), 'YYYY-MM-DD') AS week,
-       AVG(value)::float AS avg_value
-     FROM metrics_timeline
-     WHERE user_id = $1
-       AND metric_key = $2
-       AND measured_at >= now() - ($3 || ' weeks')::INTERVAL
-     GROUP BY date_trunc('week', measured_at)
-     ORDER BY date_trunc('week', measured_at) ASC`,
+       to_char(date_trunc('week', mt.measured_at), 'YYYY-MM-DD') AS week,
+       AVG(mt.value)::float AS avg_value
+     FROM metrics_timeline mt JOIN analyses a ON a.id=mt.analysis_id AND a.user_id=mt.user_id
+     WHERE mt.user_id = $1 AND a.status='completed' AND ${TRUSTED_TIMELINE_SQL}
+       AND mt.metric_key = $2
+       AND (a.result_json->>'phase', a.result_json->>'reconstructionMethod') = (
+         SELECT latest.result_json->>'phase', latest.result_json->>'reconstructionMethod'
+         FROM analyses latest WHERE latest.user_id=$1 AND latest.status='completed'
+         AND latest.result_json->>'phase' IS NOT NULL ORDER BY latest.created_at DESC LIMIT 1)
+       AND mt.measured_at >= now() - ($3 || ' weeks')::INTERVAL
+     GROUP BY date_trunc('week', mt.measured_at)
+     ORDER BY date_trunc('week', mt.measured_at) ASC`,
     [userId, metricKey, weeks],
   );
   return rows;
 }
+
+/** Validate each timeline row against its original report, including old rows
+ * persisted before trust-aware insertion. Aliases describe the same metric. */
+const TRUSTED_TIMELINE_SQL = `EXISTS (
+  SELECT 1 FROM jsonb_array_elements(COALESCE(a.result_json->'metrics', '[]'::jsonb)) AS metric
+  WHERE (CASE metric->>'key' WHEN 'trunk_lean' THEN 'torso_lean'
+    WHEN 'knee_drive' THEN 'knee_drive_angle' WHEN 'contact_time_ms' THEN 'ground_contact_time'
+    ELSE metric->>'key' END) = mt.metric_key
+    AND metric->>'trustStatus' = 'trusted'
+    AND (metric->'measured'->>'confidence')::numeric >= 0.6
+    AND COALESCE(a.result_json->'captureQuality'->'perMetricUsable'->>(metric->>'key'), 'true') = 'true'
+)`;
 
 // ─── Sweep stuck analyses ─────────────────────────────────────────
 // Every non-terminal state needs a timeout, or a crash at the wrong moment
@@ -1036,6 +1110,7 @@ export async function sweepStuckAnalyses(): Promise<number> {
 // at most 3,000 rows. On plain Postgres the FK cascades make the child deletes
 // redundant but harmless.
 const USER_OWNED_TABLES = [
+  'coach_action_receipts',
   'suggestion_audit',
   'drill_suggestions',
   'metrics_timeline',
@@ -1062,6 +1137,8 @@ export async function deleteUserAccount(userId: string): Promise<string | null> 
       if (!rowCount) break;
     }
   }
+  // Keyed by (user_id, period), no id column; a handful of rows per athlete.
+  await pool.query('DELETE FROM coach_usage WHERE user_id = $1', [userId]);
 
   const { rows } = await pool.query<{ supabase_uid: string }>(
     'DELETE FROM users WHERE id = $1 RETURNING supabase_uid',

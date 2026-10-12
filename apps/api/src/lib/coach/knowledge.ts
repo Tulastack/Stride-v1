@@ -23,7 +23,8 @@ export interface KnowledgeEntry {
     | 'recovery'
     | 'injury'
     | 'warmup'
-    | 'mental';
+    | 'mental'
+    | 'recruiting';
   /** Event relevance; 'all' matches any event. */
   event: '100m' | '200m' | '400m' | 'distance' | 'all';
   tags: string[];
@@ -283,36 +284,149 @@ export const KNOWLEDGE: KnowledgeEntry[] = [
       'Sprinting fast requires relaxation, tension slows you down. Use one or two simple external cues (e.g., "tall", "quick feet") rather than thinking about many things. Manage pre-race arousal with breathing and a consistent routine. Confidence comes from preparation; trust your training and let the race happen instead of forcing it.',
     source: 'Sport-psychology performance practice',
   },
+  {
+    id: 'recruiting',
+    title: 'College recruiting for sprinters',
+    topic: 'recruiting',
+    event: 'all',
+    tags: ['recruit', 'recruiting', 'college', 'scholarship', 'ncaa', 'coaches', 'next level', 'eligibility'],
+    content:
+      'College coaches recruit on verified marks: fully automatic timed (FAT) results from sanctioned meets, posted on results sites coaches already use, count far more than hand times or training times. Register with the NCAA Eligibility Center (or the NAIA equivalent) and keep grades and core courses on track, since academics decide eligibility and often aid. Build a short list of programs whose current athletes run times near yours, then email those coaches directly with your events, verified marks, upcoming meets, grades and a race video. Follow up after each new best. Consistent improvement across a season is a strong signal on its own.',
+    source: 'NCAA Eligibility Center guidance and common collegiate recruiting practice',
+  },
 ];
 
 // ─── Lexical retrieval (no embeddings, no external calls) ───────────
+//
+// BM25F-style ranking (Robertson & Zaragoza 2009): per-field weighted term
+// frequency with saturation and length normalisation, so one entry that
+// repeats a word cannot outrank one that matches the whole question. On a
+// corpus this small, BM25 with a domain thesaurus is a strong, zero-latency
+// baseline (BEIR, Thakur et al. 2021); dense embeddings would add a network
+// call per turn for little gain. Coaching vocabulary is normalised first, so
+// "warm-up", "warm up" and "warmup" are one term, and "top speed" finds the
+// max-velocity entry.
 
 const STOP = new Set([
   'the', 'a', 'an', 'and', 'or', 'to', 'of', 'in', 'on', 'for', 'my', 'me', 'i', 'is', 'it',
   'how', 'do', 'what', 'should', 'can', 'you', 'your', 'with', 'at', 'be', 'get', 'am', 'are',
-  'this', 'that', 'about', 'when', 'why', 'which', 'more', 'better', 'good', 'best',
+  'this', 'that', 'about', 'when', 'why', 'which', 'more', 'better', 'good', 'best', 'does',
+  'did', 'im', 'ive', 'any', 'some', 'tips', 'help', 'want', 'need', 'make', 'way', 'like',
+  'just', 'really', 'give', 'tell', 'should', 'could', 'would', 'will', 'from', 'have', 'has',
+  'before', 'during', 'while', 'there', 'than', 'much', 'many', 'often', 'too', 'very',
 ]);
 
-function tokenize(s: string): string[] {
-  return s
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, ' ')
-    .split(/\s+/)
-    .filter((t) => t.length > 1 && !STOP.has(t));
+// Multi-word coaching phrases → one canonical term (applied to docs AND queries).
+const PHRASES: [RegExp, string][] = [
+  [/\bwarm[\s-]?ups?\b|\bwarming up\b/g, ' warmup '],
+  [/\bcool[\s-]?downs?\b/g, ' cooldown '],
+  [/\b(top|max(imum)?)[\s-](speed|velocity)\b|\bupright sprint(ing)?\b/g, ' maxvelocity '],
+  [/\bground[\s-]contact( time)?\b|\bcontact[\s-]time\b|\bgct\b/g, ' groundcontact '],
+  [/\bknee[\s-](drive|lift)\b|\bhigh[\s-]knees?\b/g, ' kneedrive '],
+  [/\bhip[\s-]extension\b|\btoe[\s-]off\b/g, ' hipextension '],
+  [/\b(trunk|torso|forward|body)[\s-]lean\b/g, ' trunklean '],
+  [/\bknee[\s-](valgus|collapse|cave)\b|\bknees? cav(e|ing)\b|\bvalgus\b/g, ' kneevalgus '],
+  [/\b(pelvic|hip)[\s-]drop\b/g, ' pelvicdrop '],
+  [/\bover[\s-]?strid(e|es|ing)\b/g, ' overstride '],
+  [/\bblock[\s-]starts?\b|\bstarting blocks\b|\bset position\b|\bblocks\b/g, ' blockstart '],
+  [/\bstride[\s-](frequency|rate)\b|\bturnover\b|\bsteps per minute\b|\bspm\b/g, ' cadence '],
+  [/\barm[\s-](swing|action|drive)\b|\barms\b/g, ' armswing '],
+  [/\bshin[\s-]splints?\b/g, ' shinsplints '],
+  [/\bspeed[\s-]endurance\b/g, ' speedendurance '],
+  [/\bmini[\s-]hurdles?\b/g, ' wickets '],
+  [/\bfront[\s-]side\b/g, ' frontside '],
+];
+
+// Single-word synonyms → canonical term. Kept to unambiguous coaching usage.
+const SYNONYMS: Record<string, string> = {
+  hurt: 'pain', hurts: 'pain', sore: 'pain', soreness: 'pain', ache: 'pain', aches: 'pain', injured: 'injury',
+  eat: 'nutrition', eating: 'nutrition', food: 'nutrition', diet: 'nutrition', meal: 'nutrition', meals: 'nutrition',
+  fuel: 'nutrition', fueling: 'nutrition', fuelling: 'nutrition', carb: 'carbs', drink: 'hydration', water: 'hydration',
+  hydrate: 'hydration', sleeping: 'sleep', tired: 'fatigue', exhausted: 'fatigue',
+  nervous: 'nerves', anxiety: 'nerves', anxious: 'nerves', pressure: 'nerves', confident: 'confidence',
+  lifting: 'strength', lift: 'strength', gym: 'strength', weights: 'strength', squats: 'squat',
+  plyos: 'plyometrics', plyo: 'plyometrics', jumps: 'plyometrics', bounding: 'bound', bounds: 'bound',
+  peaking: 'peak', taper: 'tapering', season: 'periodization', schedule: 'planning', program: 'planning',
+  pace: 'pacing', splits: 'pacing', curve: 'bend', accelerate: 'acceleration', accel: 'acceleration',
+  drive: 'acceleration', starts: 'start', reaction: 'start', hammy: 'hamstring', hamstrings: 'hamstring',
+  calves: 'calf', tendon: 'achilles', stretch: 'mobility', stretching: 'mobility',
+  flexibility: 'mobility', mindset: 'mental', meet: 'race', meets: 'race', competition: 'race',
+};
+
+/** Light suffix stripping so "drills"/"drill" and "sprinting"/"sprint" meet. */
+function stem(t: string): string {
+  if (t.length > 5 && t.endsWith('ing')) return t.slice(0, -3);
+  if (t.length > 5 && t.endsWith('ed') && !t.endsWith('eed')) return t.slice(0, -2);
+  if (t.length > 4 && t.endsWith('es') && !t.endsWith('ses')) return t.slice(0, -2);
+  if (t.length > 3 && t.endsWith('s') && !t.endsWith('ss')) return t.slice(0, -1);
+  return t;
 }
 
-// Precompute a searchable token bag per entry (title + tags weighted heavier).
-const INDEX = KNOWLEDGE.map((e) => {
-  const bag = new Map<string, number>();
-  const add = (text: string, weight: number) => {
-    for (const t of tokenize(text)) bag.set(t, (bag.get(t) ?? 0) + weight);
+function tokenize(s: string): string[] {
+  let text = ` ${s.toLowerCase()} `;
+  for (const [re, canon] of PHRASES) text = text.replace(re, canon);
+  return text
+    .replace(/[^a-z0-9\s-]/g, ' ')
+    .split(/[\s-]+/)
+    .filter((t) => t.length > 1 && !STOP.has(t))
+    .map((t) => SYNONYMS[t] ?? t)
+    .map(stem);
+}
+
+/** A retrievable document: a knowledge entry or a library drill. */
+export interface EvidenceDoc {
+  id: string;
+  title: string;
+  content: string;
+  source: string;
+  kind: 'knowledge' | 'drill';
+  event?: string;
+  /** Field texts with their BM25F weights. */
+  fields: [string, number][];
+}
+
+export function knowledgeDoc(e: KnowledgeEntry): EvidenceDoc {
+  return {
+    id: e.id, title: e.title, content: e.content, source: e.source, kind: 'knowledge', event: e.event,
+    fields: [[e.title, 3], [e.tags.join(' '), 3], [e.topic, 1.5], [e.content, 1]],
   };
-  add(e.title, 3);
-  add(e.tags.join(' '), 3);
-  add(e.topic, 2);
-  add(e.content, 1);
-  return { entry: e, bag };
-});
+}
+
+/** A reference_drills row as a retrievable document. */
+export function drillDoc(d: {
+  key: string; name: string; description?: string | null; cues?: unknown; target_metrics?: unknown; contraindications?: unknown;
+}): EvidenceDoc {
+  const list = (v: unknown) => (Array.isArray(v) ? v.map(String).join('; ') : '');
+  const targets = list(d.target_metrics).replace(/_/g, ' ');
+  const content = [d.description, list(d.cues) && `Cues: ${list(d.cues)}.`, list(d.contraindications) && `Cautions: ${list(d.contraindications)}.`]
+    .filter(Boolean).join(' ');
+  return {
+    id: d.key, title: `${d.name} (drill, key ${d.key})`, content, source: 'Stride reference drill library', kind: 'drill',
+    fields: [[d.name, 3], [`${targets} drill`, 3], [content, 1]],
+  };
+}
+
+interface IndexedDoc { doc: EvidenceDoc; tf: Map<string, number>; len: number }
+
+const K1 = 1.2;
+const B = 0.75;
+
+function indexDocs(docs: EvidenceDoc[]): { docs: IndexedDoc[]; df: Map<string, number>; avgLen: number } {
+  const indexed = docs.map((doc) => {
+    const tf = new Map<string, number>();
+    let len = 0;
+    for (const [text, w] of doc.fields) {
+      for (const t of tokenize(text)) { tf.set(t, (tf.get(t) ?? 0) + w); len += w; }
+    }
+    return { doc, tf, len };
+  });
+  const df = new Map<string, number>();
+  for (const d of indexed) for (const t of d.tf.keys()) df.set(t, (df.get(t) ?? 0) + 1);
+  const avgLen = indexed.reduce((s, d) => s + d.len, 0) / Math.max(indexed.length, 1);
+  return { docs: indexed, df, avgLen };
+}
+
+const BASE_INDEX = indexDocs(KNOWLEDGE.map(knowledgeDoc));
 
 export interface RetrievedChunk {
   id: string;
@@ -320,38 +434,75 @@ export interface RetrievedChunk {
   content: string;
   source: string;
   score: number;
+  kind?: 'knowledge' | 'drill';
+  /** IDF-weighted share of the question's known terms this entry covers (0-1). */
+  coverage?: number;
 }
 
 /**
- * Return the top-K knowledge entries most relevant to `query`, optionally
- * boosting entries for the athlete's event. Pure and fast, safe to call every
- * turn. Returns [] when nothing scores above zero.
+ * Relevance grade for a result set, a lexical stand-in for CRAG's retrieval
+ * evaluator (Yan et al. 2024): 'strong' when the top entry covers most of the
+ * question, 'weak' when it only touches it, 'none' when nothing matched. The
+ * coach is told the grade so weak evidence is hedged instead of over-trusted.
+ */
+export type EvidenceGrade = 'strong' | 'weak' | 'none';
+
+export function gradeEvidence(hits: RetrievedChunk[]): EvidenceGrade {
+  if (!hits.length) return 'none';
+  return (hits[0].coverage ?? 0) >= 0.5 ? 'strong' : 'weak';
+}
+
+/**
+ * Return the top-K entries most relevant to `query`, optionally boosting the
+ * athlete's event, over the knowledge base plus any `extra` documents (the
+ * drill library). Pure and fast, safe to call every turn. Returns [] when
+ * nothing matches.
  */
 export function retrieveKnowledge(
   query: string,
-  opts: { topK?: number; event?: string | null } = {},
+  opts: { topK?: number; event?: string | null; extra?: EvidenceDoc[]; exclude?: Set<string> } = {},
 ): RetrievedChunk[] {
   const topK = opts.topK ?? 4;
-  const qTokens = tokenize(query);
-  if (qTokens.length === 0) return [];
+  const qTerms = [...new Set(tokenize(query))];
+  if (qTerms.length === 0) return [];
   const event = (opts.event ?? '').toLowerCase();
+  const index = opts.extra?.length ? indexDocs([...KNOWLEDGE.map(knowledgeDoc), ...opts.extra]) : BASE_INDEX;
+  const N = index.docs.length;
+  const idf = (t: string) => {
+    const n = index.df.get(t) ?? 0;
+    return Math.log(1 + (N - n + 0.5) / (n + 0.5));
+  };
+  // Coverage weighs terms by IDF, so a distinctive term ("sleep") counts for
+  // more than a generic one ("race"). A word no document contains gets the
+  // full weight: it is part of the question nothing here answers.
+  const totalIdf = qTerms.reduce((s, t) => s + idf(t), 0) || 1;
 
-  const scored = INDEX.map(({ entry, bag }) => {
-    let score = 0;
-    for (const t of qTokens) score += bag.get(t) ?? 0;
-    // Light event boost so a 400 m athlete gets 400 m-flavored answers.
-    if (event && (entry.event === event)) score *= 1.25;
-    return { entry, score };
-  })
+  const scored = index.docs
+    .filter(({ doc }) => !opts.exclude?.has(doc.id))
+    .map(({ doc, tf, len }) => {
+      let score = 0;
+      let matchedIdf = 0;
+      for (const t of qTerms) {
+        const f = tf.get(t);
+        if (!f) continue;
+        matchedIdf += idf(t);
+        score += idf(t) * ((f * (K1 + 1)) / (f + K1 * (1 - B + B * (len / index.avgLen))));
+      }
+      // Light event boost so a 400 m athlete gets 400 m-flavored answers.
+      if (event && doc.event === event) score *= 1.25;
+      return { doc, score, coverage: matchedIdf / totalIdf };
+    })
     .filter((s) => s.score > 0)
     .sort((a, b) => b.score - a.score)
     .slice(0, topK);
 
-  return scored.map(({ entry, score }) => ({
-    id: entry.id,
-    title: entry.title,
-    content: entry.content,
-    source: entry.source,
+  return scored.map(({ doc, score, coverage }) => ({
+    id: doc.id,
+    title: doc.title,
+    content: doc.content,
+    source: doc.source,
+    kind: doc.kind,
     score: Math.round(score * 100) / 100,
+    coverage: Math.round(coverage * 100) / 100,
   }));
 }

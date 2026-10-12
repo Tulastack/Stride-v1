@@ -158,8 +158,8 @@ WHY = {
 
 # ── Trust tiers (docs/research/angle-agnostic-kinematics.md) ──────────────────
 # Trust by variable TYPE, not by azimuth. Tier 1 = angle-robust but frame-rate-
-# gated; Tier 2 = sagittal (best side-on, degraded off-axis); Tier 3 = rebinned /
-# translation-dependent, narrower trust window than tier 2 (see OVERSTRIDE_VP_MAX).
+# gated; Tier 2 = in-plane angles; Tier 3 = translation-dependent distances.
+# Tiers 2 and 3 are certified by the error budget below (TRUST_TOLERANCE).
 TIER = {
     "cadence_spm": 1, "contact_time_ms": 1, "vertical_oscillation": 1,
     "trunk_lean": 2, "knee_drive": 2, "hip_extension": 2, "knee_flexion": 2, "arm_swing": 2,
@@ -177,25 +177,46 @@ FPS_TRUST_GATE = 120.0
 # Holding it to the contact-time bar meant a perfectly sound cadence reading was
 # permanently badged experimental on every phone that does not shoot 120 fps,
 # strictness that costs the athlete information without buying any honesty.
-FPS_TRUST_GATE_BY_KEY = {"cadence_spm": 30.0}
-# Confidence/viewpoint tolerance for a metric to be certified "trusted" rather
-# than "experimental". These stay STRICT on purpose: experimental metrics now
-# participate in the score (EXPERIMENTAL_FORM_WEIGHT) and surface as focus
-# areas (FOCUS_TARGET), so a borderline measurement is never silently dropped,
-# which removes the only argument for loosening the badge itself. "Trusted" is
-# the app's word to the athlete that we'd stand behind the number; a penalty
-# above 0.5 means more than half the plane's signal is corrupted.
-TRUST_CONF_MIN = 0.6
-TRUST_VP_MAX = 0.5
-# Overstride (tier 3) is translation-dependent, so it gets a tighter viewpoint
-# cap than tier-2's TRUST_VP_MAX rather than being permanently barred from
-# trust: vp = sin(azimuth)² for sagittal metrics, so vp<=0.3 means the camera
-# is within ~33° of pure side-on, the actual geometric condition under which
-# this measurement is sound. Gated on the RAW keypoint confidence (mean_conf):
-# the displayed tier-3 confidence carries a fixed 0.6 translation discount that
-# would make TRUST_CONF_MIN unreachable by construction, which is a statement
-# about the formula, not the clip. Outside that window it stays "experimental".
-OVERSTRIDE_VP_MAX = 0.3
+# 24, not 30: phones record "30 fps" as 29.97, which failed a 30.0 gate by
+# rounding. A ~5 Hz step rate is still sampled well above Nyquist at 24.
+FPS_TRUST_GATE_BY_KEY = {"cadence_spm": 24.0}
+# ── Error-budget trust (any camera angle) ─────────────────────────────────────
+# A reading is trusted when the error it can carry from THIS view is smaller
+# than the difference a coach would act on, not when the camera sits inside a
+# fixed azimuth window. Any angle can certify a metric whose projection error
+# stays inside its tolerance; a near-side view simply has more headroom.
+# Tolerances are in the metric's own unit, roughly a quarter of its healthy
+# band: an error that size cannot move a reading across the band.
+TRUST_TOLERANCE: dict[str, float] = {
+    "trunk_lean": 5.0, "knee_drive": 8.0, "hip_extension": 8.0,
+    "knee_flexion": 8.0, "arm_swing": 10.0, "overstride": 4.0,
+    "knee_valgus": 3.0, "pelvic_drop": 4.0,
+}
+# RTMPose joint scores are not probabilities. Sprint frames are motion-blurred,
+# and well-placed joints on them score 0.5-0.6, so a 0.6 floor withheld real
+# strides. The error budget and the stride-consistency check below now carry
+# the strictness that the higher floor was standing in for. "Trusted" is still
+# the app's word that we'd stand behind the number.
+TRUST_CONF_MIN = 0.5
+# Per-stride peaks that disagree by more than this many tolerances (median
+# absolute deviation, >=3 strides) are not one repeatable movement.
+STRIDE_SPREAD_MAX = 1.5
+# Out-of-plane motion that leaks into an in-plane DISTANCE as the view turns:
+# step width into overstride, sagittal knee travel into valgus (% of leg).
+CROSS_PLANE_LEAK = {"overstride": 10.0, "knee_valgus": 10.0}
+# Cadence is certified only when the footstrike detector and an independent
+# leg-alternation count agree; a missed strike halves one and not the other.
+CADENCE_AGREEMENT = 0.15
+# A peak angle read from a single stride is one sample, not a habit.
+MIN_TRUSTED_STRIDES = 2
+FROM_VERTICAL = {"trunk_lean", "knee_drive"}
+FROM_HORIZONTAL = {"pelvic_drop"}
+JOINT_ANGLE = {"hip_extension", "knee_flexion", "arm_swing"}
+# Running-window detector: ankles alternating by more than this (torso
+# lengths, rolling std over ~0.45 s) is striding. Set positions, rising out
+# of blocks and standing all sit well below it.
+STRIDE_MOTION_MIN = 0.3
+MIN_RUNNING_S = 0.6
 # Perspective/scale corrupt vertical CoM off-axis and it is unmeasured on runners
 # (honesty ledger #9), keep it a candidate, never headline-trusted yet.
 CANDIDATE = {"vertical_oscillation"}
@@ -465,8 +486,11 @@ def _frame_scalars(k: np.ndarray, vert_down: np.ndarray, up: np.ndarray) -> dict
     # arm: pick the higher-confidence elbow/wrist side
     arm = "left" if (k[KP["left_elbow"], 2] + k[KP["left_wrist"], 2]) >= (k[KP["right_elbow"], 2] + k[KP["right_wrist"], 2]) else "right"
     a_sh, a_el, a_wr = k[KP[f"{arm}_shoulder"], :2], k[KP[f"{arm}_elbow"], :2], k[KP[f"{arm}_wrist"], :2]
-    mid_sh = (k[KP["left_shoulder"], :2] + k[KP["right_shoulder"], :2]) / 2
-    mid_hp = (k[KP["left_hip"], :2] + k[KP["right_hip"], :2]) / 2
+    def midpoint(a, b):
+        present = [k[KP[n], :2] for n in (a, b) if k[KP[n], 2] >= 0.3]
+        return np.mean(present, axis=0) if present else k[KP[f"{s}_hip"], :2]
+    mid_sh = midpoint("left_shoulder", "right_shoulder")
+    mid_hp = midpoint("left_hip", "right_hip")
     leg_len = float(np.linalg.norm(ank - hip)) or 1e-6
     # Project hip position onto gravity axis for vertical oscillation (candidate).
     hip_vert = float(np.dot(mid_hp, vert_down))
@@ -498,6 +522,9 @@ def _frame_scalars(k: np.ndarray, vert_down: np.ndarray, up: np.ndarray) -> dict
         "r_knee": _angle_at_joint(rh, rk, ra),
         # mid-hip horizontal position, resolves running direction (overstride sign)
         "hip_x": float(mid_hp[1]),
+        # per-side ankle horizontal vs mid-hip, feeds the running-window detector
+        "l_ax": float(la[1] - mid_hp[1]),
+        "r_ax": float(ra[1] - mid_hp[1]),
         "knee_valgus": knee_valgus,
         "pelvic_drop": pelvic_drop,
         "knee_drive": _angle_between_vectors(knee - hip, vert_down),   # thigh vs gravity vertical
@@ -666,6 +693,120 @@ def _viewpoint_penalty(azimuth_deg: float, plane: str) -> float:
     return min(1.0, out) if plane == "sagittal" else min(1.0, out * 0.25)
 
 
+def _plane_incline(azimuth_deg: float, plane: str, vp_override: float | None = None) -> float:
+    """Tilt (deg) of a metric's movement plane away from the image plane."""
+    if vp_override is not None:
+        return math.degrees(math.asin(math.sqrt(min(1.0, max(0.0, vp_override)))))
+    a = abs(azimuth_deg) % 180.0
+    a = 180.0 - a if a > 90.0 else a
+    return 90.0 - a if plane == "frontal" else a
+
+
+def _projection_error(key: str, value: float, incline_deg: float) -> float:
+    """Error, in the metric's unit, of reading `value` off a plane tilted
+    `incline_deg` from the image. Tilting foreshortens the plane's horizontal
+    axis by cos(incline); the error follows from the metric's geometry."""
+    b = math.radians(min(abs(incline_deg), 89.5))
+    c = math.cos(b)
+    if key in FROM_VERTICAL:
+        m = math.radians(min(abs(value), 89.5))
+        return abs(math.degrees(math.atan(math.tan(m) / c)) - abs(value))
+    if key in FROM_HORIZONTAL:
+        m = math.radians(min(abs(value), 89.5))
+        return abs(abs(value) - math.degrees(math.atan(math.tan(m) * c)))
+    if key in JOINT_ANGLE:
+        # Median over segment orientations: the error of an interior angle
+        # depends on where in the plane its two segments point.
+        th = math.radians(value)
+        phi = np.linspace(0.0, math.pi, 37)
+        u = np.stack([np.cos(phi) * c, np.sin(phi)], 1)
+        v = np.stack([np.cos(phi + th) * c, np.sin(phi + th)], 1)
+        cos_p = (u * v).sum(1) / (np.linalg.norm(u, axis=1) * np.linalg.norm(v, axis=1))
+        proj = np.degrees(np.arccos(np.clip(cos_p, -1.0, 1.0)))
+        return float(np.median(np.abs(proj - value)))
+    if key in CROSS_PLANE_LEAK:
+        return abs(value) * (1.0 / c - 1.0) + CROSS_PLANE_LEAK[key] * math.sin(b)
+    return 0.0
+
+
+def _rolling_median(x: np.ndarray, half: int) -> np.ndarray:
+    return np.array([np.median(x[max(0, i - half):i + half + 1]) for i in range(len(x))])
+
+
+def _local_normalise(y: np.ndarray, fps: float) -> np.ndarray:
+    """Remove slow drift and rescale by the local stride amplitude (~0.6 s), so
+    fixed-fraction thresholds keep finding strikes on a runner who moves away
+    from (or toward) the camera. The timing signal lives in original-image
+    coordinates, so it is normalised against itself, not the pose series."""
+    y = np.asarray(y, dtype=float)
+    half = max(2, int(round(fps * 0.3)))
+    if len(y) <= 2 * half:
+        return y
+    d = y - _rolling_median(y, half)
+    amp = np.array([float(np.ptp(d[max(0, i - half):i + half + 1])) for i in range(len(d))])
+    return d / np.maximum(amp, 1e-6)
+
+
+def _alternation_cadence(a: dict[str, np.ndarray], fps: float) -> float:
+    """Steps/min from how often the legs pass each other, independent of any
+    footstrike detector. The ankle-to-ankle vector is projected onto its own
+    principal axis, so the count works from the side (legs cross horizontally),
+    the front (they alternate vertically) or any angle between."""
+    if any(k not in a for k in ("l_rel", "r_rel", "l_ax", "r_ax", "torso_len")):
+        return 0.0
+    n = len(a["torso_len"])
+    if n < 8:
+        return 0.0
+    torso = np.maximum(_rolling_median(a["torso_len"], max(1, int(round(fps * 0.15)))), 1e-6)
+    sep = np.stack([a["l_rel"] - a["r_rel"], a["l_ax"] - a["r_ax"]], 1) / torso[:, None]
+    sep = sep - sep.mean(0)
+    _, _, vt = np.linalg.svd(sep, full_matrices=False)
+    proj = _savgol(sep @ vt[0], fps)
+    h = 0.15 * float(np.std(proj))
+    state, flips = 0, 0
+    for v in proj:
+        s = 1 if v > h else -1 if v < -h else 0
+        if s and state and s != state:
+            flips += 1
+        state = s or state
+    return 60.0 * flips / ((n - 1) / fps) if flips else 0.0
+
+
+def _running_window(a: dict[str, np.ndarray], fps: float) -> tuple[int, int] | None:
+    """[start, end) of the longest stretch where the athlete is striding.
+
+    Uses the two ankles relative to EACH OTHER, in torso lengths: a stride
+    alternates the legs, while a set position, rising from blocks, or the
+    camera panning moves both together. Scale-normalised, so a runner who
+    shrinks into the distance stays detected; 2D separation, so it works from
+    the side, the front, or anywhere between."""
+    need = ("l_rel", "r_rel", "l_ax", "r_ax", "torso_len")
+    if any(k not in a for k in need):
+        return None
+    n = len(a["torso_len"])
+    if n < 8:
+        return None
+    torso = np.maximum(_rolling_median(a["torso_len"], max(1, int(round(fps * 0.15)))), 1e-6)
+    sep = np.stack([a["l_rel"] - a["r_rel"], a["l_ax"] - a["r_ax"]], 1) / torso[:, None]
+    half = max(1, int(round(fps * 0.225)))
+    motion = np.array([float(np.sqrt(sep[max(0, i - half):i + half + 1].var(0).sum())) for i in range(n)])
+    thr = max(STRIDE_MOTION_MIN, 0.5 * float(np.percentile(motion, 90)))
+    active = motion >= thr
+    # bridge sub-0.2 s dropouts (one occluded frame is not the athlete stopping)
+    gap = max(1, int(round(fps * 0.2)))
+    best, start, last = (0, 0), None, -10 ** 9
+    for i in range(n + 1):
+        if i < n and active[i]:
+            if start is None or i - last > gap:
+                start = i
+            last = i
+            if last + 1 - start > best[1] - best[0]:
+                best = (start, last + 1)
+    if best[1] - best[0] < MIN_RUNNING_S * fps:
+        return None
+    return best
+
+
 def _band(value: float, conf: float) -> dict[str, float]:
     span = max(abs(value), 1.0)
     half = span * (0.04 + 0.6 * (1 - conf))
@@ -699,14 +840,31 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
         a[_ak] = _savgol(a[_ak], pose_fps)
     cap_fps = float(capture_fps if capture_fps is not None else pose_fps)
     src_fps = float(source_fps if source_fps is not None else pose_fps)
+
+    # Sprint metrics describe striding, so they are read only where the athlete
+    # strides. A clip that opens in a set position otherwise reports the crouch:
+    # its straight bracing arms as arm swing, the rise out of it as bounce.
+    n_all = len(a["torso_len"])
+    window = _running_window(a, pose_fps)
+    if window is not None and window != (0, n_all):
+        w0, w1 = window
+        a = {k: (v[w0:w1] if len(v) == n_all else v) for k, v in a.items()}
+        idxs = list(idxs[w0:w1])
+        if timing_signal:
+            timing_signal = [r for r in timing_signal if idxs[0] <= r[0] <= idxs[-1]]
     _leg = max(float(np.median(a["leg_len"])), 1e-6)
+    # Gait events in torso lengths, not image units: a runner moving away from
+    # the camera shrinks, and a fixed image-space threshold loses later strides.
+    _torso_s = np.maximum(_rolling_median(a["torso_len"], max(1, int(round(pose_fps * 0.15)))), 1e-6)
+    _ank_n = a["ank_y_rel"] / _torso_s
+    _l_n, _r_n = a["l_rel"] / _torso_s, a["r_rel"] / _torso_s
 
     # ── Gait events on the near-side series (validated kinematic definitions) ──
     # footstrike = ankle-height local max (FPOSV/FVELV, Fellin 2010);
     # toe-off = first peak knee extension after it (PKEXT, Fellin 2010);
     # swing window = toe-off → next footstrike. These anchor BOTH the temporal
     # metrics and the angle peaks to actual strides.
-    contacts = _contact_positions(a["ank_y_rel"], pose_fps)
+    contacts = _contact_positions(_ank_n, pose_fps)
     _knee_series = _smooth(a["knee_flex"])
     toe_offs = [t for t in (_toe_off_after(_knee_series, s, pose_fps) for s in contacts)
                 if t is not None]
@@ -808,6 +966,7 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
     # A stride whose peak violates the physical envelope marks the metric
     # suspect: the value stays robust but is never certified trusted.
     event_suspect: set[str] = set()
+    stride_count: dict[str, int] = {}
     if event_conditioned:
         def _per_stride(series: np.ndarray, windows: list[tuple[int, int]],
                         take_min: bool = False) -> tuple[float, int, list[float]]:
@@ -829,13 +988,15 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
         ):
             _v, _i, _all = _per_stride(_series, _wins, _take_min)
             values[_key] = (_v, _i)
+            stride_count[_key] = len(_all)
             _plo, _phi = PLAUSIBLE[_key]
-            # Suspect if any stride-window peak violates the physical envelope,
-            # OR if a non-trivial fraction of the whole series does (keypoint
-            # corruption near the windows is still corruption, the median stays
-            # robust, the trusted badge does not survive the evidence).
-            _frac_bad = float(np.mean((_series < _plo) | (_series > _phi)))
-            if _frac_bad > 0.02 or any(not (_plo <= p <= _phi) for p in _all):
+            # Suspect if any stride peak violates the physical envelope, or if
+            # the strides disagree. The envelope bounds the PEAK; testing every
+            # frame against it failed each straightening stance leg (>150°)
+            # and any crouch, which are real postures, not corruption.
+            _spread = float(np.median(np.abs(np.asarray(_all) - np.median(_all)))) if len(_all) >= 3 else 0.0
+            if any(not (_plo <= p <= _phi) for p in _all) \
+                    or _spread > STRIDE_SPREAD_MAX * TRUST_TOLERANCE[_key]:
                 event_suspect.add(_key)
     # Dual-rate timing (fixes B1): if a FULL-source-fps ankle signal is available
     # (LK optical flow between pose keyframes), compute contact-time + cadence from
@@ -847,12 +1008,14 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
     # lower sample rate for that quantity), never report "no cadence" for a clip
     # whose pose series shows clear strides. Per-key fps so a mixed outcome
     # (signal cadence + pose contact) is gated honestly per metric.
-    pose_contact, pose_cadence = _gait(a["l_rel"], a["r_rel"], pose_fps,
+    pose_contact, pose_cadence = _gait(_l_n, _r_n, pose_fps,
                                        a.get("l_knee"), a.get("r_knee"))
     pose_temporal = min(cap_fps, pose_fps)  # temporal trust needs high capture rate AND dense keypoints
     temporal_fps_by_key: dict[str, float] = {}
     if timing_signal is not None and timing_fps and len(timing_signal) >= 8:
         _ts = np.asarray(timing_signal, dtype=float)  # cols: frame_index, lank_y, rank_y
+        _ts[:, 1] = _local_normalise(_ts[:, 1], float(timing_fps))
+        _ts[:, 2] = _local_normalise(_ts[:, 2], float(timing_fps))
         contact_ms, cadence = _gait_signal(_ts[:, 1], _ts[:, 2], float(timing_fps))
         temporal_fps_by_key["contact_time_ms"] = float(timing_fps)
         temporal_fps_by_key["cadence_spm"] = float(timing_fps)
@@ -908,8 +1071,15 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
             return float(recon_conf.get(k, recon_conf.get("_default", 1.0)))
         return float(recon_conf)
 
+    view_measurable: list[str] = []
+    alt_cadence = _alternation_cadence(a, pose_fps)
     for key, (val, evi) in values.items():
-        eff_conf = mean_conf * _recon_for(key)
+        # These are quality scores, not independent probabilities. Multiplying
+        # two passing gates made every metric fail on an otherwise observed run.
+        # Assess the joints THIS metric needs, and keep the weaker gate.
+        detector_conf = float(np.median(a.get(f"quality_{key}", [mean_conf])))
+        reconstruction_conf = 1.0 if key in ("cadence_spm", "contact_time_ms") else _recon_for(key)
+        eff_conf = min(detector_conf, reconstruction_conf)
         tier = TIER.get(key, 2)
         if tier == 1:
             # angle-robust → NO viewpoint penalty; trust gated on the ACTUAL
@@ -919,28 +1089,31 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
             conf = eff_conf
             t_fps = temporal_fps_by_key.get(key, pose_temporal)
             fps_gate = FPS_TRUST_GATE_BY_KEY.get(key, FPS_TRUST_GATE)
-            trust = "trusted" if (conf >= TRUST_CONF_MIN and t_fps >= fps_gate and key not in CANDIDATE) else "experimental"
-        elif tier == 3:
-            # rebinned / translation-dependent → trusted only from a near-pure
-            # side view with confident keypoints (see OVERSTRIDE_VP_MAX), never
-            # from an off-axis one.
-            vp = _viewpoint_penalty(azimuth_deg, "sagittal") if vp_override is None else vp_override
-            conf = eff_conf * (1 - vp) * 0.6
-            trust = "trusted" if (eff_conf >= TRUST_CONF_MIN and vp <= OVERSTRIDE_VP_MAX) else "experimental"
+            measurable = t_fps >= fps_gate and key not in CANDIDATE
+            if key == "cadence_spm":
+                measurable = measurable and alt_cadence > 0 and \
+                    abs(val - alt_cadence) <= CADENCE_AGREEMENT * alt_cadence
+            trust = "trusted" if (conf >= TRUST_CONF_MIN and measurable) else "experimental"
         else:
-            # Tier 2 → best in its own plane, degraded (not zeroed) off-axis. Sagittal
-            # metrics trust a SIDE view; frontal metrics (valgus, hip drop) trust a
-            # FRONT/BACK view, the inverse penalty, so every angle yields some trusted
-            # feedback.
+            # Error budget: what this view's foreshortening can do to THIS
+            # value, against the difference that would change the coaching.
+            # Sagittal metrics are best from the side and frontal ones from the
+            # front, but no azimuth is barred: the geometry decides.
             plane = "frontal" if key in FRONTAL else "sagittal"
             vp = _viewpoint_penalty(azimuth_deg, plane) if vp_override is None else vp_override
-            conf = eff_conf * (1 - vp)
-            trust = "trusted" if (conf >= TRUST_CONF_MIN and vp <= TRUST_VP_MAX) else "experimental"
+            tol = TRUST_TOLERANCE[key]
+            proj_err = _projection_error(key, val, _plane_incline(azimuth_deg, plane, vp_override))
+            measurable = proj_err <= tol
+            conf = eff_conf if measurable else eff_conf * tol / max(proj_err, 1e-6)
+            trust = "trusted" if (eff_conf >= TRUST_CONF_MIN and measurable) else "experimental"
+        if measurable:
+            view_measurable.append(key)
         # Event-anchoring gate for peak angles: a peak not tied to a detected
         # stride event (no events found), or drawn from strides with envelope
         # violations, is a descriptive read, reported, scored (discounted),
         # but never certified trusted.
-        if key in EVENT_ANGLES and (not event_conditioned or key in event_suspect):
+        if key in EVENT_ANGLES and (not event_conditioned or key in event_suspect
+                                    or stride_count.get(key, 0) < MIN_TRUSTED_STRIDES):
             trust = "experimental"
         conf = max(0.0, min(1.0, conf))
         # Plausibility backstop: a value outside the physical envelope is a failed
@@ -1040,7 +1213,7 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
     scorable = [
         (m["key"], m["measured"]["value"], m["trustStatus"] == "trusted")
         for m in metrics
-        if per_usable[m["key"]] and m["measured"]["value"] > 0
+        if per_usable[m["key"]] and np.isfinite(m["measured"]["value"])
     ]
     economy = _form_score(scorable, phase)
 
@@ -1074,6 +1247,10 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
                            "subjectMotion": subject_motion, "movingSubject": moving_subject,
                            "strideEvents": len(contacts), "eventConditioned": event_conditioned,
                            "droppedFramePct": round(dropped_pct, 2),
+                           "viewMeasurable": view_measurable,
+                           **({"runningWindowMs": [round(idxs[0] / max(src_fps, 1e-6) * 1000),
+                                                   round(idxs[-1] / max(src_fps, 1e-6) * 1000)]}
+                              if window is not None and idxs else {}),
                            **({"primaryNudge": nudge} if nudge else {})},
         "reconstructionMethod": "2d", "createdAt": datetime.now(timezone.utc).isoformat(),
     }
@@ -1081,7 +1258,7 @@ def _assemble(S: dict[str, list[float]], idxs: list[int], pose_fps: float,
 
 _KEYS = ["knee_drive", "hip_ext", "knee_flex", "elbow", "trunk", "hip_y",
          "torso_len", "ank_x_rel", "ank_y_rel", "leg_len", "conf",
-         "knee_valgus", "pelvic_drop", "l_knee", "r_knee", "hip_x"]
+         "knee_valgus", "pelvic_drop", "l_knee", "r_knee", "hip_x", "l_ax", "r_ax"]
 
 
 def _collect_scalars(frame_iter: Iterable[dict], azimuth_deg: float,
@@ -1106,6 +1283,15 @@ def _collect_scalars(frame_iter: Iterable[dict], azimuth_deg: float,
 
     S: dict[str, list[float]] = {k: [] for k in _KEYS}
     S["l_rel"] = []; S["r_rel"] = []
+    metric_joints = {
+      "trunk_lean": ("shoulder", "hip"), "knee_drive": ("hip", "knee"),
+      "hip_extension": ("shoulder", "hip", "knee"), "knee_flexion": ("hip", "knee", "ankle"),
+      "arm_swing": ("shoulder", "elbow", "wrist"), "overstride": ("hip", "ankle"),
+      "vertical_oscillation": ("shoulder", "hip"), "contact_time_ms": ("hip", "ankle"),
+      "cadence_spm": ("hip", "ankle"), "knee_valgus": ("hip", "knee", "ankle"), "pelvic_drop": ("hip",),
+    }
+    for key in metric_joints:
+        S[f"quality_{key}"] = []
     idxs: list[int] = []
     az_samples: list[float] = []
     total = 0
@@ -1122,6 +1308,10 @@ def _collect_scalars(frame_iter: Iterable[dict], azimuth_deg: float,
             continue
         k = _kp(f)
         sc = _frame_scalars(k, vert_down, up)
+        for key, joints in metric_joints.items():
+            sides = [float(np.mean([k[KP[f"{side}_{j}"], 2] for j in joints])) for side in ("left", "right")]
+            quality = min(sides) if key in FRONTAL else max(sides)
+            S[f"quality_{key}"].append(quality)
         for kk in _KEYS:
             S[kk].append(sc[kk])
         # per-side ankle HEIGHT vs hip for gait (index 0 = image y; foot plant = local max)

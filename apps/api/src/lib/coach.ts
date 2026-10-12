@@ -3,6 +3,7 @@
 // and recovery. It receives the ML analyzer's structured output as context so
 // every reply references the athlete's real measured numbers.
 
+import { groundedResult } from './measurementTrust.js';
 import { CoachRateLimitError } from './coach/errors.js';
 import { resolveCoachProvider, postToProvider } from './coach/provider.js';
 
@@ -57,6 +58,7 @@ export function buildAnalysisContext(
   profile?: Profile | null,
   opts?: { brief?: boolean },
 ): string {
+  result = groundedResult(result);
   const who = profile
     ? `ATHLETE: ${profile.display_name ?? 'runner'}, event ${profile.event_specialty ?? 'unknown'}, level ${profile.experience_level ?? 'unknown'}${profile.personal_best_seconds ? `, PB ${profile.personal_best_seconds}s` : ''}.`
     : 'ATHLETE: (no profile set).';
@@ -68,14 +70,15 @@ export function buildAnalysisContext(
   if (opts?.brief) {
     const worst = (result.flaws ?? [])
       .slice()
-      .sort((a, b) => b.severity - a.severity)
+      .slice()
+    .sort((a, b) => b.severity - a.severity)
       .slice(0, 2)
       .map((f) => f.name)
       .join(', ');
     return [
       who,
       `LATEST RUN: economy ${result.economyScore ?? 'n/a'}/100${worst ? `, worst issues: ${worst}` : ', nothing flagged'}.`,
-      'Call get_athlete_metrics for the numbers before you discuss their form.',
+      'Their numbers are in EVIDENCE [A] when the question needs them; otherwise call get_athlete_metrics before discussing their form.',
     ].join('\n');
   }
 
@@ -83,12 +86,13 @@ export function buildAnalysisContext(
   const lines = result.metrics.map((m) => {
     const [lo, hi] = m.normalRange ?? [0, 0];
     const inRange = m.measured.value >= lo && m.measured.value <= hi;
-    const tag = m.trustStatus === 'experimental' ? ' [experimental]' : '';
+    const tag = m.trustStatus !== 'trusted' ? ' [experimental]' : '';
     const flag = inRange ? 'ok' : m.measured.value < lo ? 'LOW' : 'HIGH';
     const label = m.key.replace(/_(ms|spm)$/, '').replace(/_/g, ' ');
     return `- ${label}: ${fmt(m.measured.value)}${m.unit} (normal ${fmt(lo)}–${fmt(hi)}${m.unit}) → ${flag}${tag}`;
   });
   const flaws = (result.flaws ?? [])
+    .slice()
     .sort((a, b) => b.severity - a.severity)
     .slice(0, 4)
     .map((f) => `- ${f.plainExplanation || f.name}`);
@@ -100,6 +104,7 @@ export function buildAnalysisContext(
     'Metrics:',
     ...lines,
     flaws.length ? `Top flagged issues (worst first):\n${flaws.join('\n')}` : 'No issues flagged.',
+    ...( (result as any).focusAreas ?? [] ).map((f: any) => `Tentative focus: ${f.name}, ${f.plainExplanation}. Not a confirmed fault.`),
     nudge ? `Capture note: ${nudge}` : '',
   ]
     .filter(Boolean)

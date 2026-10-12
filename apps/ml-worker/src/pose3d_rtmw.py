@@ -103,9 +103,9 @@ def _load():
     selection and the Dockerfile need no special-casing for this path."""
     global _pose_model, _det_model
     if _pose_model is None:
-        from rtmlib import RTMPose3d, YOLOX
         if not os.path.isfile(POSE_ONNX):
             raise ValueError("rtmw3d_model_missing")
+        from rtmlib import RTMPose3d, YOLOX
         _det_model = YOLOX(DET_ONNX, model_input_size=(640, 640),
                            backend="onnxruntime", device="cpu")
         _pose_model = RTMPose3d(POSE_ONNX, model_input_size=INPUT_SIZE,
@@ -114,7 +114,7 @@ def _load():
     return _det_model, _pose_model
 
 
-def segment_consistency(poses: np.ndarray) -> dict[str, float]:
+def segment_consistency(poses: np.ndarray) -> dict[str, Any]:
     """How stable the recovered skeleton's proportions are across the clip.
 
     A correct reconstruction has rigid bones: thigh/torso is one number for one
@@ -148,8 +148,8 @@ def segment_consistency(poses: np.ndarray) -> dict[str, float]:
         cvs.append(float(np.std(v) / max(med, 1e-6)))
         devs.append(abs(med - SEGMENT_RATIO[lab]) / SEGMENT_RATIO[lab])
     return {
-        "segmentCV": round(float(np.mean(cvs)), 4) if cvs else float("nan"),
-        "segmentBias": round(float(np.mean(devs)), 4) if devs else float("nan"),
+        "segmentCV": round(float(np.mean(cvs)), 4) if cvs else None,
+        "segmentBias": round(float(np.mean(devs)), 4) if devs else None,
         "nSegments": len(cvs),
     }
 
@@ -175,16 +175,23 @@ def extract_3d_sequence(video_path: str, target=None, target_fps: int = 15,
     h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     step = max(1.0, src_fps / float(min(target_fps, src_fps)))
 
-    poses, confs, idxs = [], [], []
+    poses, confs, idxs, overlay = [], [], [], []
+    sampled = 0
+    timing = []
+    prev_gray = None
+    ankle_pts = None
+    max_samples = max(max_frames, int(max_frames * 1.5))
     prev_box = None
     dropped = 0
     frame_i, next_sample, kept = 0, 0.0, 0
     try:
-        while kept < max_frames:
+        while kept < max_frames and sampled < max_samples:
             ok, frame = cap.read()
             if not ok:
                 break
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             if frame_i >= next_sample:
+                sampled += 1
                 next_sample += step
                 boxes = det(frame)
                 box = _pick_box(boxes, prev_box, target, w, h)
@@ -209,10 +216,24 @@ def extract_3d_sequence(video_path: str, target=None, target_fps: int = 15,
                     world[:, 2] = P[:, 2] * k              # depth, same units
                     kp[:17][keep] = world[keep]
                     cf[:17][keep] = s[keep]
+                    if np.isfinite(I[[15,16]]).all() and np.min(s[[15,16]]) >= .3:
+                        ankle_pts = I[[15,16]].astype(np.float32)
+                        timing.append((frame_i, float(I[15,1]/h), float(I[16,1]/h)))
                     poses.append(kp)
                     confs.append(cf)
                     idxs.append(frame_i)
+                    overlay.append({"frameIndex": frame_i, "tMs": round(frame_i / src_fps * 1000, 1),
+                                    "kp": [[round(float(y / h), 4), round(float(x / w), 4), round(float(c), 3)]
+                                           if np.isfinite([x, y, c]).all() else [0.0, 0.0, 0.0]
+                                           for (x, y), c in zip(I, s)]})
                     kept += 1
+            elif ankle_pts is not None and prev_gray is not None:
+                points, status, _ = cv2.calcOpticalFlowPyrLK(prev_gray, gray, ankle_pts, None)
+                if points is not None and status is not None and status.all():
+                    ankle_pts = points
+                    timing.append((frame_i, float(points[0,1]/h), float(points[1,1]/h)))
+                else: ankle_pts = None
+            prev_gray = gray
             frame_i += 1
     finally:
         cap.release()
@@ -227,6 +248,8 @@ def extract_3d_sequence(video_path: str, target=None, target_fps: int = 15,
         "sourceFps": src_fps,
         "frames": len(poses),
         "frameIndices": idxs,
+        "timingSignal": timing,
+        "overlay": {"fps": float(min(target_fps, src_fps)), "sourceFps": src_fps, "width": w, "height": h, "frames": overlay},
         "meanConfidence": round(float(np.mean(confs[confs > 0])), 4) if (confs > 0).any() else 0.0,
         "droppedFrames": dropped,
         **segment_consistency(poses),

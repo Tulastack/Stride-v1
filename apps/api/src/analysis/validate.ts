@@ -32,9 +32,9 @@ export const confidenceBandSchema = z
 
 const normalRangeSchema = z.tuple([z.number(), z.number()]);
 
-export const phaseSchema = z.enum(['acceleration', 'max_velocity', 'general']);
+export const phaseSchema = z.enum(['acceleration', 'max_velocity', 'general', 'static']);
 export const severitySchema = z.union([z.literal(1), z.literal(2), z.literal(3)]);
-export const reconstructionMethodSchema = z.enum(['2d', '3d-mono', '3d-multi']);
+export const reconstructionMethodSchema = z.enum(['2d', '2d-sagittal', '2d-sagittal-fallback', '3d-mono', '3d-mono-geometric', '3d-multi']);
 
 export const evidenceSchema = z
   .object({
@@ -110,6 +110,10 @@ export const analysisResultSchema = z
     captureQuality: captureQualitySchema,
     reconstructionMethod: reconstructionMethodSchema,
     createdAt: z.string().min(1),
+    pose3d: z.object({
+      format: z.literal('coco17'), coordinates: z.literal('canonical-torso-units'),
+      frames: z.array(z.object({ tMs: z.number().nonnegative(), joints: z.array(z.tuple([z.number().finite(), z.number().finite(), z.number().finite(), unit01]).nullable()).length(17) }).strict()).max(1000),
+    }).strict().nullable().optional(),
     economyScore: z.number().int().min(0).max(100).optional(),
   })
   .strict()

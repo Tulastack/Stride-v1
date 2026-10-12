@@ -195,7 +195,8 @@ export function assembleAnalysisFromFrames(ctx: AssembleContext): AnalysisResult
   const recommendations: DrillRec[] = [];
   for (const mc of withConfidence) {
     const dev = deviation(mc.metric.value, mc.metric.normalRange);
-    if (dev <= 0) continue;
+    const status = outMetrics.find((m) => m.key === mc.metric.key)?.trustStatus;
+    if (dev <= 0 || status !== 'trusted' || !captureQuality.perMetricUsable[mc.metric.key]) continue;
     const id = `flaw-${mc.metric.key.replace(/_/g, '-')}`;
     flaws.push({
       id,

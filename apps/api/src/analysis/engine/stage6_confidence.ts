@@ -90,7 +90,7 @@ export function metricConfidence(metric: ComputedMetric, inputs: ConfidenceInput
   let trustHint: 'trusted' | 'experimental' = 'experimental';
   if (tier === 1) {
     trustHint =
-      confidence >= 0.6 && fps >= FPS_TRUST_GATE && !CANDIDATE_METRICS.has(metric.key)
+      confidence >= 0.6 && fps >= (metric.key === 'cadence_spm' ? 30 : FPS_TRUST_GATE) && !CANDIDATE_METRICS.has(metric.key)
         ? 'trusted'
         : 'experimental';
   } else if (tier === 2) {

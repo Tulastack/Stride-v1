@@ -1,3 +1,4 @@
+import { hasUsableScore } from '../../src/lib/measurementTrust';
 import React, { useCallback, useState } from 'react';
 import { View, Text, Pressable, ScrollView } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -34,7 +35,7 @@ export default function ProgressScreen() {
   }, [attempt]));
   const sessions = history.filter(hasMeasuredSession);
   const latest = sessions[sessions.length - 1];
-  const scored = sessions.filter((analysis) => Number.isFinite(analysis.economyScore));
+  const scored = sessions.filter((analysis) => hasUsableScore(analysis));
   const tracked = [...new Set(sessions.flatMap((analysis) => (analysis.metrics ?? []).map((metric) => metric.key)))];
   const comparable = selectedAnalysis ? sessions.filter((analysis) => sharesTrustedMeasurement(selectedAnalysis, analysis)) : [];
   const previous = selectedAnalysis ? comparable.find((analysis) => analysis.id === compare) : null;
@@ -44,7 +45,7 @@ export default function ProgressScreen() {
   }) : [];
 
   return <Screen>
-    <ScreenHeader logo title="Small changes. Real progress." subtitle={`${sessions.length} sprint${sessions.length !== 1 ? 's' : ''} analyzed`} />
+    <ScreenHeader title="Small changes. Real progress." subtitle={`${sessions.length} sprint${sessions.length !== 1 ? 's' : ''} analyzed`} />
     {loading ? <Notice>Loading your movement history…</Notice> : error ? <><Notice tone="error">{error}</Notice><Button label="Try again" onPress={() => setAttempt(attempt + 1)} /></> : !sessions.length ? <>
       <View style={{ backgroundColor: colors.well, borderRadius: radius.lg, overflow: 'hidden' }}><TrackScene /><View style={{ padding: 24, gap: 12 }}><Text style={[typo.editorial, { color: colors.wellText }]}>Your first sprint{'\n'}is your starting line.</Text><Text style={[typo.body, { color: colors.wellMuted }]}>Film once to establish a baseline. Come back to see what changes, not what an app guesses.</Text></View></View>
       <View style={{ gap: 16 }}>{['Capture your natural stride', 'Understand your movement', 'Practice, then compare'].map((step, index) => <View key={step} style={{ flexDirection: 'row', gap: 16, alignItems: 'center' }}><Text style={[typo.label, { color: colors.goldInk }]}>0{index + 1}</Text><Text style={[typo.body, { color: colors.text }]}>{step}</Text></View>)}</View>
@@ -67,7 +68,7 @@ export default function ProgressScreen() {
     <Sheet visible={!!selectedAnalysis} title="SCORE BREAKDOWN" onClose={() => setSelectedAnalysis(null)}>
       {selectedAnalysis ? <><SheetScroll contentContainerStyle={{ gap: 20 }}>
         <Text style={[typo.label, { color: colors.goldInk }]}>{day(selectedAnalysis)}</Text><Text style={[typo.editorial, { color: colors.text }]}>{selectedAnalysis.summary}</Text>
-        <Text style={[typo.caption, { color: colors.muted }]}>Form score: {Number.isFinite(selectedAnalysis.economyScore) ? selectedAnalysis.economyScore + ' / 100' : 'not available'}</Text>
+        <Text style={[typo.caption, { color: colors.muted }]}>Form score: {hasUsableScore(selectedAnalysis) ? selectedAnalysis.economyScore + ' / 100' : 'not available'}</Text>
         {selectedAnalysis.flaws.map((flaw) => <View key={flaw.id} style={{ gap: 6 }}><Text style={[typo.h2, { color: colors.text }]}>{flaw.name.replace(/_/g, ' ')}</Text><Text style={[typo.body, { color: colors.muted }]}>{flaw.plainExplanation}</Text></View>)}
         {comparable.length ? <><SectionTitle>Compare a session</SectionTitle><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>{comparable.map((analysis) => <Button key={analysis.id} label={day(analysis)} variant={compare === analysis.id ? 'primary' : 'secondary'} onPress={() => setCompare(analysis.id)} />)}</ScrollView>
         {comparison.length ? <><Text style={[typo.caption, { color: colors.muted }]}>Same phase and pipeline; match camera framing when comparing. Changes are not proof of performance improvement.</Text>{comparison.map((delta) => <View key={delta.key} style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 16 }}><Text style={[typo.body, { color: colors.text, flex: 1 }]}>{delta.label}</Text><Text style={[typo.bodyMedium, { color: colors.text }]}>{delta.from} → {delta.to} {delta.unit}</Text></View>)}</> : null}</> : null}

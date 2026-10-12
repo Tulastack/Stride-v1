@@ -98,13 +98,13 @@ say "api" "http://$LAN_IP:$API_PORT  (log: $LOG_DIR/api.log)"
 # another service answered there and a finished analysis was silently dropped.
 ( cd "$ROOT/apps/ml-worker" \
   && set -a && . "$ROOT/apps/api/.env" && set +a \
-  && STRIDE_PIPELINE=3d-geo POSE2D_BACKEND=rtmpose RTMPOSE_MODE=lightweight \
+  && STRIDE_PIPELINE="${STRIDE_PIPELINE:-2d}" POSE2D_BACKEND=rtmpose RTMPOSE_MODE=lightweight \
      POSE_FPS=15 API_SERVER_URL="http://127.0.0.1:$API_PORT" \
      nohup .venv312/bin/python -m src.worker >"$LOG_DIR/worker.log" 2>&1 </dev/null & ) >/dev/null 2>&1
 sleep 6
 pgrep -f "src.worker" >/dev/null \
   || die "ML worker did not start. See $LOG_DIR/worker.log"
-say "ml worker" "3d-geo  (log: $LOG_DIR/worker.log)"
+say "ml worker" "${STRIDE_PIPELINE:-2d}  (log: $LOG_DIR/worker.log)"
 
 echo "────────────────────────────────────────────────────────────"
 echo

@@ -93,6 +93,10 @@ services:
       dockerfile: Dockerfile
     environment:
       PYTHONPATH: /app
+      STRIDE_PIPELINE: 2d
+      POSE2D_BACKEND: rtmpose
+      RTMPOSE_MODE: lightweight
+      POSE_FPS: 15
       DATABASE_URL: postgres://stride:stride_dev@postgres:5432/stride
       S3_BUCKET: stride-videos
       SQS_QUEUE_URL: http://localstack:4566/000000000000/stride-analysis

@@ -40,8 +40,17 @@ _VMAX = 0.10              # cap per-frame predicted motion so noisy detections c
 _RESET_MISS = 4           # after this many misses the position lock is stale → global search
 _GLOBAL_APP_GATE = 0.45   # in global search, candidate must match the first-lock anchor this well
 _REENTRY_APP_GATE = 0.35  # an "exited" target only re-locks on a STRONG anchor match
-_SEED_INFLATE = 0.15      # first-lock: widen the brush box by this much per miss (imprecise brushes)
-_SEED_INFLATE_MAX = 2.5   # ... up to this factor, spatial tolerance grows, user intent still anchors it
+_SEED_INFLATE = 0.10      # first-lock: widen the brush box by this much per miss (imprecise brushes)
+_SEED_INFLATE_MAX = 1.3   # ... up to this factor; past it the lock could land on someone outside the circle
+_SEED_CONTAINED = 0.5     # first-lock: at least half the person must sit inside the circled region
+# Identity continuity. Every lock after the first must be reachable from the last
+# one: a 12 m/s sprinter covers ~24 torso lengths a second, so faster than
+# _HOP_SPEED (plus pose jitter) is a different person, as is a sudden change in
+# body size. Lost for longer than _MAX_GAP_S, the athlete is gone for the clip.
+_HOP_SPEED = 30.0
+_HOP_SLACK = 0.75
+_HOP_SCALE = 1.8
+_MAX_GAP_S = 1.0
 _EDGE = 0.03              # normalized margin that counts as "at the frame edge"
 _EXIT_VEL = 0.005         # min outward velocity (normalized/frame) for an edge touch to mean "leaving"
 
@@ -67,6 +76,19 @@ def _kp_bbox_px(xy: np.ndarray, sc: np.ndarray, cw: int, ch: int):
     x1 = int(min(cw, np.ceil(xs.max())))
     y1 = int(min(ch, np.ceil(ys.max())))
     return x0, y0, x1, y1
+
+
+def _body_ref_px(xy: np.ndarray, sc: np.ndarray) -> float:
+    """Body scale in px: torso length, floored by a third of the keypoint-box
+    diagonal so a foreshortened torso (crouched, filmed from behind) does not
+    shrink the continuity budget to nothing."""
+    sh = xy[[5, 6]].mean(axis=0)
+    hp = xy[[11, 12]].mean(axis=0)
+    torso = float(np.hypot(*(sh - hp)))
+    good = sc > 0.3
+    pts = xy[good] if int(good.sum()) >= 3 else xy
+    diag = float(np.hypot(pts[:, 0].max() - pts[:, 0].min(), pts[:, 1].max() - pts[:, 1].min()))
+    return max(torso, diag / 3.0, 1.0)
 
 
 def _iou(a, b) -> float:
@@ -101,8 +123,13 @@ def _hsv_hist(patch_bgr: np.ndarray):
 class CropTracker:
     """Owns the identity of ONE athlete via Kalman motion + appearance gating."""
 
-    def __init__(self, seed_bbox, frame_w: int, frame_h: int):
+    def __init__(self, seed_bbox, frame_w: int, frame_h: int, dt: float = 1.0 / 15.0):
         x0, y0, x1, y1 = seed_bbox
+        self.dt = max(float(dt), 1e-3)  # seconds between sampled frames
+        self.samples = 0                # sampled frames seen (advanced by predict)
+        self._last = None               # (cx_px, cy_px, ref_px, sample) of the last lock
+        self.hops_refused = 0           # candidates rejected as a different person
+        self.box = None                 # normalized xyxy of the last locked detection
         self.W, self.H = int(frame_w), int(frame_h)
         cx, cy = (x0 + x1) / 2.0, (y0 + y1) / 2.0
         w, h = max(abs(x1 - x0), 0.05), max(abs(y1 - y0), 0.08)
@@ -133,8 +160,31 @@ class CropTracker:
         self._locks = 0             # successful updates so far (exit needs a settled filter)
 
     # ── prediction ────────────────────────────────────────────────────────
+    @property
+    def gone(self) -> bool:
+        """The locked athlete has been missing too long to re-find safely."""
+        return self._last is not None and (self.samples - self._last[3]) * self.dt > _MAX_GAP_S
+
+    def plausible(self, xy, sc, origin) -> bool:
+        """Could this detection be the athlete from the last lock? Position
+        reachable at sprint speed in the elapsed time, and a similar body size."""
+        if self._last is None:
+            return True
+        lx, ly, lref, lsample = self._last
+        gap = max(self.samples - lsample, 1)
+        if gap * self.dt > _MAX_GAP_S:
+            return False
+        px = origin[0] + float(np.mean(xy[_TORSO, 0]))
+        py = origin[1] + float(np.mean(xy[_TORSO, 1]))
+        ref = _body_ref_px(xy, sc)
+        if max(ref, lref) / max(min(ref, lref), 1.0) > _HOP_SCALE:
+            return False
+        reach = (_HOP_SPEED * self.dt * gap + _HOP_SLACK) * max(ref, lref)
+        return float(np.hypot(px - lx, py - ly)) <= reach
+
     def predict(self) -> None:
         """Advance the Kalman filter one sampled step."""
+        self.samples += 1
         if self.miss > 0:
             # Once the target is lost, its future motion is unknown, don't let
             # the filter coast on stale velocity (that chases the box off-frame
@@ -190,6 +240,9 @@ class CropTracker:
                 xy, sc = kpts_c[i], scores_c[i]
                 if float(np.mean(sc[_TORSO])) < 0.35 or self.anchor is None:
                     continue
+                if not self.plausible(xy, sc, origin):
+                    self.hops_refused += 1
+                    continue
                 bx0, by0, bx1, by1 = _kp_bbox_px(xy, sc, cw, ch)
                 hh = _hsv_hist(crop_bgr[by0:by1, bx0:bx1])
                 if hh is None:
@@ -226,9 +279,12 @@ class CropTracker:
                 bx0, by0, bx1, by1 = _kp_bbox_px(xy, sc, cw, ch)
                 det = ((ox + bx0) / self.W, (oy + by0) / self.H,
                        (ox + bx1) / self.W, (oy + by1) / self.H)
-                # overlap = IoU with the brush box, boosted by how much of the
-                # detection is contained inside it (rewards a person the brush is on)
-                score = _iou(det, lock_box) + 0.5 * _contained(det, lock_box)
+                # The circle has to be around the person: most of them inside it.
+                # Among those, IoU prefers the one the circle fits best.
+                inside = _contained(det, lock_box)
+                if inside < _SEED_CONTAINED:
+                    continue
+                score = _iou(det, lock_box) + 0.5 * inside
                 if os.environ.get("STRIDE_TRACK_DEBUG"):
                     pxn, _ = _torso_centroid_norm(xy, origin, (self.W, self.H))
                     cand_dbg.append((round(pxn, 2), round(score, 2), round(float(np.mean(sc[_TORSO])), 2)))
@@ -247,6 +303,9 @@ class CropTracker:
             best_cost = 1e9
             for i in range(len(scores_c)):
                 xy, sc = kpts_c[i], scores_c[i]
+                if not self.plausible(xy, sc, origin):
+                    self.hops_refused += 1
+                    continue
                 core = float(np.mean(sc[_TORSO]))
                 pxn, pyn = _torso_centroid_norm(xy, origin, (self.W, self.H))
                 motion = ((pxn - cx) ** 2 + (pyn - cy) ** 2) ** 0.5
@@ -300,6 +359,9 @@ class CropTracker:
         hn = max((by1 - by0) / self.H, 0.05)
         self.kf.correct(np.array([[pxn], [pyn], [wn], [hn]], dtype=np.float32))
         self._cur = (pxn, pyn, wn, hn)
+        self._last = (pxn * self.W, pyn * self.H, _body_ref_px(xy, sc), self.samples)
+        ox, oy = origin
+        self.box = ((ox + bx0) / self.W, (oy + by0) / self.H, (ox + bx1) / self.W, (oy + by1) / self.H)
         self.miss = 0
         self._locks += 1
         # Exit = torso centroid at a frame edge AND velocity pointing OUT of it,

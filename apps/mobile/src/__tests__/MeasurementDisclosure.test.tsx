@@ -21,7 +21,7 @@ describe('measurement disclosure', () => {
   });
   it('does not elevate an experimental reading to a confirmed value', () => {
     const { getByText } = render(<MetricRow metric={{ ...metric, trustStatus: 'experimental' }} />);
-    expect(getByText('Withheld')).toBeTruthy();
+    expect(getByText(`≈ ${metric.measured.value}°`)).toBeTruthy();
     expect(getByText(/experimental/)).toBeTruthy();
   });
 });

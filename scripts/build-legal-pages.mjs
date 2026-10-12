@@ -18,10 +18,9 @@ const src = readFileSync(join(root, 'apps/mobile/src/content/legal.ts'), 'utf8')
 const js = ts.transpileModule(src, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
 const mod = { exports: {} };
 new Function('module', 'exports', js)(mod, mod.exports);
-const { TERMS_AND_CONDITIONS, PRIVACY_POLICY, LEGAL_CONTACT_EMAIL, LEGAL_ENTITY } = mod.exports;
+const { TERMS_AND_CONDITIONS, PRIVACY_POLICY, LEGAL_ENTITY } = mod.exports;
 
 const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-const linkEmail = (s) => esc(s).replace(esc(LEGAL_CONTACT_EMAIL), `<a href="mailto:${LEGAL_CONTACT_EMAIL}">${LEGAL_CONTACT_EMAIL}</a>`);
 const updated = new Date().toISOString().slice(0, 10);
 
 const page = (title, body) => `<!doctype html>
@@ -44,14 +43,14 @@ ${body}
 `;
 
 const doc = (d) => page(d.title, `<h1>${esc(d.title)}</h1><p class="meta">Applies to the Stride iOS app, operated by ${esc(LEGAL_ENTITY)}.</p>\n` +
-  d.sections.map((s) => `<h2>${esc(s.heading)}</h2>\n<p>${linkEmail(s.body)}</p>`).join('\n'));
+  d.sections.map((s) => `<h2>${esc(s.heading)}</h2>\n<p>${esc(s.body)}</p>`).join('\n'));
 
 const support = page('Support', `<h1>Stride Support</h1>
 <p class="meta">We usually reply within two business days.</p>
-<h2>Contact</h2><p>Email <a href="mailto:${LEGAL_CONTACT_EMAIL}">${LEGAL_CONTACT_EMAIL}</a> with your question. If something went wrong, include your iPhone model, iOS version and what you were doing.</p>
+<h2>Contact</h2><p>If something went wrong, use TestFlight Share Beta Feedback and include your iPhone model, iOS version, and what you were doing. Do not include your password.</p>
 <h2>Beta testers</h2><p>If you're testing through TestFlight, the fastest way to report a bug is to take a screenshot in the app and tap <strong>Share Beta Feedback</strong>.</p>
 <h2>Recording tips</h2><p>Film from the side, at hip height, with the whole body in frame from start to finish. Keep the phone still and the light good. Stride uses your phone's motion sensors to find true vertical, so a tripod or a steady hand helps.</p>
-<h2>Deleting your account</h2><p>Open <strong>Settings</strong> in the app and choose <strong>Delete Account</strong>. This permanently removes your videos, analyses and coaching history. You can also email us to ask for deletion.</p>
+<h2>Deleting your account</h2><p>Open <strong>Settings</strong> in the app and choose <strong>Delete Account</strong>. This permanently removes your videos, analyses, and coaching history.</p>
 <h2>Not medical advice</h2><p>Stride offers coaching insights only. Stop training and see a professional if you feel pain.</p>`);
 
 for (const [dir, html] of [['privacy', doc(PRIVACY_POLICY)], ['terms', doc(TERMS_AND_CONDITIONS)], ['support', support]]) {

@@ -1,3 +1,4 @@
+import { applyReportTrust } from '../lib/measurementTrust.js';
 import { Router } from 'express';
 import { z } from 'zod';
 import { timingSafeEqual } from 'node:crypto';
@@ -48,7 +49,8 @@ function verifyInternalSecret(req: any, res: Response, next: NextFunction): void
  */
 router.post('/analysis-completed', verifyInternalSecret, async (req: any, res: Response, next: NextFunction) => {
   try {
-    const { analysisId, status, overallScore, resultJson, errorMessage } = completionSchema.parse(req.body);
+    const { analysisId, status, overallScore, resultJson: rawResult, errorMessage } = completionSchema.parse(req.body);
+    const resultJson = applyReportTrust(rawResult);
 
     console.log(`[Internal Callback] Received completion for analysis ${analysisId} (status: ${status})`);
 

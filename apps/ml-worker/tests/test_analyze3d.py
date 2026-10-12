@@ -203,9 +203,10 @@ def test_timing_signal_is_measured_on_the_original_clip():
     """Cadence and contact time must not be re-derived from a re-projection;
     a synthetic camera cannot add temporal resolution."""
     poses, conf = _clip()
-    n = int(FPS * (len(poses) / FPS))
-    signal = [[i, 0.2 * math.sin(2 * math.pi * i / 12), 0.2 * math.cos(2 * math.pi * i / 12)]
-              for i in range(n)]
+    # 240 Hz ankle signal over the clip's source frames, one foot every 0.45 s
+    per = 240.0 * 0.45
+    signal = [[j / 8.0, 0.2 * math.sin(2 * math.pi * j / per), -0.2 * math.sin(2 * math.pi * j / per)]
+              for j in range(len(poses) * 8)]
     plain = _run(poses, conf)
     timed = _run(poses, conf, timing_signal=signal, timing_fps=240.0)
     pv = {m["key"]: m["measured"]["value"] for m in plain["metrics"]}
@@ -273,10 +274,15 @@ def test_routing_beats_collapsing_the_lap_to_one_azimuth():
 
     # And on a clip a fixed camera already sees well, routing must never be
     # worse, it may simply have nothing left to add.
+    # Stride-peak angles are excluded: a routed segment holds fewer strides
+    # than the whole clip, and one stride cannot certify a peak.
+    from src.biomech2d import EVENT_ANGLES
+    n_geo = lambda r: sum(1 for m in r["metrics"]
+                          if m["trustStatus"] == "trusted" and m["key"] not in EVENT_ANGLES)
     poses, conf = _lap(range(0, 360, 30))
     whole = analyze_3d_angle_agnostic(poses, conf, clip_id="w2", **kw)
     routed = analyze_3d_multisegment(poses, conf, clip_id="m2", **kw)
-    assert n(routed) >= n(whole), (n(routed), n(whole))
+    assert n_geo(routed) >= n_geo(whole), (n_geo(routed), n_geo(whole))
 
 
 def test_frontal_metrics_are_certifiable_only_when_a_frontal_view_exists():
@@ -364,3 +370,14 @@ def test_reprojection_is_exact_and_angle_invariant():
     # And identical from every angle, that is what angle-agnostic means here.
     for a, b in seen[1:]:
         assert abs(a - seen[0][0]) < 0.5 and abs(b - seen[0][1]) < 0.5, seen
+
+
+def test_multisegment_preserves_original_frame_indices():
+    from src.analyze3d import analyze_3d_multisegment
+    poses, conf = _lap([0, 90, 0])
+    indices = [600 + i * 4 for i in range(len(poses))]
+    result = analyze_3d_multisegment(poses, conf, fps=FPS, source_fps=FPS * 4,
+                                   capture_fps=FPS * 4, frame_indices=indices)
+    assert result['captureQuality']['segments'] >= 2
+    for item in result['flaws'] + result['focusAreas']:
+        assert item['evidence']['frameTimestampMs'] >= 600 / (FPS * 4) * 1000

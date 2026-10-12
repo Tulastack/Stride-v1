@@ -2,7 +2,6 @@
 // PLACEHOLDER, replace each section body with counsel-approved text before
 // public release. Keep the structure (title + sections) so the UI needs no changes.
 
-export const LEGAL_CONTACT_EMAIL = 'adhibanarul@gmail.com';
 export const LEGAL_ENTITY = 'Stride Biometrics, LLC';
 
 export interface LegalSection {
@@ -45,7 +44,8 @@ export const TERMS_AND_CONDITIONS: LegalDoc = {
     },
     {
       heading: '6. Contact',
-      body: `Questions about these terms? Contact us at ${LEGAL_CONTACT_EMAIL}.`,
+      body:
+        'Questions about these terms can be sent through TestFlight Share Beta Feedback. Do not include your password.',
     },
   ],
 };
@@ -61,12 +61,12 @@ export const PRIVACY_POLICY: LegalDoc = {
     {
       heading: '2. How We Use It',
       body:
-        'Your videos and motion data are used solely to analyze your running form, generate coaching feedback and drill suggestions, and track your progress over time. We do not sell your data or use it for advertising.',
+        'Your videos and motion data are used to analyze your running form, generate coaching feedback and drill suggestions, and track your progress over time. Messages you send the coach are stored so the coach can reply in that conversation. We do not sell your data or use it for advertising.',
     },
     {
       heading: '3. Service Providers',
       body:
-        'We use a small number of service providers to run Stride: Supabase (sign-in and account data), Amazon Web Services (video storage and processing), and third-party AI model providers (currently Google Gemini and Groq) that generate coaching text from your measured metrics. These providers process data only to provide their service to us. We send the AI providers your metrics and training context, not your videos.',
+        'We use a small number of service providers to run Stride: Supabase for sign-in and your account profile, and Amazon Web Services for video storage, the analysis worker, and the database. Coaching replies are written by a language-model provider, currently Inception Labs. That request includes the metrics from your analyses, your training context, and the messages you send the coach. Your sprint videos are not sent to the language-model provider. These providers process data only to provide their service to us.',
     },
     {
       heading: '4. Retention',
@@ -80,7 +80,8 @@ export const PRIVACY_POLICY: LegalDoc = {
     },
     {
       heading: '6. Contact',
-      body: `For privacy questions or data requests, contact ${LEGAL_CONTACT_EMAIL}.`,
+      body:
+        `Privacy and deletion requests are made in the app under Settings, Delete Account. ${LEGAL_ENTITY} does not publish a personal email address in this policy. Other privacy questions can be sent through TestFlight Share Beta Feedback. Do not include your password or a video.`,
     },
   ],
 };

@@ -41,7 +41,7 @@ function makeDeps(overrides: Partial<CoachDeps> = {}): CoachDeps {
         completed_at: '2026-07-01',
         result_json: {
           economyScore: 72,
-          metrics: [{ key: 'knee_drive', measured: { value: 59 }, unit: '°', normalRange: [80, 110] }],
+          metrics: [{ key: 'knee_drive', trustStatus: 'trusted', measured: { value: 59, confidence: 0.9 }, unit: '°', normalRange: [80, 110] }],
           flaws: [{ name: 'Low knee drive', severity: 3, plainExplanation: 'Thigh drops early.' }],
         },
       },
@@ -55,7 +55,7 @@ function makeDeps(overrides: Partial<CoachDeps> = {}): CoachDeps {
 
 describe('coach tool executors', () => {
   it('search_track_knowledge returns grounded text with sources', async () => {
-    const tools = buildCoachTools({ userId: 'u1', profile: { event_specialty: '100m' }, deps: makeDeps() });
+    const tools = buildCoachTools({ userId: 'u1', permissions: { analysis: true, calendar: true, profile: true, app: true }, profile: { event_specialty: '100m' }, deps: makeDeps() });
     const out = await tools.execute('search_track_knowledge', { query: 'max velocity front side mechanics' });
     expect(out).toMatch(/Source:/);
     expect(out.toLowerCase()).toContain('velocity');
@@ -63,7 +63,7 @@ describe('coach tool executors', () => {
 
   it('get_athlete_metrics surfaces the real measured numbers', async () => {
     const deps = makeDeps();
-    const tools = buildCoachTools({ userId: 'u1', profile: null, deps });
+    const tools = buildCoachTools({ userId: 'u1', permissions: { analysis: true, calendar: true, profile: true, app: true }, profile: null, deps });
     const out = await tools.execute('get_athlete_metrics', {});
     expect(out).toContain('59');
     expect(out).toContain('knee drive');
@@ -76,7 +76,7 @@ describe('coach tool executors', () => {
         throw new Error('db down');
       }),
     });
-    const tools = buildCoachTools({ userId: 'u1', profile: null, deps });
+    const tools = buildCoachTools({ userId: 'u1', permissions: { analysis: true, calendar: true, profile: true, app: true }, profile: null, deps });
     const out = await tools.execute('get_reference_drill', { drill_key: 'drill-wickets' });
     expect(out).toContain('failed');
   });
@@ -93,7 +93,7 @@ describe('runTrackCoach agentic loop', () => {
 
   it('calls a tool, reads the result, then produces a final grounded answer', async () => {
     const deps = makeDeps();
-    const tools = buildCoachTools({ userId: 'u1', profile: { event_specialty: '100m' }, deps });
+    const tools = buildCoachTools({ userId: 'u1', permissions: { analysis: true, calendar: true, profile: true, app: true }, profile: { event_specialty: '100m' }, deps });
 
     // Round 1: model asks for the athlete's metrics. Round 2: model answers.
     const fetchImpl = jest
@@ -143,8 +143,32 @@ describe('runTrackCoach agentic loop', () => {
     expect(systems[0].content).toContain('ATHLETE: test');
   });
 
+  const actionTools = () => buildCoachTools({
+    userId: 'u1', permissions: { analysis: true, calendar: true, profile: true, app: true }, profile: null, deps: makeDeps(),
+    proposeAction: async (action: any) => ({ token: 'tok', label: 'Use dark appearance', action }),
+  });
+
+  it('requires a tool call on the first round of a direct command', async () => {
+    const fetchImpl = jest.fn<any>().mockResolvedValueOnce(jsonResponse({ choices: [{ message: { content: 'Done.' } }] }));
+    await runTrackCoach({ userMessage: 'Turn on dark mode', analysisContext: '', toolset: actionTools(),
+      toolNames: ['propose_app_action'], command: true, fetchImpl: fetchImpl as unknown as typeof fetch });
+    expect(JSON.parse((fetchImpl.mock.calls[0] as any)[1].body).tool_choice).toBe('required');
+  });
+
+  it('sends a reply that claims an unmade change back for one correction', async () => {
+    const fetchImpl = jest.fn<any>()
+      .mockResolvedValueOnce(jsonResponse({ choices: [{ message: { content: 'PLAN: Proposed approval for Wall drives.' } }] }))
+      .mockResolvedValueOnce(jsonResponse({ choices: [{ message: { content: 'PLAN: You have one pending suggestion, Wall drives.' } }] }));
+    const answer = await runTrackCoach({ userMessage: 'Tell me about my suggestion', analysisContext: '', toolset: actionTools(),
+      toolNames: ['propose_app_action'], fetchImpl: fetchImpl as unknown as typeof fetch });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    const second = JSON.parse((fetchImpl.mock.calls[1] as any)[1].body);
+    expect(second.messages.at(-1).content).toMatch(/propose_app_action was not called/);
+    expect(answer).toBe('PLAN: You have one pending suggestion, Wall drives.');
+  });
+
   it('throws CoachRateLimitError (not a generic Error) on a 429 from Groq', async () => {
-    const tools = buildCoachTools({ userId: 'u1', profile: null, deps: makeDeps() });
+    const tools = buildCoachTools({ userId: 'u1', permissions: { analysis: true, calendar: true, profile: true, app: true }, profile: null, deps: makeDeps() });
     const fetchImpl = jest.fn<any>().mockResolvedValueOnce({
       ok: false,
       status: 429,
@@ -162,16 +186,16 @@ describe('runTrackCoach agentic loop', () => {
   });
 
   it('throws when no LLM key is configured so the route can fall back', async () => {
-    const saved = process.env.GROQ_API_KEY;
-    const savedOr = process.env.OPENROUTER_API_KEY;
-    delete process.env.GROQ_API_KEY;
-    delete process.env.OPENROUTER_API_KEY;
-    const tools = buildCoachTools({ userId: 'u1', profile: null, deps: makeDeps() });
-    await expect(
-      runTrackCoach({ userMessage: 'hi', analysisContext: '', toolset: tools }),
-    ).rejects.toThrow(/not configured/);
-    process.env.GROQ_API_KEY = saved;
-    if (savedOr === undefined) delete process.env.OPENROUTER_API_KEY;
-    else process.env.OPENROUTER_API_KEY = savedOr;
+    const names = ['GROQ_API_KEY', 'OPENROUTER_API_KEY', 'INCEPTION_API_KEY', 'GOOGLE_API_KEY', 'LLM_PROVIDER'];
+    const saved = Object.fromEntries(names.map((n) => [n, process.env[n]]));
+    names.forEach((n) => delete process.env[n]);
+    try {
+      const tools = buildCoachTools({ userId: 'u1', permissions: { analysis: true, calendar: true, profile: true, app: true }, profile: null, deps: makeDeps() });
+      await expect(
+        runTrackCoach({ userMessage: 'hi', analysisContext: '', toolset: tools }),
+      ).rejects.toThrow(/not configured/);
+    } finally {
+      for (const n of names) if (saved[n] === undefined) delete process.env[n]; else process.env[n] = saved[n];
+    }
   });
 });

@@ -234,3 +234,24 @@ CREATE INDEX idx_metrics_analysis ON metrics_timeline(analysis_id);
 -- Idempotent reprocessing: one row per metric per analysis (SQS redelivery /
 -- finalize retries must not stack duplicates that skew trend averages).
 CREATE UNIQUE INDEX idx_metrics_analysis_metric ON metrics_timeline(analysis_id, metric_key);
+
+-- Coach message allowance per athlete and period ('beta' or 'YYYY-MM'). Counts
+-- and token totals only, never message content: there are no conversations.
+CREATE TABLE IF NOT EXISTS coach_usage (
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  period VARCHAR(10) NOT NULL,
+  messages INTEGER NOT NULL DEFAULT 0,
+  prompt_tokens BIGINT NOT NULL DEFAULT 0,
+  completion_tokens BIGINT NOT NULL DEFAULT 0,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, period)
+);
+
+-- Retry-safe receipts for explicitly approved coach actions. No conversations.
+CREATE TABLE IF NOT EXISTS coach_action_receipts (
+  id UUID PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  session_id UUID NOT NULL REFERENCES coach_sessions(id) ON DELETE CASCADE,
+  result JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);

@@ -14,7 +14,7 @@
 export type Phase = 'acceleration' | 'max_velocity' | 'general' | 'static';
 
 /** How the 3D body was reconstructed for this result. */
-export type ReconstructionMethod = '2d' | '3d-mono' | '3d-multi';
+export type ReconstructionMethod = '2d' | '2d-sagittal' | '2d-sagittal-fallback' | '3d-mono' | '3d-mono-geometric' | '3d-multi';
 
 export type Severity = 1 | 2 | 3;
 
@@ -89,6 +89,10 @@ export interface CaptureQuality {
   framing: 'full' | 'partial';
   perMetricUsable: Record<string, boolean>; // keyed by Metric.key
   primaryNudge?: string; // single most useful capture tip, or undefined if fine
+  /** Metrics this camera view and frame rate can certify at all. */
+  viewMeasurable?: string[];
+  /** Stretch of the clip where the athlete was striding, in video ms. */
+  runningWindowMs?: [number, number];
 }
 
 /**
@@ -115,7 +119,15 @@ export interface FocusArea {
   drill?: Omit<DrillRec, 'flawId'>;
 }
 
+export interface ReconstructedPose {
+  format: 'coco17';
+  coordinates: 'canonical-torso-units';
+  frames: { tMs: number; joints: ([number, number, number, number] | null)[] }[];
+}
+
 export interface AnalysisResult {
+  /** Actual reconstructed joints, absent when reconstruction was rejected. */
+  pose3d?: ReconstructedPose | null;
   id: string;
   phase: Phase;
   summary: string; // 1–2 plain sentences, no jargon

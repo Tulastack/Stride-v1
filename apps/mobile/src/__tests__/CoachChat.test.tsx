@@ -1,18 +1,22 @@
 import React from 'react';
 import { render, fireEvent, waitFor, act } from '@testing-library/react-native';
 import { CoachChat } from '../components/CoachChat';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useStrideStore } from '../store/useStrideStore';
+import { NO_COACH_ACCESS } from '../lib/coachAccess';
 import { strideApi } from '../services/api';
 
 const mockPush = jest.fn();
 jest.mock('expo-router', () => ({ router: { push: (...args: unknown[]) => mockPush(...args) } }));
 jest.mock('../services/api', () => ({
-  strideApi: { createCoachSession: jest.fn(), askCoach: jest.fn(), addCoachPlanToCalendar: jest.fn() },
+  strideApi: { createCoachSession: jest.fn(), askCoach: jest.fn(), addCoachPlanToCalendar: jest.fn(), applyCoachAction: jest.fn() },
 }));
 const api = strideApi as jest.Mocked<typeof strideApi>;
 
 describe('Coach conversation', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    useStrideStore.setState({ user: null });
     api.createCoachSession.mockResolvedValue({ id: 'session' });
     api.askCoach.mockResolvedValue({ role: 'assistant', content: 'Keep your training consistent.' });
     api.addCoachPlanToCalendar.mockResolvedValue({ created: 2, events: [] });
@@ -21,7 +25,21 @@ describe('Coach conversation', () => {
     const { getByText } = render(<CoachChat analysisId="analysis" initialPrompt="Explain my run" />);
     await waitFor(() => expect(getByText('Keep your training consistent.')).toBeTruthy());
     expect(api.createCoachSession).toHaveBeenCalledWith('analysis_workflow', 'analysis');
-    expect(api.askCoach).toHaveBeenCalledWith('session', 'Explain my run', []);
+    expect(api.askCoach).toHaveBeenCalledWith('session', 'Explain my run', [], NO_COACH_ACCESS);
+  });
+  it('reviews exact calendar changes before calling the approval endpoint', async () => {
+    const proposal = { token: 'signed-proposal', label: 'Change Tempo', action: { kind: 'update_event', changes: { scheduledDate: '2026-10-14' } }, before: { title: 'Tempo', scheduled_date: '2026-10-12' } };
+    api.askCoach.mockResolvedValue({ role: 'assistant', content: 'Ready for review.', actions: [proposal] });
+    api.applyCoachAction.mockResolvedValue({ applied: true, action: proposal.action });
+    const view = render(<CoachChat initialPrompt="Move tempo to Wednesday" />);
+    await waitFor(() => expect(view.getByText('Review and apply')).toBeTruthy());
+    expect(api.applyCoachAction).not.toHaveBeenCalled();
+    expect(view.getByText(/2026-10-14/)).toBeTruthy();
+    fireEvent.press(view.getByLabelText('Coach access'));
+    fireEvent(view.getByLabelText('Allow coach calendar access'), 'valueChange', true);
+    fireEvent.press(view.getByText('Review and apply'));
+    await waitFor(() => expect(view.getByText('Applied')).toBeTruthy());
+    expect(api.applyCoachAction).toHaveBeenCalledWith('session', 'signed-proposal', { ...NO_COACH_ACCESS, calendar: true });
   });
   it('locks input while awaiting an actual reply', async () => {
     let resolveReply: (value: any) => void = () => {};
@@ -45,27 +63,31 @@ describe('Coach conversation', () => {
     await waitFor(() => expect(getByText('Retry message')).toBeTruthy());
     fireEvent.press(getByText('Retry message'));
     await waitFor(() => expect(getByText('Keep your training consistent.')).toBeTruthy());
-    expect(api.askCoach).toHaveBeenLastCalledWith('session', 'What comes next?', []);
+    expect(api.askCoach).toHaveBeenLastCalledWith('session', 'What comes next?', [], NO_COACH_ACCESS);
     expect(getAllByText('What comes next?')).toHaveLength(1);
   });
   it('requires explicit approval before scheduling and closes the layer afterward', async () => {
     api.askCoach.mockResolvedValue({ role: 'assistant', content: 'Here is your training plan.', calendarRelevant: true });
     const onScheduled = jest.fn();
-    const { getByText } = render(<CoachChat initialPrompt="Build a plan" onScheduled={onScheduled} />);
+    const { getByText, getByLabelText } = render(<CoachChat initialPrompt="Build a plan" onScheduled={onScheduled} />);
+    fireEvent.press(getByLabelText('Coach access'));
+    fireEvent(getByLabelText('Allow coach calendar access'), 'valueChange', true);
     await waitFor(() => expect(getByText('Add to My Calendar')).toBeTruthy());
     expect(api.addCoachPlanToCalendar).not.toHaveBeenCalled();
     fireEvent.press(getByText('Add to My Calendar'));
     await waitFor(() => expect(api.addCoachPlanToCalendar).toHaveBeenCalledTimes(1));
     expect(api.addCoachPlanToCalendar).toHaveBeenCalledWith('session', [
       { role: 'user', content: 'Build a plan' }, { role: 'assistant', content: 'Here is your training plan.' },
-    ]);
+    ], { ...NO_COACH_ACCESS, calendar: true });
     await waitFor(() => expect(onScheduled).toHaveBeenCalledTimes(1));
     expect(mockPush).toHaveBeenCalledWith('/(tabs)/calendar');
   });
   it('keeps scheduling failures separate from message retry', async () => {
     api.askCoach.mockResolvedValue({ role: 'assistant', content: 'Here is a plan.', calendarRelevant: true });
     api.addCoachPlanToCalendar.mockRejectedValue(new Error('offline'));
-    const { getByText, queryByText } = render(<CoachChat initialPrompt="Build a plan" />);
+    const { getByText, queryByText, getByLabelText } = render(<CoachChat initialPrompt="Build a plan" />);
+    fireEvent.press(getByLabelText('Coach access'));
+    fireEvent(getByLabelText('Allow coach calendar access'), 'valueChange', true);
     await waitFor(() => expect(getByText('Add to My Calendar')).toBeTruthy());
     fireEvent.press(getByText('Add to My Calendar'));
     await waitFor(() => expect(getByText('Retry scheduling')).toBeTruthy());
